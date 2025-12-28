@@ -35,14 +35,35 @@ pub fn generate_variables_css(config: &AppearanceConfig) -> String {
     if let Some(ref badge_app) = config.colors.badge_app {
         css.push_str(&format!("    --owlry-badge-app: {};\n", badge_app));
     }
+    if let Some(ref badge_bookmark) = config.colors.badge_bookmark {
+        css.push_str(&format!("    --owlry-badge-bookmark: {};\n", badge_bookmark));
+    }
     if let Some(ref badge_calc) = config.colors.badge_calc {
         css.push_str(&format!("    --owlry-badge-calc: {};\n", badge_calc));
+    }
+    if let Some(ref badge_clip) = config.colors.badge_clip {
+        css.push_str(&format!("    --owlry-badge-clip: {};\n", badge_clip));
     }
     if let Some(ref badge_cmd) = config.colors.badge_cmd {
         css.push_str(&format!("    --owlry-badge-cmd: {};\n", badge_cmd));
     }
     if let Some(ref badge_dmenu) = config.colors.badge_dmenu {
         css.push_str(&format!("    --owlry-badge-dmenu: {};\n", badge_dmenu));
+    }
+    if let Some(ref badge_emoji) = config.colors.badge_emoji {
+        css.push_str(&format!("    --owlry-badge-emoji: {};\n", badge_emoji));
+    }
+    if let Some(ref badge_file) = config.colors.badge_file {
+        css.push_str(&format!("    --owlry-badge-file: {};\n", badge_file));
+    }
+    if let Some(ref badge_script) = config.colors.badge_script {
+        css.push_str(&format!("    --owlry-badge-script: {};\n", badge_script));
+    }
+    if let Some(ref badge_ssh) = config.colors.badge_ssh {
+        css.push_str(&format!("    --owlry-badge-ssh: {};\n", badge_ssh));
+    }
+    if let Some(ref badge_sys) = config.colors.badge_sys {
+        css.push_str(&format!("    --owlry-badge-sys: {};\n", badge_sys));
     }
     if let Some(ref badge_uuctl) = config.colors.badge_uuctl {
         css.push_str(&format!("    --owlry-badge-uuctl: {};\n", badge_uuctl));

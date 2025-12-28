@@ -106,9 +106,19 @@
     color: var(--owlry-badge-app, @blue_3);
 }
 
+.owlry-badge-bookmark {
+    background-color: alpha(var(--owlry-badge-bookmark, #f5a623), 0.2);
+    color: var(--owlry-badge-bookmark, #f5a623);
+}
+
 .owlry-badge-calc {
     background-color: alpha(var(--owlry-badge-calc, @yellow_3), 0.2);
     color: var(--owlry-badge-calc, @yellow_3);
+}
+
+.owlry-badge-clip {
+    background-color: alpha(var(--owlry-badge-clip, #8b5cf6), 0.2);
+    color: var(--owlry-badge-clip, #8b5cf6);
 }
 
 .owlry-badge-cmd {
@@ -119,6 +129,31 @@
 .owlry-badge-dmenu {
     background-color: alpha(var(--owlry-badge-dmenu, @green_3), 0.2);
     color: var(--owlry-badge-dmenu, @green_3);
+}
+
+.owlry-badge-emoji {
+    background-color: alpha(var(--owlry-badge-emoji, #f472b6), 0.2);
+    color: var(--owlry-badge-emoji, #f472b6);
+}
+
+.owlry-badge-file {
+    background-color: alpha(var(--owlry-badge-file, #22d3ee), 0.2);
+    color: var(--owlry-badge-file, #22d3ee);
+}
+
+.owlry-badge-script {
+    background-color: alpha(var(--owlry-badge-script, #a3e635), 0.2);
+    color: var(--owlry-badge-script, #a3e635);
+}
+
+.owlry-badge-ssh {
+    background-color: alpha(var(--owlry-badge-ssh, #2dd4bf), 0.2);
+    color: var(--owlry-badge-ssh, #2dd4bf);
+}
+
+.owlry-badge-sys {
+    background-color: alpha(var(--owlry-badge-sys, #ef4444), 0.2);
+    color: var(--owlry-badge-sys, #ef4444);
 }
 
 .owlry-badge-uuctl {
@@ -176,10 +211,22 @@
     border-color: alpha(var(--owlry-badge-app, @blue_3), 0.4);
 }
 
+.owlry-filter-bookmark:checked {
+    background-color: alpha(var(--owlry-badge-bookmark, #f5a623), 0.2);
+    color: var(--owlry-badge-bookmark, #f5a623);
+    border-color: alpha(var(--owlry-badge-bookmark, #f5a623), 0.4);
+}
+
 .owlry-filter-calc:checked {
     background-color: alpha(var(--owlry-badge-calc, @yellow_3), 0.2);
     color: var(--owlry-badge-calc, @yellow_3);
     border-color: alpha(var(--owlry-badge-calc, @yellow_3), 0.4);
+}
+
+.owlry-filter-clip:checked {
+    background-color: alpha(var(--owlry-badge-clip, #8b5cf6), 0.2);
+    color: var(--owlry-badge-clip, #8b5cf6);
+    border-color: alpha(var(--owlry-badge-clip, #8b5cf6), 0.4);
 }
 
 .owlry-filter-cmd:checked {
@@ -188,16 +235,46 @@
     border-color: alpha(var(--owlry-badge-cmd, @purple_3), 0.4);
 }
 
-.owlry-filter-uuctl:checked {
-    background-color: alpha(var(--owlry-badge-uuctl, @orange_3), 0.2);
-    color: var(--owlry-badge-uuctl, @orange_3);
-    border-color: alpha(var(--owlry-badge-uuctl, @orange_3), 0.4);
-}
-
 .owlry-filter-dmenu:checked {
     background-color: alpha(var(--owlry-badge-dmenu, @green_3), 0.2);
     color: var(--owlry-badge-dmenu, @green_3);
     border-color: alpha(var(--owlry-badge-dmenu, @green_3), 0.4);
+}
+
+.owlry-filter-emoji:checked {
+    background-color: alpha(var(--owlry-badge-emoji, #f472b6), 0.2);
+    color: var(--owlry-badge-emoji, #f472b6);
+    border-color: alpha(var(--owlry-badge-emoji, #f472b6), 0.4);
+}
+
+.owlry-filter-file:checked {
+    background-color: alpha(var(--owlry-badge-file, #22d3ee), 0.2);
+    color: var(--owlry-badge-file, #22d3ee);
+    border-color: alpha(var(--owlry-badge-file, #22d3ee), 0.4);
+}
+
+.owlry-filter-script:checked {
+    background-color: alpha(var(--owlry-badge-script, #a3e635), 0.2);
+    color: var(--owlry-badge-script, #a3e635);
+    border-color: alpha(var(--owlry-badge-script, #a3e635), 0.4);
+}
+
+.owlry-filter-ssh:checked {
+    background-color: alpha(var(--owlry-badge-ssh, #2dd4bf), 0.2);
+    color: var(--owlry-badge-ssh, #2dd4bf);
+    border-color: alpha(var(--owlry-badge-ssh, #2dd4bf), 0.4);
+}
+
+.owlry-filter-sys:checked {
+    background-color: alpha(var(--owlry-badge-sys, #ef4444), 0.2);
+    color: var(--owlry-badge-sys, #ef4444);
+    border-color: alpha(var(--owlry-badge-sys, #ef4444), 0.4);
+}
+
+.owlry-filter-uuctl:checked {
+    background-color: alpha(var(--owlry-badge-uuctl, @orange_3), 0.2);
+    color: var(--owlry-badge-uuctl, @orange_3);
+    border-color: alpha(var(--owlry-badge-uuctl, @orange_3), 0.4);
 }
 
 .owlry-filter-web:checked {

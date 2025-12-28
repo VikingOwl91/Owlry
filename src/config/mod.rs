@@ -35,9 +35,16 @@ pub struct ThemeColors {
     pub accent_bright: Option<String>,
     // Provider badge colors
     pub badge_app: Option<String>,
+    pub badge_bookmark: Option<String>,
     pub badge_calc: Option<String>,
+    pub badge_clip: Option<String>,
     pub badge_cmd: Option<String>,
     pub badge_dmenu: Option<String>,
+    pub badge_emoji: Option<String>,
+    pub badge_file: Option<String>,
+    pub badge_script: Option<String>,
+    pub badge_ssh: Option<String>,
+    pub badge_sys: Option<String>,
     pub badge_uuctl: Option<String>,
     pub badge_web: Option<String>,
 }

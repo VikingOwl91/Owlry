@@ -206,11 +206,18 @@ impl MainWindow {
             button.add_css_class("owlry-filter-button");
             let css_class = match provider_type {
                 ProviderType::Application => "owlry-filter-app",
+                ProviderType::Bookmarks => "owlry-filter-bookmark",
                 ProviderType::Calculator => "owlry-filter-calc",
+                ProviderType::Clipboard => "owlry-filter-clip",
                 ProviderType::Command => "owlry-filter-cmd",
+                ProviderType::Dmenu => "owlry-filter-dmenu",
+                ProviderType::Emoji => "owlry-filter-emoji",
+                ProviderType::Files => "owlry-filter-file",
+                ProviderType::Scripts => "owlry-filter-script",
+                ProviderType::Ssh => "owlry-filter-ssh",
+                ProviderType::System => "owlry-filter-sys",
                 ProviderType::Uuctl => "owlry-filter-uuctl",
                 ProviderType::WebSearch => "owlry-filter-web",
-                ProviderType::Dmenu => "owlry-filter-dmenu",
             };
             button.add_css_class(css_class);
 
@@ -227,11 +234,18 @@ impl MainWindow {
             .iter()
             .map(|p| match p {
                 ProviderType::Application => "applications",
+                ProviderType::Bookmarks => "bookmarks",
                 ProviderType::Calculator => "calculator",
+                ProviderType::Clipboard => "clipboard",
                 ProviderType::Command => "commands",
+                ProviderType::Dmenu => "options",
+                ProviderType::Emoji => "emoji",
+                ProviderType::Files => "files",
+                ProviderType::Scripts => "scripts",
+                ProviderType::Ssh => "SSH hosts",
+                ProviderType::System => "system",
                 ProviderType::Uuctl => "uuctl units",
                 ProviderType::WebSearch => "web",
-                ProviderType::Dmenu => "options",
             })
             .collect();
 
@@ -410,11 +424,18 @@ impl MainWindow {
             if parsed.prefix.is_some() {
                 let prefix_name = match parsed.prefix.unwrap() {
                     ProviderType::Application => "applications",
+                    ProviderType::Bookmarks => "bookmarks",
                     ProviderType::Calculator => "calculator",
+                    ProviderType::Clipboard => "clipboard",
                     ProviderType::Command => "commands",
+                    ProviderType::Dmenu => "options",
+                    ProviderType::Emoji => "emoji",
+                    ProviderType::Files => "files",
+                    ProviderType::Scripts => "scripts",
+                    ProviderType::Ssh => "SSH hosts",
+                    ProviderType::System => "system",
                     ProviderType::Uuctl => "uuctl units",
                     ProviderType::WebSearch => "web",
-                    ProviderType::Dmenu => "options",
                 };
                 search_entry_for_change
                     .set_placeholder_text(Some(&format!("Search {}...", prefix_name)));

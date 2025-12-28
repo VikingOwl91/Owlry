@@ -1,14 +1,28 @@
 mod application;
+mod bookmarks;
 mod calculator;
+mod clipboard;
 mod command;
 mod dmenu;
+mod emoji;
+mod files;
+mod scripts;
+mod ssh;
+mod system;
 mod uuctl;
 mod websearch;
 
 pub use application::ApplicationProvider;
+pub use bookmarks::BookmarksProvider;
 pub use calculator::CalculatorProvider;
+pub use clipboard::ClipboardProvider;
 pub use command::CommandProvider;
 pub use dmenu::DmenuProvider;
+pub use emoji::EmojiProvider;
+pub use files::FileSearchProvider;
+pub use scripts::ScriptsProvider;
+pub use ssh::SshProvider;
+pub use system::SystemProvider;
 pub use uuctl::UuctlProvider;
 pub use websearch::WebSearchProvider;
 
@@ -34,9 +48,16 @@ pub struct LaunchItem {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProviderType {
     Application,
+    Bookmarks,
     Calculator,
+    Clipboard,
     Command,
     Dmenu,
+    Emoji,
+    Files,
+    Scripts,
+    Ssh,
+    System,
     Uuctl,
     WebSearch,
 }
@@ -47,13 +68,20 @@ impl std::str::FromStr for ProviderType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "app" | "apps" | "application" | "applications" => Ok(ProviderType::Application),
+            "bookmark" | "bookmarks" | "bm" => Ok(ProviderType::Bookmarks),
             "calc" | "calculator" => Ok(ProviderType::Calculator),
+            "clip" | "clipboard" => Ok(ProviderType::Clipboard),
             "cmd" | "command" | "commands" => Ok(ProviderType::Command),
-            "uuctl" => Ok(ProviderType::Uuctl),
             "dmenu" => Ok(ProviderType::Dmenu),
+            "emoji" | "emojis" => Ok(ProviderType::Emoji),
+            "file" | "files" | "find" => Ok(ProviderType::Files),
+            "script" | "scripts" => Ok(ProviderType::Scripts),
+            "ssh" => Ok(ProviderType::Ssh),
+            "sys" | "system" | "power" => Ok(ProviderType::System),
+            "uuctl" => Ok(ProviderType::Uuctl),
             "web" | "websearch" | "search" => Ok(ProviderType::WebSearch),
             _ => Err(format!(
-                "Unknown provider: '{}'. Valid: app, calc, cmd, uuctl",
+                "Unknown provider: '{}'. Valid: app, bookmark, calc, clip, cmd, emoji, file, script, ssh, sys, web",
                 s
             )),
         }
@@ -64,9 +92,16 @@ impl std::fmt::Display for ProviderType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ProviderType::Application => write!(f, "app"),
+            ProviderType::Bookmarks => write!(f, "bookmark"),
             ProviderType::Calculator => write!(f, "calc"),
+            ProviderType::Clipboard => write!(f, "clip"),
             ProviderType::Command => write!(f, "cmd"),
             ProviderType::Dmenu => write!(f, "dmenu"),
+            ProviderType::Emoji => write!(f, "emoji"),
+            ProviderType::Files => write!(f, "file"),
+            ProviderType::Scripts => write!(f, "script"),
+            ProviderType::Ssh => write!(f, "ssh"),
+            ProviderType::System => write!(f, "sys"),
             ProviderType::Uuctl => write!(f, "uuctl"),
             ProviderType::WebSearch => write!(f, "web"),
         }
@@ -87,6 +122,7 @@ pub struct ProviderManager {
     providers: Vec<Box<dyn Provider>>,
     calculator: CalculatorProvider,
     websearch: WebSearchProvider,
+    filesearch: FileSearchProvider,
     matcher: SkimMatcherV2,
 }
 
@@ -97,10 +133,15 @@ impl ProviderManager {
     }
 
     pub fn with_search_engine(search_engine: &str) -> Self {
+        Self::with_config(search_engine, "kitty")
+    }
+
+    pub fn with_config(search_engine: &str, terminal: &str) -> Self {
         let mut manager = Self {
             providers: Vec::new(),
             calculator: CalculatorProvider::new(),
             websearch: WebSearchProvider::with_engine(search_engine),
+            filesearch: FileSearchProvider::new(),
             matcher: SkimMatcherV2::default(),
         };
 
@@ -117,6 +158,14 @@ impl ProviderManager {
             manager.providers.push(Box::new(ApplicationProvider::new()));
             manager.providers.push(Box::new(CommandProvider::new()));
             manager.providers.push(Box::new(UuctlProvider::new()));
+
+            // New providers
+            manager.providers.push(Box::new(SystemProvider::new()));
+            manager.providers.push(Box::new(SshProvider::with_terminal(terminal)));
+            manager.providers.push(Box::new(ClipboardProvider::new()));
+            manager.providers.push(Box::new(BookmarksProvider::new()));
+            manager.providers.push(Box::new(EmojiProvider::new()));
+            manager.providers.push(Box::new(ScriptsProvider::new()));
         }
 
         // Initial refresh
@@ -268,6 +317,22 @@ impl ProviderManager {
         else if filter.active_prefix() == Some(ProviderType::WebSearch) && !query.is_empty() {
             if let Some(web_result) = self.websearch.evaluate_raw(query) {
                 results.push((web_result, 9000));
+            }
+        }
+
+        // Check for file search query
+        if FileSearchProvider::is_file_query(query) {
+            let file_results = self.filesearch.evaluate(query);
+            for (idx, item) in file_results.into_iter().enumerate() {
+                // Score decreases for each result to maintain order
+                results.push((item, 8000 - idx as i64));
+            }
+        }
+        // Also check for raw query when in :file filter mode
+        else if filter.active_prefix() == Some(ProviderType::Files) && !query.is_empty() {
+            let file_results = self.filesearch.evaluate_raw(query);
+            for (idx, item) in file_results.into_iter().enumerate() {
+                results.push((item, 8000 - idx as i64));
             }
         }
 

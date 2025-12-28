@@ -41,7 +41,8 @@ impl OwlryApp {
 
         let config = Rc::new(RefCell::new(Config::load_or_default()));
         let search_engine = config.borrow().providers.search_engine.clone();
-        let providers = Rc::new(RefCell::new(ProviderManager::with_search_engine(&search_engine)));
+        let terminal = config.borrow().general.terminal_command.clone();
+        let providers = Rc::new(RefCell::new(ProviderManager::with_config(&search_engine, &terminal)));
         let frecency = Rc::new(RefCell::new(FrecencyStore::load_or_default()));
 
         // Create filter from CLI args and config

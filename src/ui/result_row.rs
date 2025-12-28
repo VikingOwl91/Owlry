@@ -32,9 +32,16 @@ impl ResultRow {
             // Default icon based on provider type
             let default_icon = match item.provider {
                 crate::providers::ProviderType::Application => "application-x-executable",
+                crate::providers::ProviderType::Bookmarks => "user-bookmarks",
                 crate::providers::ProviderType::Calculator => "accessories-calculator",
+                crate::providers::ProviderType::Clipboard => "edit-paste",
                 crate::providers::ProviderType::Command => "utilities-terminal",
                 crate::providers::ProviderType::Dmenu => "view-list-symbolic",
+                crate::providers::ProviderType::Emoji => "face-smile",
+                crate::providers::ProviderType::Files => "folder",
+                crate::providers::ProviderType::Scripts => "application-x-executable",
+                crate::providers::ProviderType::Ssh => "network-server",
+                crate::providers::ProviderType::System => "system-shutdown",
                 crate::providers::ProviderType::Uuctl => "system-run",
                 crate::providers::ProviderType::WebSearch => "web-browser",
             };
