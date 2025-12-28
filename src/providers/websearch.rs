@@ -113,14 +113,24 @@ impl WebSearchProvider {
             return None;
         }
 
-        let url = self.build_search_url(search_term);
+        self.evaluate_raw(search_term)
+    }
+
+    /// Evaluate a raw search term (for :web filter mode)
+    pub fn evaluate_raw(&self, search_term: &str) -> Option<LaunchItem> {
+        let trimmed = search_term.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+
+        let url = self.build_search_url(trimmed);
 
         // Use xdg-open to open the browser
         let command = format!("xdg-open '{}'", url);
 
         Some(LaunchItem {
-            id: format!("websearch:{}", search_term),
-            name: format!("Search: {}", search_term),
+            id: format!("websearch:{}", trimmed),
+            name: format!("Search: {}", trimmed),
             description: Some("Open in browser".to_string()),
             icon: Some("web-browser".to_string()),
             provider: ProviderType::WebSearch,

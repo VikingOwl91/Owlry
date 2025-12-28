@@ -264,6 +264,12 @@ impl ProviderManager {
                 results.push((web_result, 9000));
             }
         }
+        // Also check for raw query when in :web filter mode
+        else if filter.active_prefix() == Some(ProviderType::WebSearch) && !query.is_empty() {
+            if let Some(web_result) = self.websearch.evaluate_raw(query) {
+                results.push((web_result, 9000));
+            }
+        }
 
         // Empty query (after checking special providers) - return frecency-sorted items
         if query.is_empty() {
