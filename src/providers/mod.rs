@@ -10,6 +10,7 @@ pub use uuctl::UuctlProvider;
 
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use log::info;
 
 /// Represents a single searchable/launchable item
 #[derive(Debug, Clone)]
@@ -110,6 +111,11 @@ impl ProviderManager {
     pub fn refresh_all(&mut self) {
         for provider in &mut self.providers {
             provider.refresh();
+            info!(
+                "Provider '{}' loaded {} items",
+                provider.name(),
+                provider.items().len()
+            );
         }
     }
 
