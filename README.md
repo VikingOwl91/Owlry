@@ -1,5 +1,6 @@
 # Owlry
 
+[![AUR](https://img.shields.io/aur/version/owlry?logo=archlinux&label=AUR)](https://aur.archlinux.org/packages/owlry)
 [![Rust](https://img.shields.io/badge/rust-1.90%2B-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![GTK4](https://img.shields.io/badge/GTK-4.12-green.svg)](https://gtk.org/)
@@ -19,7 +20,19 @@ A lightweight, owl-themed application launcher for Wayland, built with GTK4 and 
 
 ## Installation
 
-### Dependencies
+### Arch Linux (AUR)
+
+```bash
+# Using yay
+yay -S owlry
+
+# Using paru
+paru -S owlry
+```
+
+### Build from source
+
+#### Dependencies
 
 ```bash
 # Arch Linux
@@ -32,7 +45,7 @@ sudo apt install libgtk-4-dev libgtk4-layer-shell-dev
 sudo dnf install gtk4-devel gtk4-layer-shell-devel
 ```
 
-### Build from source
+#### Build
 
 Requires Rust 1.90 or later.
 
