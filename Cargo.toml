@@ -6,7 +6,7 @@ rust-version = "1.90"
 description = "A lightweight, owl-themed application launcher for Wayland"
 authors = ["Your Name <you@example.com>"]
 license = "GPL-3.0-or-later"
-repository = "https://github.com/yourusername/owlry"
+repository = "https://somegit.dev/Owlibou/owlry"
 keywords = ["launcher", "wayland", "gtk4", "linux"]
 categories = ["gui"]
 

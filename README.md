@@ -37,7 +37,7 @@ sudo dnf install gtk4-devel gtk4-layer-shell-devel
 Requires Rust 1.90 or later.
 
 ```bash
-git clone https://github.com/yourusername/owlry.git
+git clone https://somegit.dev/Owlibou/owlry.git
 cd owlry
 cargo build --release
 ```
