@@ -49,6 +49,10 @@ show-version:
 bump new_version:
     #!/usr/bin/env bash
     set -euo pipefail
+    if [ "{{version}}" = "{{new_version}}" ]; then
+        echo "Version is already {{new_version}}, skipping bump"
+        exit 0
+    fi
     echo "Bumping version from {{version}} to {{new_version}}"
     sed -i 's/^version = ".*"/version = "{{new_version}}"/' Cargo.toml
     cargo check
