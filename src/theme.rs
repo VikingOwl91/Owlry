@@ -47,6 +47,9 @@ pub fn generate_variables_css(config: &AppearanceConfig) -> String {
     if let Some(ref badge_uuctl) = config.colors.badge_uuctl {
         css.push_str(&format!("    --owlry-badge-uuctl: {};\n", badge_uuctl));
     }
+    if let Some(ref badge_web) = config.colors.badge_web {
+        css.push_str(&format!("    --owlry-badge-web: {};\n", badge_web));
+    }
 
     css.push_str("}\n");
     css

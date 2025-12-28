@@ -36,6 +36,7 @@ impl ResultRow {
                 crate::providers::ProviderType::Command => "utilities-terminal",
                 crate::providers::ProviderType::Dmenu => "view-list-symbolic",
                 crate::providers::ProviderType::Uuctl => "system-run",
+                crate::providers::ProviderType::WebSearch => "web-browser",
             };
             Image::from_icon_name(default_icon)
         };

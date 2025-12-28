@@ -48,3 +48,9 @@ calculator = true
 # Frecency: boost frequently/recently used items in search results
 frecency = true
 frecency_weight = 0.3  # 0.0 = disabled, 1.0 = strong boost
+
+# Web search provider (type "? query" or "web query")
+websearch = true
+# Options: google, duckduckgo, bing, startpage, searxng, brave, ecosia
+# Or custom URL with {query} placeholder, e.g. "https://search.example.com/?q={query}"
+search_engine = "duckduckgo"

@@ -143,7 +143,7 @@ impl MainWindow {
         hints_box.add_css_class("owlry-hints");
 
         let hints_label = Label::builder()
-            .label("Tab: cycle mode  ↑↓: navigate  Enter: launch  Esc: close  = calc  :app :cmd :uuctl")
+            .label("Tab: cycle mode  ↑↓: navigate  Enter: launch  Esc: close  = calc  ? web  :app :cmd")
             .halign(gtk4::Align::Center)
             .hexpand(true)
             .build();
@@ -209,6 +209,7 @@ impl MainWindow {
                 ProviderType::Calculator => "owlry-filter-calc",
                 ProviderType::Command => "owlry-filter-cmd",
                 ProviderType::Uuctl => "owlry-filter-uuctl",
+                ProviderType::WebSearch => "owlry-filter-web",
                 ProviderType::Dmenu => "owlry-filter-dmenu",
             };
             button.add_css_class(css_class);
@@ -229,6 +230,7 @@ impl MainWindow {
                 ProviderType::Calculator => "calculator",
                 ProviderType::Command => "commands",
                 ProviderType::Uuctl => "uuctl units",
+                ProviderType::WebSearch => "web",
                 ProviderType::Dmenu => "options",
             })
             .collect();
@@ -334,7 +336,7 @@ impl MainWindow {
 
         // Restore UI
         mode_label.set_label(filter.borrow().mode_display_name());
-        hints_label.set_label("Tab: cycle mode  ↑↓: navigate  Enter: launch  Esc: close  = calc  :app :cmd :uuctl");
+        hints_label.set_label("Tab: cycle mode  ↑↓: navigate  Enter: launch  Esc: close  = calc  ? web  :app :cmd");
         search_entry.set_placeholder_text(Some(&Self::build_placeholder(&filter.borrow())));
         search_entry.set_text(&saved_search);
 
@@ -411,6 +413,7 @@ impl MainWindow {
                     ProviderType::Calculator => "calculator",
                     ProviderType::Command => "commands",
                     ProviderType::Uuctl => "uuctl units",
+                    ProviderType::WebSearch => "web",
                     ProviderType::Dmenu => "options",
                 };
                 search_entry_for_change

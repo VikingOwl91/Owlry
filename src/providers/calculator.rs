@@ -18,18 +18,64 @@ impl CalculatorProvider {
     /// Check if a query is a calculator expression
     pub fn is_calculator_query(query: &str) -> bool {
         let trimmed = query.trim();
-        trimmed.starts_with("= ") || trimmed.starts_with("calc ")
+        trimmed.starts_with("=") || trimmed.starts_with("calc ")
     }
 
     /// Extract the expression from a calculator query
     fn extract_expression(query: &str) -> Option<&str> {
         let trimmed = query.trim();
+        // Support both "= expr" and "=expr" (with or without space)
         if let Some(expr) = trimmed.strip_prefix("= ") {
+            Some(expr.trim())
+        } else if let Some(expr) = trimmed.strip_prefix("=") {
             Some(expr.trim())
         } else if let Some(expr) = trimmed.strip_prefix("calc ") {
             Some(expr.trim())
         } else {
             None
+        }
+    }
+
+    /// Check if string looks like a math expression (for :calc mode)
+    pub fn looks_like_expression(query: &str) -> bool {
+        let trimmed = query.trim();
+        if trimmed.is_empty() {
+            return false;
+        }
+        // Contains math operators or is a number
+        trimmed.chars().any(|c| "+-*/^()".contains(c))
+            || trimmed.parse::<f64>().is_ok()
+            || ["pi", "e", "sqrt", "sin", "cos", "tan", "abs", "ln", "log"]
+                .iter()
+                .any(|f| trimmed.to_lowercase().contains(f))
+    }
+
+    /// Evaluate a raw expression (for :calc filter mode)
+    pub fn evaluate_raw(&mut self, expr: &str) -> Option<LaunchItem> {
+        let trimmed = expr.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+
+        match meval::eval_str(trimmed) {
+            Ok(result) => {
+                let result_str = if result.fract() == 0.0 && result.abs() < 1e15 {
+                    format!("{}", result as i64)
+                } else {
+                    format!("{:.10}", result).trim_end_matches('0').trim_end_matches('.').to_string()
+                };
+
+                Some(LaunchItem {
+                    id: format!("calc:{}", trimmed),
+                    name: format!("{} = {}", trimmed, result_str),
+                    description: Some("Press Enter to copy result".to_string()),
+                    icon: Some("accessories-calculator".to_string()),
+                    provider: ProviderType::Calculator,
+                    command: format!("echo -n '{}' | wl-copy", result_str),
+                    terminal: false,
+                })
+            }
+            Err(_) => None,
         }
     }
 

@@ -3,12 +3,14 @@ mod calculator;
 mod command;
 mod dmenu;
 mod uuctl;
+mod websearch;
 
 pub use application::ApplicationProvider;
 pub use calculator::CalculatorProvider;
 pub use command::CommandProvider;
 pub use dmenu::DmenuProvider;
 pub use uuctl::UuctlProvider;
+pub use websearch::WebSearchProvider;
 
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -36,6 +38,7 @@ pub enum ProviderType {
     Command,
     Dmenu,
     Uuctl,
+    WebSearch,
 }
 
 impl std::str::FromStr for ProviderType {
@@ -48,6 +51,7 @@ impl std::str::FromStr for ProviderType {
             "cmd" | "command" | "commands" => Ok(ProviderType::Command),
             "uuctl" => Ok(ProviderType::Uuctl),
             "dmenu" => Ok(ProviderType::Dmenu),
+            "web" | "websearch" | "search" => Ok(ProviderType::WebSearch),
             _ => Err(format!(
                 "Unknown provider: '{}'. Valid: app, calc, cmd, uuctl",
                 s
@@ -64,6 +68,7 @@ impl std::fmt::Display for ProviderType {
             ProviderType::Command => write!(f, "cmd"),
             ProviderType::Dmenu => write!(f, "dmenu"),
             ProviderType::Uuctl => write!(f, "uuctl"),
+            ProviderType::WebSearch => write!(f, "web"),
         }
     }
 }
@@ -81,14 +86,21 @@ pub trait Provider: Send {
 pub struct ProviderManager {
     providers: Vec<Box<dyn Provider>>,
     calculator: CalculatorProvider,
+    websearch: WebSearchProvider,
     matcher: SkimMatcherV2,
 }
 
 impl ProviderManager {
+    #[allow(dead_code)]
     pub fn new() -> Self {
+        Self::with_search_engine("duckduckgo")
+    }
+
+    pub fn with_search_engine(search_engine: &str) -> Self {
         let mut manager = Self {
             providers: Vec::new(),
             calculator: CalculatorProvider::new(),
+            websearch: WebSearchProvider::with_engine(search_engine),
             matcher: SkimMatcherV2::default(),
         };
 
@@ -229,15 +241,31 @@ impl ProviderManager {
     ) -> Vec<(LaunchItem, i64)> {
         let mut results: Vec<(LaunchItem, i64)> = Vec::new();
 
-        // Check for calculator query first
+        // Check for calculator query (= or calc prefix)
         if CalculatorProvider::is_calculator_query(query) {
             if let Some(calc_result) = self.calculator.evaluate(query) {
                 // Calculator results get a high score to appear first
                 results.push((calc_result, 10000));
             }
         }
+        // Also check for raw expression when in :calc filter mode
+        else if filter.active_prefix() == Some(ProviderType::Calculator)
+            && CalculatorProvider::looks_like_expression(query)
+        {
+            if let Some(calc_result) = self.calculator.evaluate_raw(query) {
+                results.push((calc_result, 10000));
+            }
+        }
 
-        // Empty query (after checking calculator) - return frecency-sorted items
+        // Check for web search query
+        if WebSearchProvider::is_websearch_query(query) {
+            if let Some(web_result) = self.websearch.evaluate(query) {
+                // Web search results get a high score to appear first
+                results.push((web_result, 9000));
+            }
+        }
+
+        // Empty query (after checking special providers) - return frecency-sorted items
         if query.is_empty() {
             let mut items: Vec<(LaunchItem, i64)> = self
                 .providers

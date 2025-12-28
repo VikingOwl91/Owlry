@@ -134,6 +134,8 @@ impl ProviderFilter {
             (":cmd ", ProviderType::Command),
             (":command ", ProviderType::Command),
             (":uuctl ", ProviderType::Uuctl),
+            (":web ", ProviderType::WebSearch),
+            (":search ", ProviderType::WebSearch),
         ];
 
         for (prefix_str, provider) in prefixes {
@@ -154,6 +156,8 @@ impl ProviderFilter {
             (":cmd", ProviderType::Command),
             (":command", ProviderType::Command),
             (":uuctl", ProviderType::Uuctl),
+            (":web", ProviderType::WebSearch),
+            (":search", ProviderType::WebSearch),
         ];
 
         for (prefix_str, provider) in partial_prefixes {
@@ -179,7 +183,8 @@ impl ProviderFilter {
             ProviderType::Calculator => 1,
             ProviderType::Command => 2,
             ProviderType::Uuctl => 3,
-            ProviderType::Dmenu => 4,
+            ProviderType::WebSearch => 4,
+            ProviderType::Dmenu => 5,
         });
         providers
     }
@@ -192,6 +197,7 @@ impl ProviderFilter {
                 ProviderType::Calculator => "Calc",
                 ProviderType::Command => "Commands",
                 ProviderType::Uuctl => "uuctl",
+                ProviderType::WebSearch => "Web",
                 ProviderType::Dmenu => "dmenu",
             };
         }
@@ -203,6 +209,7 @@ impl ProviderFilter {
                 ProviderType::Calculator => "Calc",
                 ProviderType::Command => "Commands",
                 ProviderType::Uuctl => "uuctl",
+                ProviderType::WebSearch => "Web",
                 ProviderType::Dmenu => "dmenu",
             }
         } else {

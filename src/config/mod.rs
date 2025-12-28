@@ -39,6 +39,7 @@ pub struct ThemeColors {
     pub badge_cmd: Option<String>,
     pub badge_dmenu: Option<String>,
     pub badge_uuctl: Option<String>,
+    pub badge_web: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,6 +70,18 @@ pub struct ProvidersConfig {
     /// Weight for frecency boost (0.0 = disabled, 1.0 = strong boost)
     #[serde(default = "default_frecency_weight")]
     pub frecency_weight: f64,
+    /// Enable web search provider (? query or web query)
+    #[serde(default = "default_true")]
+    pub websearch: bool,
+    /// Search engine for web search
+    /// Options: google, duckduckgo, bing, startpage, searxng, brave, ecosia
+    /// Or custom URL with {query} placeholder
+    #[serde(default = "default_search_engine")]
+    pub search_engine: String,
+}
+
+fn default_search_engine() -> String {
+    "duckduckgo".to_string()
 }
 
 fn default_true() -> bool {
@@ -193,6 +206,8 @@ impl Default for Config {
                 calculator: true,
                 frecency: true,
                 frecency_weight: 0.3,
+                websearch: true,
+                search_engine: "duckduckgo".to_string(),
             },
         }
     }

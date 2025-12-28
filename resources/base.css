@@ -126,6 +126,11 @@
     color: var(--owlry-badge-uuctl, @orange_3);
 }
 
+.owlry-badge-web {
+    background-color: alpha(var(--owlry-badge-web, @teal_3), 0.2);
+    color: var(--owlry-badge-web, @teal_3);
+}
+
 /* Header bar */
 .owlry-header {
     margin-bottom: 4px;
@@ -193,6 +198,12 @@
     background-color: alpha(var(--owlry-badge-dmenu, @green_3), 0.2);
     color: var(--owlry-badge-dmenu, @green_3);
     border-color: alpha(var(--owlry-badge-dmenu, @green_3), 0.4);
+}
+
+.owlry-filter-web:checked {
+    background-color: alpha(var(--owlry-badge-web, @teal_3), 0.2);
+    color: var(--owlry-badge-web, @teal_3);
+    border-color: alpha(var(--owlry-badge-web, @teal_3), 0.4);
 }
 
 /* Hints bar at bottom */
