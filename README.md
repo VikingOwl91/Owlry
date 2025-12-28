@@ -164,13 +164,35 @@ You can override this with `launch_wrapper` in config, or set to empty string `"
 
 By default, Owlry inherits colors from your system GTK4 theme (Adwaita, Breeze, etc.).
 
-### Owl Theme
+### Built-in Themes
 
-Enable the built-in owl-inspired dark theme:
+Owlry includes an owl-inspired dark theme:
 
 ```toml
 [appearance]
 theme = "owl"
+```
+
+### Included Example Themes
+
+Example themes are installed to `/usr/share/owlry/themes/`:
+
+- `owl.css` - Owl-inspired dark theme with amber accents
+- `catppuccin-mocha.css` - Soothing pastel theme
+- `nord.css` - Arctic, north-bluish palette
+
+To use an example theme:
+
+```bash
+mkdir -p ~/.config/owlry/themes
+cp /usr/share/owlry/themes/catppuccin-mocha.css ~/.config/owlry/themes/
+```
+
+Then set in config:
+
+```toml
+[appearance]
+theme = "catppuccin-mocha"
 ```
 
 ### Custom Theme

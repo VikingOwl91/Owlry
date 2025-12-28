@@ -1,0 +1,114 @@
+/*
+ * Owlry - Catppuccin Mocha Theme
+ * A soothing pastel theme based on Catppuccin Mocha palette
+ * https://catppuccin.com/
+ *
+ * Usage: Copy to ~/.config/owlry/themes/catppuccin-mocha.css
+ *        Set theme = "catppuccin-mocha" in config.toml
+ */
+
+:root {
+    --owlry-bg: #1e1e2e;
+    --owlry-bg-secondary: #313244;
+    --owlry-border: #45475a;
+    --owlry-text: #cdd6f4;
+    --owlry-text-secondary: #a6adc8;
+    --owlry-accent: #cba6f7;
+    --owlry-accent-bright: #f5c2e7;
+    --owlry-badge-app: #a6e3a1;
+    --owlry-badge-cmd: #89b4fa;
+    --owlry-badge-dmenu: #f9e2af;
+    --owlry-badge-uuctl: #fab387;
+}
+
+.owlry-main {
+    background-color: rgba(30, 30, 46, 0.95);
+    border: 1px solid rgba(69, 71, 90, 0.6);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5),
+                0 0 0 1px rgba(203, 166, 247, 0.1);
+}
+
+.owlry-search {
+    background-color: rgba(49, 50, 68, 0.8);
+    border: 2px solid rgba(69, 71, 90, 0.5);
+    color: var(--owlry-text);
+    caret-color: var(--owlry-accent);
+}
+
+.owlry-search:focus {
+    border-color: var(--owlry-accent);
+    box-shadow: 0 0 0 2px rgba(203, 166, 247, 0.2);
+}
+
+.owlry-result-row:hover {
+    background-color: rgba(49, 50, 68, 0.6);
+}
+
+.owlry-result-row:selected {
+    background-color: rgba(203, 166, 247, 0.15);
+    border-left: 3px solid var(--owlry-accent);
+}
+
+.owlry-result-row:selected .owlry-result-name {
+    color: var(--owlry-accent-bright);
+}
+
+.owlry-result-row:selected .owlry-result-icon {
+    color: var(--owlry-accent);
+}
+
+.owlry-badge-app {
+    background-color: rgba(166, 227, 161, 0.2);
+    color: var(--owlry-badge-app);
+}
+
+.owlry-badge-cmd {
+    background-color: rgba(137, 180, 250, 0.2);
+    color: var(--owlry-badge-cmd);
+}
+
+.owlry-badge-dmenu {
+    background-color: rgba(249, 226, 175, 0.2);
+    color: var(--owlry-badge-dmenu);
+}
+
+.owlry-badge-uuctl {
+    background-color: rgba(250, 179, 135, 0.2);
+    color: var(--owlry-badge-uuctl);
+}
+
+.owlry-filter-button:checked {
+    background-color: rgba(203, 166, 247, 0.2);
+    color: var(--owlry-accent);
+    border-color: rgba(203, 166, 247, 0.4);
+}
+
+.owlry-filter-app:checked {
+    background-color: rgba(166, 227, 161, 0.2);
+    color: var(--owlry-badge-app);
+    border-color: rgba(166, 227, 161, 0.4);
+}
+
+.owlry-filter-cmd:checked {
+    background-color: rgba(137, 180, 250, 0.2);
+    color: var(--owlry-badge-cmd);
+    border-color: rgba(137, 180, 250, 0.4);
+}
+
+.owlry-filter-uuctl:checked {
+    background-color: rgba(250, 179, 135, 0.2);
+    color: var(--owlry-badge-uuctl);
+    border-color: rgba(250, 179, 135, 0.4);
+}
+
+scrollbar slider {
+    background-color: rgba(69, 71, 90, 0.5);
+}
+
+scrollbar slider:hover {
+    background-color: rgba(88, 91, 112, 0.7);
+}
+
+scrollbar slider:active {
+    background-color: var(--owlry-accent);
+}
