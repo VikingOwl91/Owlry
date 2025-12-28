@@ -399,13 +399,9 @@ impl EmojiProvider {
 
             self.items.push(LaunchItem {
                 id: format!("emoji:{}", emoji),
-                name: format!("{} {}", emoji, name),
-                description: if keywords.is_empty() {
-                    None
-                } else {
-                    Some(keywords.to_string())
-                },
-                icon: None, // Emoji is shown in name
+                name: name.to_string(),
+                description: Some(format!("{} {}", emoji, keywords)),
+                icon: None,
                 provider: ProviderType::Emoji,
                 // Copy emoji to clipboard using wl-copy
                 command: format!("printf '%s' '{}' | wl-copy", emoji),
