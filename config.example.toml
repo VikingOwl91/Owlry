@@ -1,0 +1,42 @@
+# Owlry Configuration
+# Copy to ~/.config/owlry/config.toml
+
+[general]
+show_icons = true
+max_results = 10
+terminal_command = "kitty"  # Auto-detected if not set
+
+# Launch wrapper for app execution (auto-detected if not set)
+# Examples:
+#   "uwsm app --"              # For uwsm sessions
+#   "hyprctl dispatch exec --" # For Hyprland
+#   ""                         # Direct execution
+# launch_wrapper = "uwsm app --"
+
+[appearance]
+width = 600
+height = 400
+font_size = 14
+border_radius = 12
+
+# Theme: "owl" for built-in dark theme, or leave unset for GTK default
+# theme = "owl"
+
+# Individual color overrides (CSS color values)
+# [appearance.colors]
+# background = "#1a1b26"
+# background_secondary = "#24283b"
+# border = "#414868"
+# text = "#c0caf5"
+# text_secondary = "#565f89"
+# accent = "#7aa2f7"
+# accent_bright = "#89b4fa"
+# badge_app = "#9ece6a"
+# badge_cmd = "#7aa2f7"
+# badge_dmenu = "#bb9af7"
+# badge_uuctl = "#f7768e"
+
+[providers]
+applications = true
+commands = true
+uuctl = true
