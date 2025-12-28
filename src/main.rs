@@ -3,6 +3,7 @@ mod cli;
 mod config;
 mod filter;
 mod providers;
+mod theme;
 mod ui;
 
 use app::OwlryApp;

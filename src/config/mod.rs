@@ -17,12 +17,36 @@ pub struct GeneralConfig {
     pub terminal_command: String,
 }
 
+/// User-customizable theme colors
+/// All fields are optional - unset values inherit from GTK theme
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ThemeColors {
+    pub background: Option<String>,
+    pub background_secondary: Option<String>,
+    pub border: Option<String>,
+    pub text: Option<String>,
+    pub text_secondary: Option<String>,
+    pub accent: Option<String>,
+    pub accent_bright: Option<String>,
+    // Provider badge colors
+    pub badge_app: Option<String>,
+    pub badge_cmd: Option<String>,
+    pub badge_dmenu: Option<String>,
+    pub badge_uuctl: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppearanceConfig {
     pub width: i32,
     pub height: i32,
     pub font_size: u32,
     pub border_radius: u32,
+    /// Theme name: None = GTK default, "owl" = built-in owl theme
+    #[serde(default)]
+    pub theme: Option<String>,
+    /// Individual color overrides
+    #[serde(default)]
+    pub colors: ThemeColors,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,6 +133,8 @@ impl Default for Config {
                 height: 400,
                 font_size: 14,
                 border_radius: 12,
+                theme: None,
+                colors: ThemeColors::default(),
             },
             providers: ProvidersConfig {
                 applications: true,

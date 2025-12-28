@@ -2,9 +2,10 @@ use crate::cli::CliArgs;
 use crate::config::Config;
 use crate::filter::ProviderFilter;
 use crate::providers::ProviderManager;
+use crate::theme;
 use crate::ui::MainWindow;
 use gtk4::prelude::*;
-use gtk4::{gio, Application};
+use gtk4::{gio, Application, CssProvider};
 use gtk4_layer_shell::{Edge, Layer, LayerShell};
 use log::debug;
 use std::cell::RefCell;
@@ -63,34 +64,77 @@ impl OwlryApp {
         // Position from top
         window.set_margin(Edge::Top, 200);
 
-        // Load CSS styling
-        Self::load_css();
+        // Load CSS styling with config for theming
+        Self::load_css(&config.borrow());
 
         window.present();
     }
 
-    fn load_css() {
-        let provider = gtk4::CssProvider::new();
+    fn load_css(config: &Config) {
+        let display = gtk4::gdk::Display::default().expect("Could not get default display");
 
-        // Try to load from config directory first, then fall back to embedded
-        let config_css = dirs::config_dir().map(|p| p.join("owlry").join("style.css"));
-
-        if let Some(css_path) = config_css {
-            if css_path.exists() {
-                provider.load_from_path(&css_path);
-                debug!("Loaded CSS from {:?}", css_path);
-            } else {
-                provider.load_from_string(include_str!("../resources/style.css"));
-                debug!("Loaded embedded CSS");
-            }
-        } else {
-            provider.load_from_string(include_str!("../resources/style.css"));
-        }
-
+        // 1. Load base structural CSS (always applied)
+        let base_provider = CssProvider::new();
+        base_provider.load_from_string(include_str!("../resources/base.css"));
         gtk4::style_context_add_provider_for_display(
-            &gtk4::gdk::Display::default().expect("Could not get default display"),
-            &provider,
+            &display,
+            &base_provider,
             gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
+        debug!("Loaded base structural CSS");
+
+        // 2. Load theme if specified
+        if let Some(ref theme_name) = config.appearance.theme {
+            let theme_provider = CssProvider::new();
+            match theme_name.as_str() {
+                "owl" => {
+                    theme_provider.load_from_string(include_str!("../resources/owl-theme.css"));
+                    debug!("Loaded built-in owl theme");
+                }
+                _ => {
+                    // Check for custom theme in ~/.config/owlry/themes/{name}.css
+                    if let Some(theme_path) = dirs::config_dir()
+                        .map(|p| p.join("owlry").join("themes").join(format!("{}.css", theme_name)))
+                    {
+                        if theme_path.exists() {
+                            theme_provider.load_from_path(&theme_path);
+                            debug!("Loaded custom theme from {:?}", theme_path);
+                        } else {
+                            debug!("Theme '{}' not found at {:?}", theme_name, theme_path);
+                        }
+                    }
+                }
+            }
+            gtk4::style_context_add_provider_for_display(
+                &display,
+                &theme_provider,
+                gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION + 1,
+            );
+        }
+
+        // 3. Load user's custom stylesheet if exists
+        if let Some(custom_path) = dirs::config_dir().map(|p| p.join("owlry").join("style.css")) {
+            if custom_path.exists() {
+                let custom_provider = CssProvider::new();
+                custom_provider.load_from_path(&custom_path);
+                gtk4::style_context_add_provider_for_display(
+                    &display,
+                    &custom_provider,
+                    gtk4::STYLE_PROVIDER_PRIORITY_USER,
+                );
+                debug!("Loaded custom CSS from {:?}", custom_path);
+            }
+        }
+
+        // 4. Inject config variables (highest priority for overrides)
+        let vars_css = theme::generate_variables_css(&config.appearance);
+        let vars_provider = CssProvider::new();
+        vars_provider.load_from_string(&vars_css);
+        gtk4::style_context_add_provider_for_display(
+            &display,
+            &vars_provider,
+            gtk4::STYLE_PROVIDER_PRIORITY_USER + 1,
+        );
+        debug!("Injected config CSS variables");
     }
 }
