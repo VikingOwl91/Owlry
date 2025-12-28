@@ -17,17 +17,37 @@ impl DmenuProvider {
     }
 
     /// Check if stdin has data (non-blocking check)
+    /// Returns true only if stdin is a pipe or regular file with data available.
+    /// Returns false for TTYs, /dev/null, and other character devices.
     pub fn has_stdin_data() -> bool {
         use std::os::unix::io::AsRawFd;
 
         let stdin_fd = io::stdin().as_raw_fd();
+
+        // First check if stdin is a pipe or regular file (valid dmenu input sources)
+        // Character devices (TTY, /dev/null) should NOT trigger dmenu mode
+        let mut stat_buf: libc::stat = unsafe { std::mem::zeroed() };
+        let stat_result = unsafe { libc::fstat(stdin_fd, &mut stat_buf) };
+        if stat_result != 0 {
+            return false;
+        }
+
+        let mode = stat_buf.st_mode;
+        let is_pipe = (mode & libc::S_IFMT) == libc::S_IFIFO;
+        let is_file = (mode & libc::S_IFMT) == libc::S_IFREG;
+
+        // Only check for data if stdin is a pipe or file
+        if !is_pipe && !is_file {
+            return false;
+        }
+
+        // Non-blocking poll to check if data is available
         let mut poll_fd = libc::pollfd {
             fd: stdin_fd,
             events: libc::POLLIN,
             revents: 0,
         };
 
-        // Non-blocking poll with 0 timeout
         let result = unsafe { libc::poll(&mut poll_fd, 1, 0) };
         result > 0 && (poll_fd.revents & libc::POLLIN) != 0
     }
