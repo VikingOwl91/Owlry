@@ -100,6 +100,13 @@ Example: `:cmd git` searches only PATH commands for "git"
 
 Configuration file: `~/.config/owlry/config.toml`
 
+An example config is installed at `/usr/share/doc/owlry/config.example.toml`:
+
+```bash
+mkdir -p ~/.config/owlry
+cp /usr/share/doc/owlry/config.example.toml ~/.config/owlry/config.toml
+```
+
 ```toml
 [general]
 show_icons = true
