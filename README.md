@@ -105,6 +105,7 @@ Configuration file: `~/.config/owlry/config.toml`
 show_icons = true
 max_results = 10
 # terminal_command = "kitty"  # Auto-detected if not set
+# launch_wrapper = "uwsm app --"  # Auto-detected for uwsm/hyprland sessions
 
 [appearance]
 width = 600
@@ -131,11 +132,24 @@ uuctl = true
 | `show_icons` | `true` |
 | `max_results` | `10` |
 | `terminal_command` | Auto-detected ($TERMINAL → xdg-terminal-exec → kitty/alacritty/etc) |
+| `launch_wrapper` | Auto-detected (uwsm → hyprctl → none) |
 | `width` | `600` |
 | `height` | `400` |
 | `font_size` | `14` |
 | `border_radius` | `12` |
 | `theme` | None (GTK default) |
+
+### Launch Wrapper
+
+When running in uwsm-managed or Hyprland sessions, owlry auto-detects and uses the appropriate launch wrapper for proper session integration:
+
+| Session | Wrapper | Purpose |
+|---------|---------|---------|
+| uwsm | `uwsm app --` | Proper systemd scope and session management |
+| Hyprland | `hyprctl dispatch exec --` | Native Hyprland window management |
+| Other | None (direct `sh -c`) | Standard shell execution |
+
+You can override this with `launch_wrapper` in config, or set to empty string `""` to disable.
 
 ## Theming
 

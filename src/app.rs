@@ -30,7 +30,9 @@ impl OwlryApp {
     }
 
     pub fn run(&self) -> i32 {
-        self.app.run().into()
+        // Use empty args since clap already parsed our CLI arguments.
+        // This prevents GTK from trying to parse --mode, --providers, etc.
+        self.app.run_with_args(&[] as &[&str]).into()
     }
 
     fn on_activate(app: &Application, args: &CliArgs) {

@@ -15,6 +15,11 @@ pub struct GeneralConfig {
     pub show_icons: bool,
     pub max_results: usize,
     pub terminal_command: String,
+    /// Launch wrapper command for app execution.
+    /// Examples: "uwsm app --", "hyprctl dispatch exec --", "systemd-run --user --"
+    /// If None or empty, launches directly via sh -c
+    #[serde(default)]
+    pub launch_wrapper: Option<String>,
 }
 
 /// User-customizable theme colors
@@ -54,6 +59,32 @@ pub struct ProvidersConfig {
     pub applications: bool,
     pub commands: bool,
     pub uuctl: bool,
+}
+
+/// Detect the best launch wrapper for the current session
+/// Checks for uwsm (Universal Wayland Session Manager) and hyprland
+fn detect_launch_wrapper() -> Option<String> {
+    // Check if running under uwsm (has UWSM_FINALIZE_VARNAMES or similar uwsm env vars)
+    if std::env::var("UWSM_FINALIZE_VARNAMES").is_ok()
+        || std::env::var("__UWSM_SELECT_TAG").is_ok()
+    {
+        if command_exists("uwsm") {
+            debug!("Detected uwsm session, using 'uwsm app --' wrapper");
+            return Some("uwsm app --".to_string());
+        }
+    }
+
+    // Check if running under Hyprland
+    if std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok() {
+        if command_exists("hyprctl") {
+            debug!("Detected Hyprland session, using 'hyprctl dispatch exec --' wrapper");
+            return Some("hyprctl dispatch exec --".to_string());
+        }
+    }
+
+    // No wrapper needed for other environments
+    debug!("No launch wrapper detected, using direct execution");
+    None
 }
 
 /// Detect the best available terminal emulator
@@ -127,6 +158,7 @@ impl Default for Config {
                 show_icons: true,
                 max_results: 10,
                 terminal_command: terminal,
+                launch_wrapper: detect_launch_wrapper(),
             },
             appearance: AppearanceConfig {
                 width: 600,

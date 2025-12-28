@@ -777,7 +777,26 @@ impl MainWindow {
             item.command.clone()
         };
 
-        if let Err(e) = Command::new("sh").arg("-c").arg(&cmd).spawn() {
+        // Use launch wrapper if configured (uwsm, hyprctl, etc.)
+        let result = match &config.general.launch_wrapper {
+            Some(wrapper) if !wrapper.is_empty() => {
+                info!("Using launch wrapper: {}", wrapper);
+                // Split wrapper into command and args (e.g., "uwsm app --" -> ["uwsm", "app", "--"])
+                let mut wrapper_parts: Vec<&str> = wrapper.split_whitespace().collect();
+                if wrapper_parts.is_empty() {
+                    Command::new("sh").arg("-c").arg(&cmd).spawn()
+                } else {
+                    let wrapper_cmd = wrapper_parts.remove(0);
+                    Command::new(wrapper_cmd)
+                        .args(&wrapper_parts)
+                        .arg(&cmd)
+                        .spawn()
+                }
+            }
+            _ => Command::new("sh").arg("-c").arg(&cmd).spawn(),
+        };
+
+        if let Err(e) = result {
             log::error!("Failed to launch '{}': {}", item.name, e);
         }
     }
