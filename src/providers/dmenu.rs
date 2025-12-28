@@ -37,6 +37,7 @@ impl DmenuProvider {
         self.enabled = true;
     }
 
+    #[allow(dead_code)]
     pub fn is_enabled(&self) -> bool {
         self.enabled
     }

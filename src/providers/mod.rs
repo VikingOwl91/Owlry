@@ -14,6 +14,7 @@ use fuzzy_matcher::skim::SkimMatcherV2;
 /// Represents a single searchable/launchable item
 #[derive(Debug, Clone)]
 pub struct LaunchItem {
+    #[allow(dead_code)]
     pub id: String,
     pub name: String,
     pub description: Option<String>,
@@ -58,6 +59,7 @@ impl std::fmt::Display for ProviderType {
 
 /// Trait for all search providers
 pub trait Provider: Send {
+    #[allow(dead_code)]
     fn name(&self) -> &str;
     fn provider_type(&self) -> ProviderType;
     fn refresh(&mut self);
@@ -98,6 +100,7 @@ impl ProviderManager {
         manager
     }
 
+    #[allow(dead_code)]
     pub fn is_dmenu_mode(&self) -> bool {
         self.providers
             .iter()
@@ -110,6 +113,7 @@ impl ProviderManager {
         }
     }
 
+    #[allow(dead_code)]
     pub fn search(&self, query: &str, max_results: usize) -> Vec<(LaunchItem, i64)> {
         if query.is_empty() {
             // Return recent/popular items when query is empty
@@ -197,6 +201,7 @@ impl ProviderManager {
     }
 
     /// Get all available provider types (for UI tabs)
+    #[allow(dead_code)]
     pub fn available_providers(&self) -> Vec<ProviderType> {
         self.providers.iter().map(|p| p.provider_type()).collect()
     }

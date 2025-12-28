@@ -56,6 +56,7 @@ impl ProviderFilter {
     }
 
     /// Default filter: apps only
+    #[allow(dead_code)]
     pub fn apps_only() -> Self {
         Self {
             enabled: HashSet::from([ProviderType::Application]),
@@ -115,6 +116,7 @@ impl ProviderFilter {
     }
 
     /// Get current active prefix if any
+    #[allow(dead_code)]
     pub fn active_prefix(&self) -> Option<ProviderType> {
         self.active_prefix
     }

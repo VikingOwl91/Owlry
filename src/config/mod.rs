@@ -182,6 +182,7 @@ impl Config {
         Ok(config)
     }
 
+    #[allow(dead_code)]
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
         let path = Self::config_path().ok_or("Could not determine config path")?;
 

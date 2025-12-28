@@ -9,6 +9,7 @@ pub struct UuctlProvider {
 }
 
 /// Represents the state of a systemd service
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ServiceState {
     pub unit_name: String,

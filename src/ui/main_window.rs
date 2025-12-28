@@ -505,8 +505,8 @@ impl MainWindow {
         let results_list = self.results_list.clone();
         let scrolled = self.scrolled.clone();
         let search_entry = self.search_entry.clone();
-        let current_results = self.current_results.clone();
-        let config = self.config.clone();
+        let _current_results = self.current_results.clone();
+        let _config = self.config.clone();
         let filter = self.filter.clone();
         let filter_buttons = self.filter_buttons.clone();
         let mode_label = self.mode_label.clone();

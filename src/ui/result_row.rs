@@ -2,6 +2,7 @@ use crate::providers::LaunchItem;
 use gtk4::prelude::*;
 use gtk4::{Box as GtkBox, Image, Label, ListBoxRow, Orientation};
 
+#[allow(dead_code)]
 pub struct ResultRow {
     row: ListBoxRow,
 }
