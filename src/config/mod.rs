@@ -35,6 +35,7 @@ pub struct ThemeColors {
     pub accent_bright: Option<String>,
     // Provider badge colors
     pub badge_app: Option<String>,
+    pub badge_calc: Option<String>,
     pub badge_cmd: Option<String>,
     pub badge_dmenu: Option<String>,
     pub badge_uuctl: Option<String>,
@@ -59,6 +60,23 @@ pub struct ProvidersConfig {
     pub applications: bool,
     pub commands: bool,
     pub uuctl: bool,
+    /// Enable calculator provider (= expression or calc expression)
+    #[serde(default = "default_true")]
+    pub calculator: bool,
+    /// Enable frecency-based result ranking
+    #[serde(default = "default_true")]
+    pub frecency: bool,
+    /// Weight for frecency boost (0.0 = disabled, 1.0 = strong boost)
+    #[serde(default = "default_frecency_weight")]
+    pub frecency_weight: f64,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_frecency_weight() -> f64 {
+    0.3
 }
 
 /// Detect the best launch wrapper for the current session
@@ -172,6 +190,9 @@ impl Default for Config {
                 applications: true,
                 commands: true,
                 uuctl: true,
+                calculator: true,
+                frecency: true,
+                frecency_weight: 0.3,
             },
         }
     }

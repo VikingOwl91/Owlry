@@ -35,6 +35,9 @@ pub fn generate_variables_css(config: &AppearanceConfig) -> String {
     if let Some(ref badge_app) = config.colors.badge_app {
         css.push_str(&format!("    --owlry-badge-app: {};\n", badge_app));
     }
+    if let Some(ref badge_calc) = config.colors.badge_calc {
+        css.push_str(&format!("    --owlry-badge-calc: {};\n", badge_calc));
+    }
     if let Some(ref badge_cmd) = config.colors.badge_cmd {
         css.push_str(&format!("    --owlry-badge-cmd: {};\n", badge_cmd));
     }

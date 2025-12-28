@@ -32,6 +32,7 @@ border_radius = 12
 # accent = "#7aa2f7"
 # accent_bright = "#89b4fa"
 # badge_app = "#9ece6a"
+# badge_calc = "#e0af68"
 # badge_cmd = "#7aa2f7"
 # badge_dmenu = "#bb9af7"
 # badge_uuctl = "#f7768e"
@@ -40,3 +41,10 @@ border_radius = 12
 applications = true
 commands = true
 uuctl = true
+
+# Calculator provider (type "= 5+3" or "calc 5+3")
+calculator = true
+
+# Frecency: boost frequently/recently used items in search results
+frecency = true
+frecency_weight = 0.3  # 0.0 = disabled, 1.0 = strong boost

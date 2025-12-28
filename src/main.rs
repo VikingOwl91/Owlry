@@ -1,6 +1,7 @@
 mod app;
 mod cli;
 mod config;
+mod data;
 mod filter;
 mod providers;
 mod theme;

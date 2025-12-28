@@ -32,6 +32,7 @@ impl ResultRow {
             // Default icon based on provider type
             let default_icon = match item.provider {
                 crate::providers::ProviderType::Application => "application-x-executable",
+                crate::providers::ProviderType::Calculator => "accessories-calculator",
                 crate::providers::ProviderType::Command => "utilities-terminal",
                 crate::providers::ProviderType::Dmenu => "view-list-symbolic",
                 crate::providers::ProviderType::Uuctl => "system-run",

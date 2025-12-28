@@ -1,9 +1,11 @@
 mod application;
+mod calculator;
 mod command;
 mod dmenu;
 mod uuctl;
 
 pub use application::ApplicationProvider;
+pub use calculator::CalculatorProvider;
 pub use command::CommandProvider;
 pub use dmenu::DmenuProvider;
 pub use uuctl::UuctlProvider;
@@ -11,6 +13,8 @@ pub use uuctl::UuctlProvider;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use log::info;
+
+use crate::data::FrecencyStore;
 
 /// Represents a single searchable/launchable item
 #[derive(Debug, Clone)]
@@ -28,6 +32,7 @@ pub struct LaunchItem {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProviderType {
     Application,
+    Calculator,
     Command,
     Dmenu,
     Uuctl,
@@ -39,10 +44,14 @@ impl std::str::FromStr for ProviderType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "app" | "apps" | "application" | "applications" => Ok(ProviderType::Application),
+            "calc" | "calculator" => Ok(ProviderType::Calculator),
             "cmd" | "command" | "commands" => Ok(ProviderType::Command),
             "uuctl" => Ok(ProviderType::Uuctl),
             "dmenu" => Ok(ProviderType::Dmenu),
-            _ => Err(format!("Unknown provider: '{}'. Valid: app, cmd, uuctl", s)),
+            _ => Err(format!(
+                "Unknown provider: '{}'. Valid: app, calc, cmd, uuctl",
+                s
+            )),
         }
     }
 }
@@ -51,6 +60,7 @@ impl std::fmt::Display for ProviderType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ProviderType::Application => write!(f, "app"),
+            ProviderType::Calculator => write!(f, "calc"),
             ProviderType::Command => write!(f, "cmd"),
             ProviderType::Dmenu => write!(f, "dmenu"),
             ProviderType::Uuctl => write!(f, "uuctl"),
@@ -70,6 +80,7 @@ pub trait Provider: Send {
 /// Manages all providers and handles searching
 pub struct ProviderManager {
     providers: Vec<Box<dyn Provider>>,
+    calculator: CalculatorProvider,
     matcher: SkimMatcherV2,
 }
 
@@ -77,6 +88,7 @@ impl ProviderManager {
     pub fn new() -> Self {
         let mut manager = Self {
             providers: Vec::new(),
+            calculator: CalculatorProvider::new(),
             matcher: SkimMatcherV2::default(),
         };
 
@@ -201,6 +213,79 @@ impl ProviderManager {
             })
             .collect();
 
+        results.sort_by(|a, b| b.1.cmp(&a.1));
+        results.truncate(max_results);
+        results
+    }
+
+    /// Search with frecency boosting and calculator support
+    pub fn search_with_frecency(
+        &mut self,
+        query: &str,
+        max_results: usize,
+        filter: &crate::filter::ProviderFilter,
+        frecency: &FrecencyStore,
+        frecency_weight: f64,
+    ) -> Vec<(LaunchItem, i64)> {
+        let mut results: Vec<(LaunchItem, i64)> = Vec::new();
+
+        // Check for calculator query first
+        if CalculatorProvider::is_calculator_query(query) {
+            if let Some(calc_result) = self.calculator.evaluate(query) {
+                // Calculator results get a high score to appear first
+                results.push((calc_result, 10000));
+            }
+        }
+
+        // Empty query (after checking calculator) - return frecency-sorted items
+        if query.is_empty() {
+            let mut items: Vec<(LaunchItem, i64)> = self
+                .providers
+                .iter()
+                .filter(|p| filter.is_active(p.provider_type()))
+                .flat_map(|p| p.items().iter().cloned())
+                .map(|item| {
+                    let frecency_score = frecency.get_score(&item.id);
+                    let boosted = (frecency_score * frecency_weight * 100.0) as i64;
+                    (item, boosted)
+                })
+                .collect();
+
+            items.sort_by(|a, b| b.1.cmp(&a.1));
+            items.truncate(max_results);
+            return items;
+        }
+
+        // Regular search with frecency boost
+        let search_results: Vec<(LaunchItem, i64)> = self
+            .providers
+            .iter()
+            .filter(|provider| filter.is_active(provider.provider_type()))
+            .flat_map(|provider| {
+                provider.items().iter().filter_map(|item| {
+                    let name_score = self.matcher.fuzzy_match(&item.name, query);
+                    let desc_score = item
+                        .description
+                        .as_ref()
+                        .and_then(|d| self.matcher.fuzzy_match(d, query));
+
+                    let base_score = match (name_score, desc_score) {
+                        (Some(n), Some(d)) => Some(n.max(d)),
+                        (Some(n), None) => Some(n),
+                        (None, Some(d)) => Some(d / 2),
+                        (None, None) => None,
+                    };
+
+                    base_score.map(|s| {
+                        let frecency_score = frecency.get_score(&item.id);
+                        let frecency_boost = (frecency_score * frecency_weight * 10.0) as i64;
+                        (item.clone(), s + frecency_boost)
+                    })
+                })
+            })
+            .collect();
+
+        results.extend(search_results);
         results.sort_by(|a, b| b.1.cmp(&a.1));
         results.truncate(max_results);
         results

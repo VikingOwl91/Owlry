@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::data::FrecencyStore;
 use crate::filter::ProviderFilter;
 use crate::providers::{LaunchItem, ProviderManager, ProviderType, UuctlProvider};
 use crate::ui::ResultRow;
@@ -36,6 +37,7 @@ pub struct MainWindow {
     scrolled: ScrolledWindow,
     config: Rc<RefCell<Config>>,
     providers: Rc<RefCell<ProviderManager>>,
+    frecency: Rc<RefCell<FrecencyStore>>,
     current_results: Rc<RefCell<Vec<LaunchItem>>>,
     filter: Rc<RefCell<ProviderFilter>>,
     mode_label: Label,
@@ -49,6 +51,7 @@ impl MainWindow {
         app: &Application,
         config: Rc<RefCell<Config>>,
         providers: Rc<RefCell<ProviderManager>>,
+        frecency: Rc<RefCell<FrecencyStore>>,
         filter: Rc<RefCell<ProviderFilter>>,
     ) -> Self {
         let cfg = config.borrow();
@@ -140,7 +143,7 @@ impl MainWindow {
         hints_box.add_css_class("owlry-hints");
 
         let hints_label = Label::builder()
-            .label("Tab: cycle mode  ↑↓: navigate  Enter: launch  Esc: close  :app :cmd :uuctl")
+            .label("Tab: cycle mode  ↑↓: navigate  Enter: launch  Esc: close  = calc  :app :cmd :uuctl")
             .halign(gtk4::Align::Center)
             .hexpand(true)
             .build();
@@ -163,6 +166,7 @@ impl MainWindow {
             scrolled,
             config,
             providers,
+            frecency,
             current_results: Rc::new(RefCell::new(Vec::new())),
             filter,
             mode_label,
@@ -202,6 +206,7 @@ impl MainWindow {
             button.add_css_class("owlry-filter-button");
             let css_class = match provider_type {
                 ProviderType::Application => "owlry-filter-app",
+                ProviderType::Calculator => "owlry-filter-calc",
                 ProviderType::Command => "owlry-filter-cmd",
                 ProviderType::Uuctl => "owlry-filter-uuctl",
                 ProviderType::Dmenu => "owlry-filter-dmenu",
@@ -221,6 +226,7 @@ impl MainWindow {
             .iter()
             .map(|p| match p {
                 ProviderType::Application => "applications",
+                ProviderType::Calculator => "calculator",
                 ProviderType::Command => "commands",
                 ProviderType::Uuctl => "uuctl units",
                 ProviderType::Dmenu => "options",
@@ -328,7 +334,7 @@ impl MainWindow {
 
         // Restore UI
         mode_label.set_label(filter.borrow().mode_display_name());
-        hints_label.set_label("Tab: cycle mode  ↑↓: navigate  Enter: launch  Esc: close  :app :cmd :uuctl");
+        hints_label.set_label("Tab: cycle mode  ↑↓: navigate  Enter: launch  Esc: close  = calc  :app :cmd :uuctl");
         search_entry.set_placeholder_text(Some(&Self::build_placeholder(&filter.borrow())));
         search_entry.set_text(&saved_search);
 
@@ -341,6 +347,7 @@ impl MainWindow {
         let providers = self.providers.clone();
         let results_list = self.results_list.clone();
         let config = self.config.clone();
+        let frecency = self.frecency.clone();
         let current_results = self.current_results.clone();
         let filter = self.filter.clone();
         let mode_label = self.mode_label.clone();
@@ -401,6 +408,7 @@ impl MainWindow {
             if parsed.prefix.is_some() {
                 let prefix_name = match parsed.prefix.unwrap() {
                     ProviderType::Application => "applications",
+                    ProviderType::Calculator => "calculator",
                     ProviderType::Command => "commands",
                     ProviderType::Uuctl => "uuctl units",
                     ProviderType::Dmenu => "options",
@@ -409,13 +417,27 @@ impl MainWindow {
                     .set_placeholder_text(Some(&format!("Search {}...", prefix_name)));
             }
 
-            let max_results = config.borrow().general.max_results;
-            let results: Vec<LaunchItem> = providers
-                .borrow()
-                .search_filtered(&parsed.query, max_results, &filter.borrow())
-                .into_iter()
-                .map(|(item, _)| item)
-                .collect();
+            let cfg = config.borrow();
+            let max_results = cfg.general.max_results;
+            let frecency_weight = cfg.providers.frecency_weight;
+            let use_frecency = cfg.providers.frecency;
+            drop(cfg);
+
+            let results: Vec<LaunchItem> = if use_frecency {
+                providers
+                    .borrow_mut()
+                    .search_with_frecency(&parsed.query, max_results, &filter.borrow(), &frecency.borrow(), frecency_weight)
+                    .into_iter()
+                    .map(|(item, _)| item)
+                    .collect()
+            } else {
+                providers
+                    .borrow()
+                    .search_filtered(&parsed.query, max_results, &filter.borrow())
+                    .into_iter()
+                    .map(|(item, _)| item)
+                    .collect()
+            };
 
             while let Some(child) = results_list.first_child() {
                 results_list.remove(&child);
@@ -437,6 +459,7 @@ impl MainWindow {
         let results_list_for_activate = self.results_list.clone();
         let current_results_for_activate = self.current_results.clone();
         let config_for_activate = self.config.clone();
+        let frecency_for_activate = self.frecency.clone();
         let window_for_activate = self.window.clone();
         let submenu_state_for_activate = self.submenu_state.clone();
         let mode_label_for_activate = self.mode_label.clone();
@@ -470,7 +493,7 @@ impl MainWindow {
                         );
                     } else {
                         // Execute the command
-                        Self::launch_item(item, &config_for_activate.borrow());
+                        Self::launch_item(item, &config_for_activate.borrow(), &frecency_for_activate);
                         window_for_activate.close();
                     }
                 }
@@ -647,6 +670,7 @@ impl MainWindow {
         // Double-click to launch
         let current_results = self.current_results.clone();
         let config = self.config.clone();
+        let frecency = self.frecency.clone();
         let window = self.window.clone();
         let submenu_state = self.submenu_state.clone();
         let results_list_for_click = self.results_list.clone();
@@ -675,7 +699,7 @@ impl MainWindow {
                         is_active,
                     );
                 } else {
-                    Self::launch_item(item, &config.borrow());
+                    Self::launch_item(item, &config.borrow(), &frecency);
                     window.close();
                 }
             }
@@ -743,14 +767,27 @@ impl MainWindow {
     }
 
     fn update_results(&self, query: &str) {
-        let max_results = self.config.borrow().general.max_results;
-        let results: Vec<LaunchItem> = self
-            .providers
-            .borrow()
-            .search_filtered(query, max_results, &self.filter.borrow())
-            .into_iter()
-            .map(|(item, _)| item)
-            .collect();
+        let cfg = self.config.borrow();
+        let max_results = cfg.general.max_results;
+        let frecency_weight = cfg.providers.frecency_weight;
+        let use_frecency = cfg.providers.frecency;
+        drop(cfg);
+
+        let results: Vec<LaunchItem> = if use_frecency {
+            self.providers
+                .borrow_mut()
+                .search_with_frecency(query, max_results, &self.filter.borrow(), &self.frecency.borrow(), frecency_weight)
+                .into_iter()
+                .map(|(item, _)| item)
+                .collect()
+        } else {
+            self.providers
+                .borrow()
+                .search_filtered(query, max_results, &self.filter.borrow())
+                .into_iter()
+                .map(|(item, _)| item)
+                .collect()
+        };
 
         while let Some(child) = self.results_list.first_child() {
             self.results_list.remove(&child);
@@ -768,7 +805,12 @@ impl MainWindow {
         *self.current_results.borrow_mut() = results;
     }
 
-    fn launch_item(item: &LaunchItem, config: &Config) {
+    fn launch_item(item: &LaunchItem, config: &Config, frecency: &Rc<RefCell<FrecencyStore>>) {
+        // Record this launch for frecency tracking
+        if config.providers.frecency {
+            frecency.borrow_mut().record_launch(&item.id);
+        }
+
         info!("Launching: {} ({})", item.name, item.command);
 
         let cmd = if item.terminal {

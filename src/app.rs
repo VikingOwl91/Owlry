@@ -1,5 +1,6 @@
 use crate::cli::CliArgs;
 use crate::config::Config;
+use crate::data::FrecencyStore;
 use crate::filter::ProviderFilter;
 use crate::providers::ProviderManager;
 use crate::theme;
@@ -40,6 +41,7 @@ impl OwlryApp {
 
         let config = Rc::new(RefCell::new(Config::load_or_default()));
         let providers = Rc::new(RefCell::new(ProviderManager::new()));
+        let frecency = Rc::new(RefCell::new(FrecencyStore::load_or_default()));
 
         // Create filter from CLI args and config
         let filter = ProviderFilter::new(
@@ -49,7 +51,7 @@ impl OwlryApp {
         );
         let filter = Rc::new(RefCell::new(filter));
 
-        let window = MainWindow::new(app, config.clone(), providers.clone(), filter.clone());
+        let window = MainWindow::new(app, config.clone(), providers.clone(), frecency.clone(), filter.clone());
 
         // Set up layer shell for Wayland overlay behavior
         window.init_layer_shell();

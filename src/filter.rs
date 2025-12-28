@@ -129,6 +129,8 @@ impl ProviderFilter {
         let prefixes = [
             (":app ", ProviderType::Application),
             (":apps ", ProviderType::Application),
+            (":calc ", ProviderType::Calculator),
+            (":calculator ", ProviderType::Calculator),
             (":cmd ", ProviderType::Command),
             (":command ", ProviderType::Command),
             (":uuctl ", ProviderType::Uuctl),
@@ -147,6 +149,8 @@ impl ProviderFilter {
         let partial_prefixes = [
             (":app", ProviderType::Application),
             (":apps", ProviderType::Application),
+            (":calc", ProviderType::Calculator),
+            (":calculator", ProviderType::Calculator),
             (":cmd", ProviderType::Command),
             (":command", ProviderType::Command),
             (":uuctl", ProviderType::Uuctl),
@@ -172,9 +176,10 @@ impl ProviderFilter {
         let mut providers: Vec<_> = self.enabled.iter().copied().collect();
         providers.sort_by_key(|p| match p {
             ProviderType::Application => 0,
-            ProviderType::Command => 1,
-            ProviderType::Uuctl => 2,
-            ProviderType::Dmenu => 3,
+            ProviderType::Calculator => 1,
+            ProviderType::Command => 2,
+            ProviderType::Uuctl => 3,
+            ProviderType::Dmenu => 4,
         });
         providers
     }
@@ -184,6 +189,7 @@ impl ProviderFilter {
         if let Some(prefix) = self.active_prefix {
             return match prefix {
                 ProviderType::Application => "Apps",
+                ProviderType::Calculator => "Calc",
                 ProviderType::Command => "Commands",
                 ProviderType::Uuctl => "uuctl",
                 ProviderType::Dmenu => "dmenu",
@@ -194,6 +200,7 @@ impl ProviderFilter {
         if enabled.len() == 1 {
             match enabled[0] {
                 ProviderType::Application => "Apps",
+                ProviderType::Calculator => "Calc",
                 ProviderType::Command => "Commands",
                 ProviderType::Uuctl => "uuctl",
                 ProviderType::Dmenu => "dmenu",
