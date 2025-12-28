@@ -441,6 +441,10 @@ mod tests {
         let mut provider = EmojiProvider::new();
         provider.refresh();
         assert!(provider.items().len() > 100);
-        assert!(provider.items().iter().any(|i| i.name.contains("😀")));
+        // Emoji character is in description, name is the human-readable name
+        assert!(provider
+            .items()
+            .iter()
+            .any(|i| i.description.as_ref().is_some_and(|d| d.contains("😀"))));
     }
 }
