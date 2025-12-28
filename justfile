@@ -64,6 +64,10 @@ bump new_version:
 tag:
     #!/usr/bin/env bash
     set -euo pipefail
+    if git rev-parse "v{{version}}" >/dev/null 2>&1; then
+        echo "Tag v{{version}} already exists, skipping"
+        exit 0
+    fi
     echo "Creating tag v{{version}}"
     git tag -a "v{{version}}" -m "Release v{{version}}"
     git push origin "v{{version}}"
