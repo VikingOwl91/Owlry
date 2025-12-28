@@ -1,0 +1,114 @@
+/*
+ * Owlry - Tokyo Night Theme
+ * A clean, dark theme that celebrates the lights of Tokyo at night
+ * https://github.com/enkia/tokyo-night-vscode-theme
+ *
+ * Usage: Copy to ~/.config/owlry/themes/tokyo-night.css
+ *        Set theme = "tokyo-night" in config.toml
+ */
+
+:root {
+    --owlry-bg: #1a1b26;
+    --owlry-bg-secondary: #24283b;
+    --owlry-border: #414868;
+    --owlry-text: #c0caf5;
+    --owlry-text-secondary: #565f89;
+    --owlry-accent: #7aa2f7;
+    --owlry-accent-bright: #bb9af7;
+    --owlry-badge-app: #9ece6a;
+    --owlry-badge-cmd: #7dcfff;
+    --owlry-badge-dmenu: #e0af68;
+    --owlry-badge-uuctl: #f7768e;
+}
+
+.owlry-main {
+    background-color: rgba(26, 27, 38, 0.95);
+    border: 1px solid rgba(65, 72, 104, 0.6);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5),
+                0 0 0 1px rgba(122, 162, 247, 0.1);
+}
+
+.owlry-search {
+    background-color: rgba(36, 40, 59, 0.8);
+    border: 2px solid rgba(65, 72, 104, 0.5);
+    color: var(--owlry-text);
+    caret-color: var(--owlry-accent);
+}
+
+.owlry-search:focus {
+    border-color: var(--owlry-accent);
+    box-shadow: 0 0 0 2px rgba(122, 162, 247, 0.2);
+}
+
+.owlry-result-row:hover {
+    background-color: rgba(36, 40, 59, 0.6);
+}
+
+.owlry-result-row:selected {
+    background-color: rgba(122, 162, 247, 0.15);
+    border-left: 3px solid var(--owlry-accent);
+}
+
+.owlry-result-row:selected .owlry-result-name {
+    color: var(--owlry-accent-bright);
+}
+
+.owlry-result-row:selected .owlry-result-icon {
+    color: var(--owlry-accent);
+}
+
+.owlry-badge-app {
+    background-color: rgba(158, 206, 106, 0.2);
+    color: var(--owlry-badge-app);
+}
+
+.owlry-badge-cmd {
+    background-color: rgba(125, 207, 255, 0.2);
+    color: var(--owlry-badge-cmd);
+}
+
+.owlry-badge-dmenu {
+    background-color: rgba(224, 175, 104, 0.2);
+    color: var(--owlry-badge-dmenu);
+}
+
+.owlry-badge-uuctl {
+    background-color: rgba(247, 118, 142, 0.2);
+    color: var(--owlry-badge-uuctl);
+}
+
+.owlry-filter-button:checked {
+    background-color: rgba(122, 162, 247, 0.2);
+    color: var(--owlry-accent);
+    border-color: rgba(122, 162, 247, 0.4);
+}
+
+.owlry-filter-app:checked {
+    background-color: rgba(158, 206, 106, 0.2);
+    color: var(--owlry-badge-app);
+    border-color: rgba(158, 206, 106, 0.4);
+}
+
+.owlry-filter-cmd:checked {
+    background-color: rgba(125, 207, 255, 0.2);
+    color: var(--owlry-badge-cmd);
+    border-color: rgba(125, 207, 255, 0.4);
+}
+
+.owlry-filter-uuctl:checked {
+    background-color: rgba(247, 118, 142, 0.2);
+    color: var(--owlry-badge-uuctl);
+    border-color: rgba(247, 118, 142, 0.4);
+}
+
+scrollbar slider {
+    background-color: rgba(65, 72, 104, 0.5);
+}
+
+scrollbar slider:hover {
+    background-color: rgba(86, 95, 137, 0.7);
+}
+
+scrollbar slider:active {
+    background-color: var(--owlry-accent);
+}

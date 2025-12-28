@@ -1,0 +1,114 @@
+/*
+ * Owlry - Rosé Pine Theme
+ * All natural pine, faux fur and a bit of soho vibes
+ * https://rosepinetheme.com/
+ *
+ * Usage: Copy to ~/.config/owlry/themes/rose-pine.css
+ *        Set theme = "rose-pine" in config.toml
+ */
+
+:root {
+    --owlry-bg: #191724;
+    --owlry-bg-secondary: #1f1d2e;
+    --owlry-border: #26233a;
+    --owlry-text: #e0def4;
+    --owlry-text-secondary: #908caa;
+    --owlry-accent: #c4a7e7;
+    --owlry-accent-bright: #ebbcba;
+    --owlry-badge-app: #9ccfd8;
+    --owlry-badge-cmd: #c4a7e7;
+    --owlry-badge-dmenu: #f6c177;
+    --owlry-badge-uuctl: #eb6f92;
+}
+
+.owlry-main {
+    background-color: rgba(25, 23, 36, 0.95);
+    border: 1px solid rgba(38, 35, 58, 0.6);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5),
+                0 0 0 1px rgba(196, 167, 231, 0.1);
+}
+
+.owlry-search {
+    background-color: rgba(31, 29, 46, 0.8);
+    border: 2px solid rgba(38, 35, 58, 0.5);
+    color: var(--owlry-text);
+    caret-color: var(--owlry-accent);
+}
+
+.owlry-search:focus {
+    border-color: var(--owlry-accent);
+    box-shadow: 0 0 0 2px rgba(196, 167, 231, 0.2);
+}
+
+.owlry-result-row:hover {
+    background-color: rgba(31, 29, 46, 0.6);
+}
+
+.owlry-result-row:selected {
+    background-color: rgba(196, 167, 231, 0.15);
+    border-left: 3px solid var(--owlry-accent);
+}
+
+.owlry-result-row:selected .owlry-result-name {
+    color: var(--owlry-accent-bright);
+}
+
+.owlry-result-row:selected .owlry-result-icon {
+    color: var(--owlry-accent);
+}
+
+.owlry-badge-app {
+    background-color: rgba(156, 207, 216, 0.2);
+    color: var(--owlry-badge-app);
+}
+
+.owlry-badge-cmd {
+    background-color: rgba(196, 167, 231, 0.2);
+    color: var(--owlry-badge-cmd);
+}
+
+.owlry-badge-dmenu {
+    background-color: rgba(246, 193, 119, 0.2);
+    color: var(--owlry-badge-dmenu);
+}
+
+.owlry-badge-uuctl {
+    background-color: rgba(235, 111, 146, 0.2);
+    color: var(--owlry-badge-uuctl);
+}
+
+.owlry-filter-button:checked {
+    background-color: rgba(196, 167, 231, 0.2);
+    color: var(--owlry-accent);
+    border-color: rgba(196, 167, 231, 0.4);
+}
+
+.owlry-filter-app:checked {
+    background-color: rgba(156, 207, 216, 0.2);
+    color: var(--owlry-badge-app);
+    border-color: rgba(156, 207, 216, 0.4);
+}
+
+.owlry-filter-cmd:checked {
+    background-color: rgba(196, 167, 231, 0.2);
+    color: var(--owlry-badge-cmd);
+    border-color: rgba(196, 167, 231, 0.4);
+}
+
+.owlry-filter-uuctl:checked {
+    background-color: rgba(235, 111, 146, 0.2);
+    color: var(--owlry-badge-uuctl);
+    border-color: rgba(235, 111, 146, 0.4);
+}
+
+scrollbar slider {
+    background-color: rgba(38, 35, 58, 0.5);
+}
+
+scrollbar slider:hover {
+    background-color: rgba(144, 140, 170, 0.5);
+}
+
+scrollbar slider:active {
+    background-color: var(--owlry-accent);
+}

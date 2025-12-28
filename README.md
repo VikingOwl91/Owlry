@@ -177,9 +177,17 @@ theme = "owl"
 
 Example themes are installed to `/usr/share/owlry/themes/`:
 
-- `owl.css` - Owl-inspired dark theme with amber accents
-- `catppuccin-mocha.css` - Soothing pastel theme
-- `nord.css` - Arctic, north-bluish palette
+| Theme | Description |
+|-------|-------------|
+| `owl` | Owl-inspired dark theme with amber accents |
+| `catppuccin-mocha` | Soothing pastel theme |
+| `nord` | Arctic, north-bluish palette |
+| `rose-pine` | All natural pine, faux fur and soho vibes |
+| `dracula` | Dark theme for vampires |
+| `gruvbox-dark` | Retro groove color scheme |
+| `tokyo-night` | Lights of Tokyo at night |
+| `solarized-dark` | Precision colors for machines and people |
+| `one-dark` | Atom's iconic One Dark theme |
 
 To use an example theme:
 
