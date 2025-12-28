@@ -1,0 +1,58 @@
+[package]
+name = "owlry"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+description = "A lightweight, owl-themed application launcher for Wayland"
+authors = ["Your Name <you@example.com>"]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/yourusername/owlry"
+keywords = ["launcher", "wayland", "gtk4", "linux"]
+categories = ["gui"]
+
+[dependencies]
+# GTK4 for the UI
+gtk4 = { version = "0.9", features = ["v4_12"] }
+
+# Layer shell support for Wayland overlay behavior
+gtk4-layer-shell = "0.4"
+
+# Async runtime for non-blocking operations
+tokio = { version = "1", features = ["rt", "sync", "process", "fs"] }
+
+# Fuzzy matching for search
+fuzzy-matcher = "0.3"
+
+# XDG desktop entry parsing
+freedesktop-desktop-entry = "0.7"
+
+# Directory utilities
+dirs = "5"
+
+# Low-level syscalls for stdin detection
+libc = "0.2"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Error handling
+thiserror = "2"
+
+# Configuration
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+# CLI argument parsing
+clap = { version = "4", features = ["derive"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+opt-level = "z"  # Optimize for size
+
+[profile.dev]
+opt-level = 0
+debug = true

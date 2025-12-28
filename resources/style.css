@@ -1,0 +1,246 @@
+/*
+ * Owlry - Owl-themed Application Launcher
+ *
+ * Color Palette (Owl-inspired):
+ * - Deep night sky: #1a1b26 (background)
+ * - Twilight: #24283b (secondary bg)
+ * - Owl feathers: #414868 (borders/muted)
+ * - Moon glow: #c0caf5 (primary text)
+ * - Owl eyes (amber): #e0af68 (accent/highlight)
+ * - Forest shadows: #565f89 (secondary text)
+ * - Barn owl cream: #f5e0dc (bright accent)
+ */
+
+/* Main window */
+.owlry-window {
+    background-color: transparent;
+}
+
+.owlry-main {
+    background-color: rgba(26, 27, 38, 0.95);
+    border-radius: 16px;
+    border: 1px solid rgba(65, 72, 104, 0.6);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5),
+                0 0 0 1px rgba(224, 175, 104, 0.1);
+}
+
+/* Search entry */
+.owlry-search {
+    background-color: rgba(36, 40, 59, 0.8);
+    border: 2px solid rgba(65, 72, 104, 0.5);
+    border-radius: 12px;
+    padding: 12px 16px;
+    font-size: 16px;
+    color: #c0caf5;
+    caret-color: #e0af68;
+    min-height: 24px;
+}
+
+.owlry-search:focus {
+    border-color: #e0af68;
+    box-shadow: 0 0 0 2px rgba(224, 175, 104, 0.2);
+    outline: none;
+}
+
+.owlry-search placeholder {
+    color: #565f89;
+}
+
+/* Results list */
+.owlry-results {
+    background-color: transparent;
+    border-radius: 8px;
+}
+
+/* Individual result row */
+.owlry-result-row {
+    background-color: transparent;
+    border-radius: 8px;
+    margin: 2px 0;
+    transition: background-color 150ms ease;
+}
+
+.owlry-result-row:hover {
+    background-color: rgba(36, 40, 59, 0.6);
+}
+
+.owlry-result-row:selected {
+    background-color: rgba(224, 175, 104, 0.15);
+    border-left: 3px solid #e0af68;
+}
+
+.owlry-result-row:selected:hover {
+    background-color: rgba(224, 175, 104, 0.2);
+}
+
+/* Result icon */
+.owlry-result-icon {
+    color: #c0caf5;
+    opacity: 0.9;
+}
+
+.owlry-result-row:selected .owlry-result-icon {
+    color: #e0af68;
+    opacity: 1;
+}
+
+/* Result name */
+.owlry-result-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: #c0caf5;
+}
+
+.owlry-result-row:selected .owlry-result-name {
+    color: #f5e0dc;
+}
+
+/* Result description */
+.owlry-result-description {
+    font-size: 12px;
+    color: #565f89;
+    margin-top: 2px;
+}
+
+.owlry-result-row:selected .owlry-result-description {
+    color: #7aa2f7;
+}
+
+/* Provider badges */
+.owlry-result-badge {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background-color: rgba(65, 72, 104, 0.4);
+    color: #565f89;
+}
+
+.owlry-badge-app {
+    background-color: rgba(122, 162, 247, 0.2);
+    color: #7aa2f7;
+}
+
+.owlry-badge-cmd {
+    background-color: rgba(187, 154, 247, 0.2);
+    color: #bb9af7;
+}
+
+.owlry-badge-dmenu {
+    background-color: rgba(158, 206, 106, 0.2);
+    color: #9ece6a;
+}
+
+.owlry-badge-uuctl {
+    background-color: rgba(224, 175, 104, 0.2);
+    color: #e0af68;
+}
+
+/* Scrollbar styling */
+scrollbar {
+    background-color: transparent;
+}
+
+scrollbar slider {
+    background-color: rgba(65, 72, 104, 0.5);
+    border-radius: 4px;
+    min-width: 6px;
+    min-height: 40px;
+}
+
+scrollbar slider:hover {
+    background-color: rgba(86, 95, 137, 0.7);
+}
+
+scrollbar slider:active {
+    background-color: #e0af68;
+}
+
+/* Selection highlighting */
+selection {
+    background-color: rgba(224, 175, 104, 0.3);
+    color: #f5e0dc;
+}
+
+/* Header bar with mode indicator and filter tabs */
+.owlry-header {
+    margin-bottom: 4px;
+}
+
+/* Mode indicator */
+.owlry-mode-indicator {
+    font-size: 12px;
+    font-weight: 600;
+    color: #e0af68;
+    padding: 4px 12px;
+    background-color: rgba(224, 175, 104, 0.15);
+    border-radius: 6px;
+}
+
+/* Filter tabs container */
+.owlry-filter-tabs {
+    /* Container spacing handled by GtkBox */
+}
+
+/* Filter toggle buttons */
+.owlry-filter-button {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background-color: rgba(65, 72, 104, 0.3);
+    color: #565f89;
+    border: 1px solid transparent;
+    min-height: 20px;
+    transition: all 150ms ease;
+}
+
+.owlry-filter-button:hover {
+    background-color: rgba(65, 72, 104, 0.5);
+    color: #c0caf5;
+}
+
+.owlry-filter-button:checked {
+    background-color: rgba(224, 175, 104, 0.2);
+    color: #e0af68;
+    border-color: rgba(224, 175, 104, 0.4);
+}
+
+/* Provider-specific filter button colors when active */
+.owlry-filter-app:checked {
+    background-color: rgba(122, 162, 247, 0.2);
+    color: #7aa2f7;
+    border-color: rgba(122, 162, 247, 0.4);
+}
+
+.owlry-filter-cmd:checked {
+    background-color: rgba(187, 154, 247, 0.2);
+    color: #bb9af7;
+    border-color: rgba(187, 154, 247, 0.4);
+}
+
+.owlry-filter-uuctl:checked {
+    background-color: rgba(224, 175, 104, 0.2);
+    color: #e0af68;
+    border-color: rgba(224, 175, 104, 0.4);
+}
+
+.owlry-filter-dmenu:checked {
+    background-color: rgba(158, 206, 106, 0.2);
+    color: #9ece6a;
+    border-color: rgba(158, 206, 106, 0.4);
+}
+
+/* Hints bar at bottom */
+.owlry-hints {
+    padding-top: 8px;
+    border-top: 1px solid rgba(65, 72, 104, 0.3);
+}
+
+.owlry-hints-label {
+    font-size: 10px;
+    color: #565f89;
+    letter-spacing: 0.5px;
+}
