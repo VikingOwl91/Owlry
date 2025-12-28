@@ -42,6 +42,26 @@ impl ProviderFilter {
             if config_providers.uuctl {
                 set.insert(ProviderType::Uuctl);
             }
+            if config_providers.system {
+                set.insert(ProviderType::System);
+            }
+            if config_providers.ssh {
+                set.insert(ProviderType::Ssh);
+            }
+            if config_providers.clipboard {
+                set.insert(ProviderType::Clipboard);
+            }
+            if config_providers.bookmarks {
+                set.insert(ProviderType::Bookmarks);
+            }
+            if config_providers.emoji {
+                set.insert(ProviderType::Emoji);
+            }
+            if config_providers.scripts {
+                set.insert(ProviderType::Scripts);
+            }
+            // Note: Files, Calculator, WebSearch are dynamic providers
+            // that don't need to be in the filter set - they're triggered by prefix
             // Default to apps if nothing enabled
             if set.is_empty() {
                 set.insert(ProviderType::Application);

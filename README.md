@@ -10,12 +10,14 @@ A lightweight, owl-themed application launcher for Wayland, built with GTK4 and 
 
 ## Features
 
-- **Provider-based architecture** - Search applications, PATH commands, and systemd user services
+- **Provider-based architecture** - Search applications, commands, system actions, SSH hosts, clipboard history, bookmarks, emoji, and more
 - **Fuzzy search** - Fast, typo-tolerant matching across all providers
-- **Filter tabs & prefixes** - Scope searches with UI tabs or `:app`, `:cmd`, `:uuctl` prefixes
-- **Systemd integration** - Manage user services with submenu actions (start/stop/restart/status/journal)
+- **Filter tabs & prefixes** - Scope searches with UI tabs or `:app`, `:cmd`, `:sys` prefixes
+- **Calculator** - Quick math with `= 5+3` or `calc sin(pi/2)`
+- **Web search** - Search the web with `? query` or `web query`
+- **File search** - Find files with `/ filename` or `find config` (requires `fd` or `locate`)
+- **Frecency ranking** - Frequently/recently used items rank higher
 - **GTK4 theming** - Respects system theme by default, with optional custom themes
-- **CSS variables** - Full customization via config or custom stylesheets
 - **Wayland native** - Uses Layer Shell for proper overlay behavior
 
 ## Installation
@@ -43,6 +45,16 @@ sudo apt install libgtk-4-dev libgtk4-layer-shell-dev
 
 # Fedora
 sudo dnf install gtk4-devel gtk4-layer-shell-devel
+```
+
+#### Optional dependencies
+
+```bash
+# For clipboard history
+sudo pacman -S cliphist wl-clipboard
+
+# For file search
+sudo pacman -S fd  # or: mlocate
 ```
 
 #### Build
@@ -79,7 +91,7 @@ owlry --help
 |-----|--------|
 | `Enter` | Launch selected item |
 | `Escape` | Close launcher / exit submenu |
-| `↑` / `↓` | Navigate results |
+| `Up` / `Down` | Navigate results |
 | `Tab` | Cycle filter modes |
 | `Shift+Tab` | Cycle filter modes (reverse) |
 | `Ctrl+1` | Toggle Applications filter |
@@ -88,19 +100,107 @@ owlry --help
 
 ### Search Prefixes
 
-| Prefix | Scope |
-|--------|-------|
-| `:app ` | Applications only |
-| `:cmd ` | PATH commands only |
-| `:uuctl ` | systemd user services only |
+Filter results by provider using prefixes:
 
-Example: `:cmd git` searches only PATH commands for "git"
+| Prefix | Provider | Example |
+|--------|----------|---------|
+| `:app` | Applications | `:app firefox` |
+| `:cmd` | PATH commands | `:cmd git` |
+| `:sys` | System actions | `:sys shutdown` |
+| `:ssh` | SSH hosts | `:ssh server` |
+| `:clip` | Clipboard history | `:clip password` |
+| `:bm` | Browser bookmarks | `:bm github` |
+| `:emoji` | Emoji picker | `:emoji heart` |
+| `:script` | Custom scripts | `:script backup` |
+| `:file` | File search | `:file config.toml` |
+| `:calc` | Calculator | `:calc 5+3` |
+| `:web` | Web search | `:web rust docs` |
+| `:uuctl` | systemd services | `:uuctl docker` |
+
+### Trigger Prefixes
+
+Some providers can be triggered directly without filter mode:
+
+| Trigger | Provider | Example |
+|---------|----------|---------|
+| `=` | Calculator | `= 5+3` or `=5*2` |
+| `calc ` | Calculator | `calc sqrt(16)` |
+| `?` | Web search | `? rust programming` |
+| `web ` | Web search | `web linux tips` |
+| `search ` | Web search | `search owlry` |
+| `/` | File search | `/ .bashrc` |
+| `find ` | File search | `find config` |
+
+## Providers
+
+### Applications
+Searches `.desktop` files from standard XDG directories.
+
+### Commands
+Searches executable files in `$PATH`.
+
+### System
+Quick access to system actions:
+- Shutdown, Reboot, Suspend, Hibernate
+- Lock Screen, Log Out
+- **Reboot into BIOS** - Restart directly into UEFI/BIOS setup
+
+### SSH
+Parses `~/.ssh/config` and offers quick connections to configured hosts. Opens in your configured terminal.
+
+### Clipboard (requires cliphist)
+Search and paste from clipboard history. Requires `cliphist` and `wl-clipboard`:
+```bash
+sudo pacman -S cliphist wl-clipboard
+```
+
+### Bookmarks
+Reads bookmarks from Chromium-based browsers:
+- Chrome, Chromium, Brave, Edge, Vivaldi
+
+### Emoji
+Search 300+ emojis by name or keywords. Selected emoji is copied to clipboard via `wl-copy`.
+
+### Scripts
+Runs executable scripts from `~/.config/owlry/scripts/`. Create the directory and add your scripts:
+```bash
+mkdir -p ~/.config/owlry/scripts
+echo '#!/bin/bash
+# My backup script
+rsync -av ~/Documents /backup/' > ~/.config/owlry/scripts/backup
+chmod +x ~/.config/owlry/scripts/backup
+```
+
+### Calculator
+Evaluate math expressions with `= expr` or `calc expr`:
+- Basic: `= 5+3`, `= 10/3`
+- Functions: `= sqrt(16)`, `= sin(pi/2)`
+- Constants: `= pi`, `= e`
+
+### Web Search
+Search the web with `? query` or `web query`. Configurable search engine:
+- Google, DuckDuckGo, Bing, Brave, Ecosia, Startpage, SearXNG
+- Or custom URL with `{query}` placeholder
+
+### File Search (requires fd or locate)
+Search files with `/ pattern` or `find pattern`:
+```bash
+sudo pacman -S fd  # recommended, faster
+# or
+sudo pacman -S mlocate && sudo updatedb
+```
+
+### systemd User Services
+Lists and controls user-level systemd services. Select a service to access actions:
+- Start / Stop / Restart / Reload
+- Kill (force stop)
+- Status (opens in terminal)
+- Journal (live logs in terminal)
+- Enable / Disable (autostart)
 
 ## Configuration
 
 Configuration file: `~/.config/owlry/config.toml`
-
-An example config is installed at `/usr/share/doc/owlry/config.example.toml`:
 
 ```bash
 mkdir -p ~/.config/owlry
@@ -112,7 +212,7 @@ cp /usr/share/doc/owlry/config.example.toml ~/.config/owlry/config.toml
 show_icons = true
 max_results = 10
 # terminal_command = "kitty"  # Auto-detected if not set
-# launch_wrapper = "uwsm app --"  # Auto-detected for uwsm/hyprland sessions
+# launch_wrapper = "uwsm app --"  # Auto-detected for uwsm/hyprland
 
 [appearance]
 width = 600
@@ -121,15 +221,22 @@ font_size = 14
 border_radius = 12
 # theme = "owl"  # Optional: "owl" or custom theme name
 
-# [appearance.colors]
-# Override individual colors (optional)
-# accent = "#e0af68"
-# background = "#1a1b26"
-
 [providers]
 applications = true
 commands = true
 uuctl = true
+calculator = true
+websearch = true
+search_engine = "duckduckgo"  # google, bing, brave, ecosia, startpage, searxng
+system = true
+ssh = true
+clipboard = true
+bookmarks = true
+emoji = true
+scripts = true
+files = true
+frecency = true
+frecency_weight = 0.3  # 0.0 = disabled, 1.0 = strong boost
 ```
 
 ### Default Values
@@ -138,8 +245,8 @@ uuctl = true
 |---------|---------|
 | `show_icons` | `true` |
 | `max_results` | `10` |
-| `terminal_command` | Auto-detected ($TERMINAL → xdg-terminal-exec → kitty/alacritty/etc) |
-| `launch_wrapper` | Auto-detected (uwsm → hyprctl → none) |
+| `terminal_command` | Auto-detected ($TERMINAL -> xdg-terminal-exec -> kitty/alacritty/etc) |
+| `launch_wrapper` | Auto-detected (uwsm -> hyprctl -> none) |
 | `width` | `600` |
 | `height` | `400` |
 | `font_size` | `14` |
@@ -148,15 +255,13 @@ uuctl = true
 
 ### Launch Wrapper
 
-When running in uwsm-managed or Hyprland sessions, owlry auto-detects and uses the appropriate launch wrapper for proper session integration:
+When running in uwsm-managed or Hyprland sessions, owlry auto-detects and uses the appropriate launch wrapper:
 
 | Session | Wrapper | Purpose |
 |---------|---------|---------|
 | uwsm | `uwsm app --` | Proper systemd scope and session management |
 | Hyprland | `hyprctl dispatch exec --` | Native Hyprland window management |
 | Other | None (direct `sh -c`) | Standard shell execution |
-
-You can override this with `launch_wrapper` in config, or set to empty string `""` to disable.
 
 ## Theming
 
@@ -219,13 +324,6 @@ Create a custom theme file at `~/.config/owlry/themes/mytheme.css`:
 }
 ```
 
-Then reference it in config:
-
-```toml
-[appearance]
-theme = "mytheme"
-```
-
 ### CSS Variables Reference
 
 | Variable | Description |
@@ -239,34 +337,11 @@ theme = "mytheme"
 | `--owlry-accent-bright` | Bright accent |
 | `--owlry-font-size` | Base font size |
 | `--owlry-border-radius` | Border radius |
-| `--owlry-badge-app` | Application badge color |
-| `--owlry-badge-cmd` | Command badge color |
-| `--owlry-badge-dmenu` | Dmenu badge color |
-| `--owlry-badge-uuctl` | systemd badge color |
+| `--owlry-badge-*` | Provider badge colors (app, cmd, sys, ssh, clip, emoji, etc.) |
 
 ### Custom Stylesheet
 
 For full control, create `~/.config/owlry/style.css` with any GTK4 CSS.
-
-## Providers
-
-### Applications
-
-Searches `.desktop` files from standard XDG directories.
-
-### Commands
-
-Searches executable files in `$PATH`.
-
-### systemd User Services
-
-Lists and controls user-level systemd services. Select a service to access actions:
-
-- Start / Stop / Restart / Reload
-- Kill (force stop)
-- Status (opens in terminal)
-- Journal (live logs in terminal)
-- Enable / Disable (autostart)
 
 ## License
 

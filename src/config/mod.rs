@@ -85,6 +85,27 @@ pub struct ProvidersConfig {
     /// Or custom URL with {query} placeholder
     #[serde(default = "default_search_engine")]
     pub search_engine: String,
+    /// Enable system commands (shutdown, reboot, etc.)
+    #[serde(default = "default_true")]
+    pub system: bool,
+    /// Enable SSH connections from ~/.ssh/config
+    #[serde(default = "default_true")]
+    pub ssh: bool,
+    /// Enable clipboard history (requires cliphist)
+    #[serde(default = "default_true")]
+    pub clipboard: bool,
+    /// Enable browser bookmarks
+    #[serde(default = "default_true")]
+    pub bookmarks: bool,
+    /// Enable emoji picker
+    #[serde(default = "default_true")]
+    pub emoji: bool,
+    /// Enable custom scripts from ~/.config/owlry/scripts/
+    #[serde(default = "default_true")]
+    pub scripts: bool,
+    /// Enable file search (requires fd or locate)
+    #[serde(default = "default_true")]
+    pub files: bool,
 }
 
 fn default_search_engine() -> String {
@@ -215,6 +236,13 @@ impl Default for Config {
                 frecency_weight: 0.3,
                 websearch: true,
                 search_engine: "duckduckgo".to_string(),
+                system: true,
+                ssh: true,
+                clipboard: true,
+                bookmarks: true,
+                emoji: true,
+                scripts: true,
+                files: true,
             },
         }
     }

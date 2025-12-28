@@ -54,3 +54,24 @@ websearch = true
 # Options: google, duckduckgo, bing, startpage, searxng, brave, ecosia
 # Or custom URL with {query} placeholder, e.g. "https://search.example.com/?q={query}"
 search_engine = "duckduckgo"
+
+# System commands (shutdown, reboot, lock, suspend, hibernate, logout, BIOS)
+system = true
+
+# SSH connections from ~/.ssh/config
+ssh = true
+
+# Clipboard history (requires cliphist)
+clipboard = true
+
+# Browser bookmarks (Chrome, Chromium, Brave, Edge, Vivaldi)
+bookmarks = true
+
+# Emoji picker (copies to clipboard)
+emoji = true
+
+# Custom scripts from ~/.config/owlry/scripts/
+scripts = true
+
+# File search (requires fd or locate, trigger with "/ pattern" or "find pattern")
+files = true
