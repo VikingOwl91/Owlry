@@ -79,13 +79,16 @@ aur-update:
     set -euo pipefail
     cd "{{aur_dir}}"
 
+    url="https://somegit.dev/Owlibou/owlry"
+
     echo "Updating PKGBUILD to version {{version}}"
     sed -i 's/^pkgver=.*/pkgver={{version}}/' PKGBUILD
     sed -i 's/^pkgrel=.*/pkgrel=1/' PKGBUILD
 
-    # Update checksums
+    # Update checksums (b2sums)
     echo "Updating checksums..."
-    updpkgsums
+    b2sum=$(curl -sL "$url/archive/v{{version}}.tar.gz" | b2sum | cut -d' ' -f1)
+    sed -i "s/^b2sums=.*/b2sums=('$b2sum')/" PKGBUILD
 
     # Generate .SRCINFO
     echo "Generating .SRCINFO..."
