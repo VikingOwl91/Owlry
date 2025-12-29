@@ -43,8 +43,8 @@
 .owlry-result-row {
     background-color: transparent;
     border-radius: calc(var(--owlry-border-radius, 12px) - 4px);
-    margin: 2px 0;
-    padding: 8px 12px;
+    margin: 1px 0;
+    padding: 6px 12px;
 }
 
 .owlry-result-row:hover {
@@ -323,7 +323,7 @@ scrollbar slider:active {
     border-radius: 4px;
     background-color: alpha(var(--owlry-border, @borders), 0.3);
     color: var(--owlry-text-secondary, alpha(@theme_fg_color, 0.6));
-    margin-top: 4px;
+    margin-top: 2px;
 }
 
 .owlry-result-row:selected .owlry-tag-badge {
