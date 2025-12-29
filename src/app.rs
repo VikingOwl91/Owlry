@@ -82,7 +82,7 @@ impl OwlryApp {
 
         // 1. Load base structural CSS (always applied)
         let base_provider = CssProvider::new();
-        base_provider.load_from_string(include_str!("../resources/base.css"));
+        base_provider.load_from_string(include_str!("resources/base.css"));
         gtk4::style_context_add_provider_for_display(
             &display,
             &base_provider,
@@ -95,7 +95,7 @@ impl OwlryApp {
             let theme_provider = CssProvider::new();
             match theme_name.as_str() {
                 "owl" => {
-                    theme_provider.load_from_string(include_str!("../resources/owl-theme.css"));
+                    theme_provider.load_from_string(include_str!("resources/owl-theme.css"));
                     debug!("Loaded built-in owl theme");
                 }
                 _ => {
