@@ -1,7 +1,9 @@
+use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Command;
-use log::{info, warn, debug};
+
+use crate::paths;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -250,7 +252,7 @@ impl Default for Config {
 
 impl Config {
     pub fn config_path() -> Option<PathBuf> {
-        dirs::config_dir().map(|p| p.join("owlry").join("config.toml"))
+        paths::config_file()
     }
 
     pub fn load_or_default() -> Self {
@@ -289,9 +291,7 @@ impl Config {
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
         let path = Self::config_path().ok_or("Could not determine config path")?;
 
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        paths::ensure_parent_dir(&path)?;
 
         let content = toml::to_string_pretty(self)?;
         std::fs::write(&path, content)?;

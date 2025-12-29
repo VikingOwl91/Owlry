@@ -1,7 +1,7 @@
 use super::{LaunchItem, Provider, ProviderType};
+use crate::paths;
 use freedesktop_desktop_entry::{DesktopEntry, Iter};
 use log::{debug, warn};
-use std::path::PathBuf;
 
 /// Clean desktop file field codes from command string.
 /// Removes %f, %F, %u, %U, %d, %D, %n, %N, %i, %c, %k, %v, %m field codes
@@ -75,25 +75,8 @@ impl ApplicationProvider {
         Self { items: Vec::new() }
     }
 
-    fn get_application_dirs() -> Vec<PathBuf> {
-        let mut dirs = Vec::new();
-
-        // User applications
-        if let Some(data_home) = dirs::data_dir() {
-            dirs.push(data_home.join("applications"));
-        }
-
-        // System applications
-        dirs.push(PathBuf::from("/usr/share/applications"));
-        dirs.push(PathBuf::from("/usr/local/share/applications"));
-
-        // Flatpak applications
-        if let Some(data_home) = dirs::data_dir() {
-            dirs.push(data_home.join("flatpak/exports/share/applications"));
-        }
-        dirs.push(PathBuf::from("/var/lib/flatpak/exports/share/applications"));
-
-        dirs
+    fn get_application_dirs() -> Vec<std::path::PathBuf> {
+        paths::system_data_dirs()
     }
 }
 

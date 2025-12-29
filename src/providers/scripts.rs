@@ -1,10 +1,11 @@
+use crate::paths;
 use crate::providers::{LaunchItem, Provider, ProviderType};
 use log::{debug, warn};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
-/// Custom scripts provider - runs user scripts from ~/.config/owlry/scripts/
+/// Custom scripts provider - runs user scripts from `$XDG_DATA_HOME/owlry/scripts/`
 pub struct ScriptsProvider {
     items: Vec<LaunchItem>,
 }
@@ -14,14 +15,10 @@ impl ScriptsProvider {
         Self { items: Vec::new() }
     }
 
-    fn scripts_dir() -> Option<PathBuf> {
-        dirs::config_dir().map(|p| p.join("owlry").join("scripts"))
-    }
-
     fn load_scripts(&mut self) {
         self.items.clear();
 
-        let scripts_dir = match Self::scripts_dir() {
+        let scripts_dir = match paths::scripts_dir() {
             Some(p) => p,
             None => {
                 debug!("Could not determine scripts directory");
@@ -32,7 +29,7 @@ impl ScriptsProvider {
         if !scripts_dir.exists() {
             debug!("Scripts directory not found at {:?}", scripts_dir);
             // Create the directory for the user
-            if let Err(e) = fs::create_dir_all(&scripts_dir) {
+            if let Err(e) = paths::ensure_dir(&scripts_dir) {
                 warn!("Failed to create scripts directory: {}", e);
             }
             return;

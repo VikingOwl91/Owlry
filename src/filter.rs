@@ -1,5 +1,8 @@
 use std::collections::HashSet;
 
+#[cfg(feature = "dev-logging")]
+use log::debug;
+
 use crate::config::ProvidersConfig;
 use crate::providers::ProviderType;
 
@@ -69,10 +72,15 @@ impl ProviderFilter {
             set
         };
 
-        Self {
+        let filter = Self {
             enabled,
             active_prefix: None,
-        }
+        };
+
+        #[cfg(feature = "dev-logging")]
+        debug!("[Filter] Created with enabled providers: {:?}", filter.enabled);
+
+        filter
     }
 
     /// Default filter: apps only
@@ -92,8 +100,12 @@ impl ProviderFilter {
             if self.enabled.is_empty() {
                 self.enabled.insert(ProviderType::Application);
             }
+            #[cfg(feature = "dev-logging")]
+            debug!("[Filter] Toggled OFF {:?}, enabled: {:?}", provider, self.enabled);
         } else {
             self.enabled.insert(provider);
+            #[cfg(feature = "dev-logging")]
+            debug!("[Filter] Toggled ON {:?}, enabled: {:?}", provider, self.enabled);
         }
     }
 
@@ -118,6 +130,10 @@ impl ProviderFilter {
 
     /// Set prefix mode (from :app, :cmd, etc.)
     pub fn set_prefix(&mut self, prefix: Option<ProviderType>) {
+        #[cfg(feature = "dev-logging")]
+        if self.active_prefix != prefix {
+            debug!("[Filter] Prefix changed: {:?} -> {:?}", self.active_prefix, prefix);
+        }
         self.active_prefix = prefix;
     }
 
@@ -176,6 +192,8 @@ impl ProviderFilter {
 
         for (prefix_str, provider) in prefixes {
             if let Some(rest) = trimmed.strip_prefix(prefix_str) {
+                #[cfg(feature = "dev-logging")]
+                debug!("[Filter] parse_query({:?}) -> prefix={:?}, query={:?}", query, provider, rest);
                 return ParsedQuery {
                     prefix: Some(provider),
                     query: rest.to_string(),
@@ -214,6 +232,8 @@ impl ProviderFilter {
 
         for (prefix_str, provider) in partial_prefixes {
             if trimmed == prefix_str {
+                #[cfg(feature = "dev-logging")]
+                debug!("[Filter] parse_query({:?}) -> partial prefix {:?}", query, provider);
                 return ParsedQuery {
                     prefix: Some(provider),
                     query: String::new(),
@@ -221,10 +241,15 @@ impl ProviderFilter {
             }
         }
 
-        ParsedQuery {
+        let result = ParsedQuery {
             prefix: None,
             query: query.to_string(),
-        }
+        };
+
+        #[cfg(feature = "dev-logging")]
+        debug!("[Filter] parse_query({:?}) -> prefix={:?}, query={:?}", query, result.prefix, result.query);
+
+        result
     }
 
     /// Get enabled providers for UI display (sorted)

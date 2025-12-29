@@ -30,6 +30,9 @@ use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use log::info;
 
+#[cfg(feature = "dev-logging")]
+use log::debug;
+
 use crate::data::FrecencyStore;
 
 /// Represents a single searchable/launchable item
@@ -288,12 +291,16 @@ impl ProviderManager {
         frecency: &FrecencyStore,
         frecency_weight: f64,
     ) -> Vec<(LaunchItem, i64)> {
+        #[cfg(feature = "dev-logging")]
+        debug!("[Search] query={:?}, max={}, frecency_weight={}", query, max_results, frecency_weight);
+
         let mut results: Vec<(LaunchItem, i64)> = Vec::new();
 
         // Check for calculator query (= or calc prefix)
         if CalculatorProvider::is_calculator_query(query) {
             if let Some(calc_result) = self.calculator.evaluate(query) {
-                // Calculator results get a high score to appear first
+                #[cfg(feature = "dev-logging")]
+                debug!("[Search] Calculator result: {}", calc_result.name);
                 results.push((calc_result, 10000));
             }
         }
@@ -323,6 +330,8 @@ impl ProviderManager {
         // Check for file search query
         if FileSearchProvider::is_file_query(query) {
             let file_results = self.filesearch.evaluate(query);
+            #[cfg(feature = "dev-logging")]
+            debug!("[Search] File search returned {} results", file_results.len());
             for (idx, item) in file_results.into_iter().enumerate() {
                 // Score decreases for each result to maintain order
                 results.push((item, 8000 - idx as i64));
@@ -387,6 +396,18 @@ impl ProviderManager {
         results.extend(search_results);
         results.sort_by(|a, b| b.1.cmp(&a.1));
         results.truncate(max_results);
+
+        #[cfg(feature = "dev-logging")]
+        {
+            debug!("[Search] Returning {} results", results.len());
+            for (i, (item, score)) in results.iter().take(5).enumerate() {
+                debug!("[Search]   #{}: {} (score={}, provider={:?})", i + 1, item.name, score, item.provider);
+            }
+            if results.len() > 5 {
+                debug!("[Search]   ... and {} more", results.len() - 5);
+            }
+        }
+
         results
     }
 

@@ -1,3 +1,4 @@
+use crate::paths;
 use crate::providers::{LaunchItem, ProviderType};
 use log::{debug, warn};
 use std::process::Command;
@@ -106,7 +107,7 @@ impl FileSearchProvider {
 
     fn search_with_fd(&self, pattern: &str) -> Vec<LaunchItem> {
         // fd searches from home directory by default
-        let home = dirs::home_dir().unwrap_or_default();
+        let home = paths::home().unwrap_or_default();
 
         let output = match Command::new("fd")
             .args([
@@ -132,7 +133,7 @@ impl FileSearchProvider {
     }
 
     fn search_with_locate(&self, pattern: &str) -> Vec<LaunchItem> {
-        let home = dirs::home_dir().unwrap_or_default();
+        let home = paths::home().unwrap_or_default();
 
         let output = match Command::new("locate")
             .args([

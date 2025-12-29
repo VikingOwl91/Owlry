@@ -3,6 +3,7 @@ mod cli;
 mod config;
 mod data;
 mod filter;
+mod paths;
 mod providers;
 mod theme;
 mod ui;
@@ -11,10 +12,25 @@ use app::OwlryApp;
 use cli::CliArgs;
 use log::{info, warn};
 
+#[cfg(feature = "dev-logging")]
+use log::debug;
+
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    let default_level = if cfg!(feature = "dev-logging") { "debug" } else { "info" };
+
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(default_level))
+        .format_timestamp_millis()
+        .init();
 
     let args = CliArgs::parse_args();
+
+    #[cfg(feature = "dev-logging")]
+    {
+        debug!("┌─────────────────────────────────────────┐");
+        debug!("│  DEV-LOGGING: Verbose output enabled    │");
+        debug!("└─────────────────────────────────────────┘");
+        debug!("CLI args: {:?}", args);
+    }
 
     info!("Starting Owlry launcher");
 

@@ -1,7 +1,7 @@
+use crate::paths;
 use crate::providers::{LaunchItem, Provider, ProviderType};
 use log::{debug, warn};
 use std::fs;
-use std::path::PathBuf;
 
 /// SSH connections provider - parses ~/.ssh/config
 pub struct SshProvider {
@@ -27,8 +27,8 @@ impl SshProvider {
         self.terminal_command = terminal.to_string();
     }
 
-    fn ssh_config_path() -> Option<PathBuf> {
-        dirs::home_dir().map(|p| p.join(".ssh").join("config"))
+    fn ssh_config_path() -> Option<std::path::PathBuf> {
+        paths::ssh_config()
     }
 
     fn parse_ssh_config(&mut self) {

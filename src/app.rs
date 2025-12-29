@@ -2,6 +2,7 @@ use crate::cli::CliArgs;
 use crate::config::Config;
 use crate::data::FrecencyStore;
 use crate::filter::ProviderFilter;
+use crate::paths;
 use crate::providers::ProviderManager;
 use crate::theme;
 use crate::ui::MainWindow;
@@ -98,10 +99,8 @@ impl OwlryApp {
                     debug!("Loaded built-in owl theme");
                 }
                 _ => {
-                    // Check for custom theme in ~/.config/owlry/themes/{name}.css
-                    if let Some(theme_path) = dirs::config_dir()
-                        .map(|p| p.join("owlry").join("themes").join(format!("{}.css", theme_name)))
-                    {
+                    // Check for custom theme in $XDG_CONFIG_HOME/owlry/themes/{name}.css
+                    if let Some(theme_path) = paths::theme_file(theme_name) {
                         if theme_path.exists() {
                             theme_provider.load_from_path(&theme_path);
                             debug!("Loaded custom theme from {:?}", theme_path);
@@ -119,7 +118,7 @@ impl OwlryApp {
         }
 
         // 3. Load user's custom stylesheet if exists
-        if let Some(custom_path) = dirs::config_dir().map(|p| p.join("owlry").join("style.css")) {
+        if let Some(custom_path) = paths::custom_style_file() {
             if custom_path.exists() {
                 let custom_provider = CssProvider::new();
                 custom_provider.load_from_path(&custom_path);

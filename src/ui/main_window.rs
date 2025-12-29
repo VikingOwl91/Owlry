@@ -10,6 +10,10 @@ use gtk4::{
     ListBoxRow, Orientation, ScrolledWindow, SelectionMode, ToggleButton,
 };
 use log::info;
+
+#[cfg(feature = "dev-logging")]
+use log::debug;
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::process::Command;
@@ -143,7 +147,7 @@ impl MainWindow {
         hints_box.add_css_class("owlry-hints");
 
         let hints_label = Label::builder()
-            .label("Tab: cycle mode  ↑↓: navigate  Enter: launch  Esc: close  = calc  ? web  :app :cmd")
+            .label(&Self::build_hints(&cfg.providers))
             .halign(gtk4::Align::Center)
             .hexpand(true)
             .build();
@@ -252,6 +256,52 @@ impl MainWindow {
         format!("Search {}...", active.join(", "))
     }
 
+    /// Build dynamic hints based on enabled providers
+    fn build_hints(config: &crate::config::ProvidersConfig) -> String {
+        let mut parts: Vec<String> = vec![
+            "Tab: cycle".to_string(),
+            "↑↓: nav".to_string(),
+            "Enter: launch".to_string(),
+            "Esc: close".to_string(),
+        ];
+
+        // Add trigger hints for enabled dynamic providers
+        if config.calculator {
+            parts.push("= calc".to_string());
+        }
+        if config.websearch {
+            parts.push("? web".to_string());
+        }
+        if config.files {
+            parts.push("/ files".to_string());
+        }
+
+        // Add prefix hints for static providers
+        let mut prefixes = Vec::new();
+        if config.system {
+            prefixes.push(":sys");
+        }
+        if config.emoji {
+            prefixes.push(":emoji");
+        }
+        if config.ssh {
+            prefixes.push(":ssh");
+        }
+        if config.clipboard {
+            prefixes.push(":clip");
+        }
+        if config.bookmarks {
+            prefixes.push(":bm");
+        }
+
+        // Only show first few prefixes to avoid overflow
+        if !prefixes.is_empty() {
+            parts.push(prefixes[..prefixes.len().min(4)].join(" "));
+        }
+
+        parts.join("  ")
+    }
+
     /// Scroll the given row into view within the scrolled window
     fn scroll_to_row(scrolled: &ScrolledWindow, results_list: &ListBox, row: &ListBoxRow) {
         let vadj = scrolled.vadjustment();
@@ -298,6 +348,9 @@ impl MainWindow {
         display_name: &str,
         is_active: bool,
     ) {
+        #[cfg(feature = "dev-logging")]
+        debug!("[UI] Entering submenu for service: {} (active={})", unit_name, is_active);
+
         let actions = UuctlProvider::actions_for_service(unit_name, display_name, is_active);
 
         // Save current state
@@ -340,7 +393,11 @@ impl MainWindow {
         hints_label: &Label,
         search_entry: &Entry,
         filter: &Rc<RefCell<ProviderFilter>>,
+        config: &Rc<RefCell<Config>>,
     ) {
+        #[cfg(feature = "dev-logging")]
+        debug!("[UI] Exiting submenu");
+
         let saved_search = {
             let mut state = submenu_state.borrow_mut();
             state.active = false;
@@ -350,7 +407,7 @@ impl MainWindow {
 
         // Restore UI
         mode_label.set_label(filter.borrow().mode_display_name());
-        hints_label.set_label("Tab: cycle mode  ↑↓: navigate  Enter: launch  Esc: close  = calc  ? web  :app :cmd");
+        hints_label.set_label(&Self::build_hints(&config.borrow().providers));
         search_entry.set_placeholder_text(Some(&Self::build_placeholder(&filter.borrow())));
         search_entry.set_text(&saved_search);
 
@@ -553,7 +610,7 @@ impl MainWindow {
         let scrolled = self.scrolled.clone();
         let search_entry = self.search_entry.clone();
         let _current_results = self.current_results.clone();
-        let _config = self.config.clone();
+        let config = self.config.clone();
         let filter = self.filter.clone();
         let filter_buttons = self.filter_buttons.clone();
         let mode_label = self.mode_label.clone();
@@ -563,6 +620,9 @@ impl MainWindow {
         key_controller.connect_key_pressed(move |_, key, _, modifiers| {
             let ctrl = modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK);
             let shift = modifiers.contains(gtk4::gdk::ModifierType::SHIFT_MASK);
+
+            #[cfg(feature = "dev-logging")]
+            debug!("[UI] Key pressed: {:?} (ctrl={}, shift={})", key, ctrl, shift);
 
             match key {
                 Key::Escape => {
@@ -574,6 +634,7 @@ impl MainWindow {
                             &hints_label,
                             &search_entry,
                             &filter,
+                            &config,
                         );
                         gtk4::glib::Propagation::Stop
                     } else {
@@ -590,6 +651,7 @@ impl MainWindow {
                             &hints_label,
                             &search_entry,
                             &filter,
+                            &config,
                         );
                         gtk4::glib::Propagation::Stop
                     } else {
@@ -833,9 +895,14 @@ impl MainWindow {
         // Record this launch for frecency tracking
         if config.providers.frecency {
             frecency.borrow_mut().record_launch(&item.id);
+            #[cfg(feature = "dev-logging")]
+            debug!("[UI] Recorded frecency launch for: {}", item.id);
         }
 
         info!("Launching: {} ({})", item.name, item.command);
+
+        #[cfg(feature = "dev-logging")]
+        debug!("[UI] Launch details: terminal={}, provider={:?}", item.terminal, item.provider);
 
         let cmd = if item.terminal {
             format!("{} -e {}", config.general.terminal_command, item.command)

@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use crate::paths;
+
 /// A single frecency entry tracking launch count and recency
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FrecencyEntry {
@@ -56,10 +58,7 @@ impl FrecencyStore {
 
     /// Get the path to the frecency data file
     fn data_path() -> PathBuf {
-        dirs::data_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("owlry")
-            .join("frecency.json")
+        paths::frecency_file().unwrap_or_else(|| PathBuf::from("frecency.json"))
     }
 
     /// Load frecency data from a file
@@ -85,10 +84,7 @@ impl FrecencyStore {
             return Ok(());
         }
 
-        // Ensure directory exists
-        if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        paths::ensure_parent_dir(&self.path)?;
 
         let content = serde_json::to_string_pretty(&self.data)?;
         std::fs::write(&self.path, content)?;

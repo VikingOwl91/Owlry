@@ -1,3 +1,4 @@
+use crate::paths;
 use crate::providers::{LaunchItem, Provider, ProviderType};
 use log::{debug, warn};
 use serde::Deserialize;
@@ -27,8 +28,8 @@ impl BookmarksProvider {
     fn load_firefox_bookmarks(&mut self) {
         // Firefox stores bookmarks in places.sqlite
         // The file is locked when Firefox is running, so we read from backup
-        let firefox_dir = match dirs::home_dir() {
-            Some(h) => h.join(".mozilla").join("firefox"),
+        let firefox_dir = match paths::firefox_dir() {
+            Some(d) => d,
             None => return,
         };
 
@@ -99,29 +100,10 @@ impl BookmarksProvider {
     }
 
     fn load_chrome_bookmarks(&mut self) {
-        // Chrome/Chromium bookmarks are in JSON format
-        let home = match dirs::home_dir() {
-            Some(h) => h,
-            None => return,
-        };
-
-        // Try multiple browser paths
-        let bookmark_paths = [
-            // Chrome
-            home.join(".config/google-chrome/Default/Bookmarks"),
-            // Chromium
-            home.join(".config/chromium/Default/Bookmarks"),
-            // Brave
-            home.join(".config/BraveSoftware/Brave-Browser/Default/Bookmarks"),
-            // Edge
-            home.join(".config/microsoft-edge/Default/Bookmarks"),
-            // Vivaldi
-            home.join(".config/vivaldi/Default/Bookmarks"),
-        ];
-
-        for path in &bookmark_paths {
+        // Chrome/Chromium bookmarks are in JSON format (XDG config paths)
+        for path in paths::chromium_bookmark_paths() {
             if path.exists() {
-                self.read_chrome_bookmarks(path);
+                self.read_chrome_bookmarks(&path);
             }
         }
     }
