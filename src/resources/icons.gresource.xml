@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/org/owlry/launcher/icons">
+    <!-- Weather icons (Erik Flowers Weather Icons - OFL license) -->
+    <file>weather/wi-day-sunny.svg</file>
+    <file>weather/wi-day-cloudy.svg</file>
+    <file>weather/wi-cloudy.svg</file>
+    <file>weather/wi-fog.svg</file>
+    <file>weather/wi-rain.svg</file>
+    <file>weather/wi-snow.svg</file>
+    <file>weather/wi-thunderstorm.svg</file>
+    <file>weather/wi-thermometer.svg</file>
+    <file>weather/wi-night-clear.svg</file>
+
+    <!-- Media player icons -->
+    <file>media/music-note.svg</file>
+
+    <!-- Pomodoro icons -->
+    <file>pomodoro/tomato.svg</file>
+  </gresource>
+</gresources>

@@ -67,13 +67,6 @@
     opacity: 1;
 }
 
-/* Emoji icon for widgets (weather, media, pomodoro) */
-.owlry-emoji-icon {
-    font-size: 24px;
-    min-width: 32px;
-    min-height: 32px;
-}
-
 /* Result name */
 .owlry-result-name {
     font-size: var(--owlry-font-size, 14px);

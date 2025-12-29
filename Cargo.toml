@@ -61,6 +61,10 @@ zbus = { version = "4", default-features = false, features = ["tokio"] }
 # HTTP client for weather API
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking"] }
 
+[build-dependencies]
+# GResource compilation for bundled icons
+glib-build-tools = "0.20"
+
 [features]
 default = []
 # Enable verbose debug logging (for development/testing builds)

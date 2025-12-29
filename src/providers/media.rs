@@ -213,7 +213,7 @@ impl MediaProvider {
             id: "media-now-playing".to_string(),
             name,
             description: Some(format!("{} · Press Enter to {}", player_display, action)),
-            icon: None, // Using emoji in name instead (▶/⏸)
+            icon: Some("/org/owlry/launcher/icons/media/music-note.svg".to_string()),
             provider: ProviderType::MediaPlayer,
             command,
             terminal: false,

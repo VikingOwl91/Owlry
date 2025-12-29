@@ -367,7 +367,7 @@ impl WeatherProvider {
             id: "weather-current".to_string(),
             name,
             description: Some(details.join(" | ")),
-            icon: None, // Use emoji in name instead
+            icon: Some(Self::icon_to_resource_path(&data.icon)),
             provider: ProviderType::Weather,
             command: format!("xdg-open 'https://wttr.in/{}'", encoded_location),
             terminal: false,
@@ -375,7 +375,7 @@ impl WeatherProvider {
         });
     }
 
-    /// Convert icon name to emoji for display
+    /// Convert icon name to emoji for display in name text
     fn weather_icon_to_emoji(icon: &str) -> &'static str {
         if icon.contains("clear") {
             "☀️"
@@ -394,6 +394,28 @@ impl WeatherProvider {
         } else {
             "🌡️"
         }
+    }
+
+    /// Convert freedesktop-style icon name to bundled GResource path
+    fn icon_to_resource_path(icon: &str) -> String {
+        let weather_icon = if icon.contains("clear") {
+            "wi-day-sunny"
+        } else if icon.contains("few-clouds") {
+            "wi-day-cloudy"
+        } else if icon.contains("overcast") || icon.contains("clouds") {
+            "wi-cloudy"
+        } else if icon.contains("fog") {
+            "wi-fog"
+        } else if icon.contains("showers") || icon.contains("rain") {
+            "wi-rain"
+        } else if icon.contains("snow") {
+            "wi-snow"
+        } else if icon.contains("storm") {
+            "wi-thunderstorm"
+        } else {
+            "wi-thermometer"
+        };
+        format!("/org/owlry/launcher/icons/weather/{}.svg", weather_icon)
     }
 }
 

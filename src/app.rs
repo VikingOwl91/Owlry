@@ -40,6 +40,10 @@ impl OwlryApp {
     fn on_activate(app: &Application, args: &CliArgs) {
         debug!("Activating Owlry");
 
+        // Register bundled icon resources
+        gio::resources_register_include!("icons.gresource")
+            .expect("Failed to register icon resources");
+
         let config = Rc::new(RefCell::new(Config::load_or_default()));
         let search_engine = config.borrow().providers.search_engine.clone();
         let terminal = config.borrow().general.terminal_command.clone();

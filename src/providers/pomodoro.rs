@@ -236,11 +236,13 @@ impl PomodoroProvider {
                 self.config.work_mins, self.config.break_mins))
         };
 
+        // Use bundled tomato icon for the timer display, ignore phase_icon
+        let _ = phase_icon; // Suppress unused warning
         self.items.push(LaunchItem {
             id: "pomo-timer".to_string(),
             name,
             description,
-            icon: Some(phase_icon.to_string()),
+            icon: Some("/org/owlry/launcher/icons/pomodoro/tomato.svg".to_string()),
             provider: ProviderType::Pomodoro,
             command: String::new(), // Info only
             terminal: false,

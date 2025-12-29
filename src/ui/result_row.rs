@@ -25,53 +25,46 @@ impl ResultRow {
             .margin_end(12)
             .build();
 
-        // Icon - handle file paths, icon names, emoji widgets, and fallbacks
-        let icon_widget: Widget = if let Some(icon_name) = &item.icon {
-            let img = if icon_name.starts_with('/') {
+        // Icon - handle GResource paths, file paths, icon names, and fallbacks
+        let icon_widget: Widget = if let Some(icon_path) = &item.icon {
+            let img = if icon_path.starts_with("/org/owlry/launcher/icons/") {
+                // GResource path - load from bundled resources
+                Image::from_resource(icon_path)
+            } else if icon_path.starts_with('/') {
                 // Absolute file path
-                Image::from_file(icon_name)
+                Image::from_file(icon_path)
             } else {
-                Image::from_icon_name(icon_name)
+                // Icon theme name
+                Image::from_icon_name(icon_path)
             };
             img.set_pixel_size(32);
             img.add_css_class("owlry-result-icon");
             img.upcast()
         } else {
             // Default icon based on provider type
-            // For widgets, use emoji labels (more reliable than icon themes)
-            match item.provider {
-                crate::providers::ProviderType::Weather => {
-                    Self::create_emoji_icon("🌤️")
-                }
-                crate::providers::ProviderType::MediaPlayer => {
-                    Self::create_emoji_icon("🎵")
-                }
-                crate::providers::ProviderType::Pomodoro => {
-                    Self::create_emoji_icon("🍅")
-                }
-                _ => {
-                    let default_icon = match item.provider {
-                        crate::providers::ProviderType::Application => "application-x-executable",
-                        crate::providers::ProviderType::Bookmarks => "user-bookmarks",
-                        crate::providers::ProviderType::Calculator => "accessories-calculator",
-                        crate::providers::ProviderType::Clipboard => "edit-paste",
-                        crate::providers::ProviderType::Command => "utilities-terminal",
-                        crate::providers::ProviderType::Dmenu => "view-list-symbolic",
-                        crate::providers::ProviderType::Emoji => "face-smile",
-                        crate::providers::ProviderType::Files => "folder",
-                        crate::providers::ProviderType::Scripts => "application-x-executable",
-                        crate::providers::ProviderType::Ssh => "network-server",
-                        crate::providers::ProviderType::System => "system-shutdown",
-                        crate::providers::ProviderType::Uuctl => "system-run",
-                        crate::providers::ProviderType::WebSearch => "web-browser",
-                        _ => "application-x-executable",
-                    };
-                    let img = Image::from_icon_name(default_icon);
-                    img.set_pixel_size(32);
-                    img.add_css_class("owlry-result-icon");
-                    img.upcast()
-                }
-            }
+            let default_icon = match item.provider {
+                crate::providers::ProviderType::Application => "application-x-executable",
+                crate::providers::ProviderType::Bookmarks => "user-bookmarks",
+                crate::providers::ProviderType::Calculator => "accessories-calculator",
+                crate::providers::ProviderType::Clipboard => "edit-paste",
+                crate::providers::ProviderType::Command => "utilities-terminal",
+                crate::providers::ProviderType::Dmenu => "view-list-symbolic",
+                crate::providers::ProviderType::Emoji => "face-smile",
+                crate::providers::ProviderType::Files => "folder",
+                crate::providers::ProviderType::Scripts => "application-x-executable",
+                crate::providers::ProviderType::Ssh => "network-server",
+                crate::providers::ProviderType::System => "system-shutdown",
+                crate::providers::ProviderType::Uuctl => "system-run",
+                crate::providers::ProviderType::WebSearch => "web-browser",
+                // Widget providers now have icons set, but keep fallbacks
+                crate::providers::ProviderType::Weather => "weather-clear-symbolic",
+                crate::providers::ProviderType::MediaPlayer => "media-playback-start-symbolic",
+                crate::providers::ProviderType::Pomodoro => "alarm-symbolic",
+            };
+            let img = Image::from_icon_name(default_icon);
+            img.set_pixel_size(32);
+            img.add_css_class("owlry-result-icon");
+            img.upcast()
         };
 
         // Text container
@@ -141,17 +134,5 @@ impl ResultRow {
         row.set_child(Some(&hbox));
 
         row
-    }
-
-    /// Create an emoji-based icon widget for widgets (weather, media, pomodoro)
-    /// More reliable than icon themes which may not have all icons
-    fn create_emoji_icon(emoji: &str) -> Widget {
-        let label = Label::builder()
-            .label(emoji)
-            .width_request(32)
-            .height_request(32)
-            .build();
-        label.add_css_class("owlry-emoji-icon");
-        label.upcast()
     }
 }
