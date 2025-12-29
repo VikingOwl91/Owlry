@@ -18,8 +18,10 @@
 show_icons = true
 max_results = 10
 
-# Terminal emulator (auto-detected if not set)
-terminal_command = "kitty"
+# Terminal emulator for SSH, scripts, etc.
+# Auto-detection order: $TERMINAL → xdg-terminal-exec → DE-native → Wayland → X11 → xterm
+# Uncomment to override:
+# terminal_command = "kitty"
 
 # Launch wrapper for app execution (auto-detected for uwsm/Hyprland)
 # Examples: "uwsm app --", "hyprctl dispatch exec --", ""
@@ -34,8 +36,8 @@ tabs = ["app", "cmd", "uuctl"]
 # ═══════════════════════════════════════════════════════════════════════
 
 [appearance]
-width = 700
-height = 500
+width = 850
+height = 650
 font_size = 14
 border_radius = 12
 
@@ -113,3 +115,21 @@ emoji = true
 
 # Scripts: :script - executables from ~/.local/share/owlry/scripts/
 scripts = true
+
+# ───────────────────────────────────────────────────────────────────────
+# Widget Providers (shown at top of results)
+# ───────────────────────────────────────────────────────────────────────
+
+# MPRIS media player controls - shows now playing with play/pause/skip
+media = true
+
+# Weather widget - shows current conditions
+weather = false
+weather_provider = "wttr.in"  # wttr.in (default), openweathermap, open-meteo
+# weather_api_key = ""        # Required for OpenWeatherMap
+weather_location = "Berlin"   # City name, "lat,lon", or leave empty for auto
+
+# Pomodoro timer - work/break timer with controls
+pomodoro = false
+pomodoro_work_mins = 25       # Work session duration
+pomodoro_break_mins = 5       # Break duration

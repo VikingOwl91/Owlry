@@ -292,11 +292,14 @@ impl ProviderFilter {
             ProviderType::Dmenu => 5,
             ProviderType::Emoji => 6,
             ProviderType::Files => 7,
-            ProviderType::Scripts => 8,
-            ProviderType::Ssh => 9,
-            ProviderType::System => 10,
-            ProviderType::Uuctl => 11,
-            ProviderType::WebSearch => 12,
+            ProviderType::MediaPlayer => 8,
+            ProviderType::Pomodoro => 9,
+            ProviderType::Scripts => 10,
+            ProviderType::Ssh => 11,
+            ProviderType::System => 12,
+            ProviderType::Uuctl => 13,
+            ProviderType::Weather => 14,
+            ProviderType::WebSearch => 15,
         });
         providers
     }
@@ -313,10 +316,13 @@ impl ProviderFilter {
                 ProviderType::Dmenu => "dmenu",
                 ProviderType::Emoji => "Emoji",
                 ProviderType::Files => "Files",
+                ProviderType::MediaPlayer => "Media",
+                ProviderType::Pomodoro => "Pomodoro",
                 ProviderType::Scripts => "Scripts",
                 ProviderType::Ssh => "SSH",
                 ProviderType::System => "System",
                 ProviderType::Uuctl => "uuctl",
+                ProviderType::Weather => "Weather",
                 ProviderType::WebSearch => "Web",
             };
         }
@@ -332,10 +338,13 @@ impl ProviderFilter {
                 ProviderType::Dmenu => "dmenu",
                 ProviderType::Emoji => "Emoji",
                 ProviderType::Files => "Files",
+                ProviderType::MediaPlayer => "Media",
+                ProviderType::Pomodoro => "Pomodoro",
                 ProviderType::Scripts => "Scripts",
                 ProviderType::Ssh => "SSH",
                 ProviderType::System => "System",
                 ProviderType::Uuctl => "uuctl",
+                ProviderType::Weather => "Weather",
                 ProviderType::WebSearch => "Web",
             }
         } else {

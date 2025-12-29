@@ -12,10 +12,10 @@ categories = ["gui"]
 
 [dependencies]
 # GTK4 for the UI
-gtk4 = { version = "0.9", features = ["v4_12"] }
+gtk4 = { version = "0.10", features = ["v4_12"] }
 
 # Layer shell support for Wayland overlay behavior
-gtk4-layer-shell = "0.4"
+gtk4-layer-shell = "0.7"
 
 # Async runtime for non-blocking operations
 tokio = { version = "1", features = ["rt", "sync", "process", "fs"] }
@@ -54,6 +54,12 @@ serde_json = "1"
 
 # Date/time for frecency calculations
 chrono = { version = "0.4", features = ["serde"] }
+
+# D-Bus for MPRIS media player integration
+zbus = { version = "4", default-features = false, features = ["tokio"] }
+
+# HTTP client for weather API
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking"] }
 
 [features]
 default = []

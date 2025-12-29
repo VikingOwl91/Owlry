@@ -6,10 +6,13 @@ mod command;
 mod dmenu;
 mod emoji;
 mod files;
+mod media;
+mod pomodoro;
 mod scripts;
 mod ssh;
 mod system;
 mod uuctl;
+mod weather;
 mod websearch;
 
 pub use application::ApplicationProvider;
@@ -20,10 +23,13 @@ pub use command::CommandProvider;
 pub use dmenu::DmenuProvider;
 pub use emoji::EmojiProvider;
 pub use files::FileSearchProvider;
+pub use media::MediaProvider;
+pub use pomodoro::{PomodoroConfig, PomodoroProvider};
 pub use scripts::ScriptsProvider;
 pub use ssh::SshProvider;
 pub use system::SystemProvider;
 pub use uuctl::UuctlProvider;
+pub use weather::{WeatherConfig, WeatherProvider, WeatherProviderType};
 pub use websearch::WebSearchProvider;
 
 use fuzzy_matcher::FuzzyMatcher;
@@ -60,10 +66,13 @@ pub enum ProviderType {
     Dmenu,
     Emoji,
     Files,
+    MediaPlayer,
+    Pomodoro,
     Scripts,
     Ssh,
     System,
     Uuctl,
+    Weather,
     WebSearch,
 }
 
@@ -80,13 +89,16 @@ impl std::str::FromStr for ProviderType {
             "dmenu" => Ok(ProviderType::Dmenu),
             "emoji" | "emojis" => Ok(ProviderType::Emoji),
             "file" | "files" | "find" => Ok(ProviderType::Files),
+            "media" | "mpris" | "player" => Ok(ProviderType::MediaPlayer),
+            "pomo" | "pomodoro" | "timer" => Ok(ProviderType::Pomodoro),
             "script" | "scripts" => Ok(ProviderType::Scripts),
             "ssh" => Ok(ProviderType::Ssh),
             "sys" | "system" | "power" => Ok(ProviderType::System),
             "uuctl" => Ok(ProviderType::Uuctl),
+            "weather" => Ok(ProviderType::Weather),
             "web" | "websearch" | "search" => Ok(ProviderType::WebSearch),
             _ => Err(format!(
-                "Unknown provider: '{}'. Valid: app, bookmark, calc, clip, cmd, emoji, file, script, ssh, sys, web",
+                "Unknown provider: '{}'. Valid: app, bookmark, calc, clip, cmd, emoji, file, media, pomo, script, ssh, sys, weather, web",
                 s
             )),
         }
@@ -104,10 +116,13 @@ impl std::fmt::Display for ProviderType {
             ProviderType::Dmenu => write!(f, "dmenu"),
             ProviderType::Emoji => write!(f, "emoji"),
             ProviderType::Files => write!(f, "file"),
+            ProviderType::MediaPlayer => write!(f, "media"),
+            ProviderType::Pomodoro => write!(f, "pomo"),
             ProviderType::Scripts => write!(f, "script"),
             ProviderType::Ssh => write!(f, "ssh"),
             ProviderType::System => write!(f, "sys"),
             ProviderType::Uuctl => write!(f, "uuctl"),
+            ProviderType::Weather => write!(f, "weather"),
             ProviderType::WebSearch => write!(f, "web"),
         }
     }
@@ -128,6 +143,10 @@ pub struct ProviderManager {
     calculator: CalculatorProvider,
     websearch: WebSearchProvider,
     filesearch: FileSearchProvider,
+    // Widget providers (optional, controlled by config)
+    media: Option<MediaProvider>,
+    weather: Option<WeatherProvider>,
+    pomodoro: Option<PomodoroProvider>,
     matcher: SkimMatcherV2,
 }
 
@@ -138,15 +157,26 @@ impl ProviderManager {
     }
 
     pub fn with_search_engine(search_engine: &str) -> Self {
-        Self::with_config(search_engine, "kitty")
+        // Use xterm as fallback - it's the universal cockroach of terminals
+        // In practice, app.rs passes the detected/configured terminal
+        Self::with_config(search_engine, "xterm", true, None, None)
     }
 
-    pub fn with_config(search_engine: &str, terminal: &str) -> Self {
+    pub fn with_config(
+        search_engine: &str,
+        terminal: &str,
+        media_enabled: bool,
+        weather_config: Option<WeatherConfig>,
+        pomodoro_config: Option<PomodoroConfig>,
+    ) -> Self {
         let mut manager = Self {
             providers: Vec::new(),
             calculator: CalculatorProvider::new(),
             websearch: WebSearchProvider::with_engine(search_engine),
             filesearch: FileSearchProvider::new(),
+            media: if media_enabled { Some(MediaProvider::new()) } else { None },
+            weather: weather_config.map(WeatherProvider::new),
+            pomodoro: pomodoro_config.map(PomodoroProvider::new),
             matcher: SkimMatcherV2::default(),
         };
 
@@ -195,6 +225,25 @@ impl ProviderManager {
                 provider.items().len()
             );
         }
+
+        // Refresh widget providers
+        if let Some(ref mut media) = self.media {
+            media.refresh();
+            info!("Media widget loaded {} items", media.items().len());
+        }
+        if let Some(ref mut weather) = self.weather {
+            weather.refresh();
+            info!("Weather widget loaded {} items", weather.items().len());
+        }
+        if let Some(ref mut pomodoro) = self.pomodoro {
+            pomodoro.refresh();
+            info!("Pomodoro widget loaded {} items", pomodoro.items().len());
+        }
+    }
+
+    /// Get mutable reference to pomodoro provider (for handling actions)
+    pub fn pomodoro_mut(&mut self) -> Option<&mut PomodoroProvider> {
+        self.pomodoro.as_mut()
     }
 
     #[allow(dead_code)]
@@ -299,6 +348,30 @@ impl ProviderManager {
 
         let mut results: Vec<(LaunchItem, i64)> = Vec::new();
 
+        // Add widget items first (highest priority) - only when no specific filter is active
+        if filter.active_prefix().is_none() {
+            // Weather widget (score 12000) - shown at very top
+            if let Some(ref weather) = self.weather {
+                for item in weather.items() {
+                    results.push((item.clone(), 12000));
+                }
+            }
+
+            // Pomodoro widget (scores 11500-11502)
+            if let Some(ref pomodoro) = self.pomodoro {
+                for (idx, item) in pomodoro.items().iter().enumerate() {
+                    results.push((item.clone(), 11502 - idx as i64));
+                }
+            }
+
+            // Media widget (scores 11000-11003)
+            if let Some(ref media) = self.media {
+                for (idx, item) in media.items().iter().enumerate() {
+                    results.push((item.clone(), 11003 - idx as i64));
+                }
+            }
+        }
+
         // Check for calculator query (= or calc prefix)
         if CalculatorProvider::is_calculator_query(query) {
             if let Some(calc_result) = self.calculator.evaluate(query) {
@@ -350,7 +423,7 @@ impl ProviderManager {
 
         // Empty query (after checking special providers) - return frecency-sorted items
         if query.is_empty() {
-            let mut items: Vec<(LaunchItem, i64)> = self
+            let items: Vec<(LaunchItem, i64)> = self
                 .providers
                 .iter()
                 .filter(|p| filter.is_active(p.provider_type()))
@@ -370,9 +443,11 @@ impl ProviderManager {
                 })
                 .collect();
 
-            items.sort_by(|a, b| b.1.cmp(&a.1));
-            items.truncate(max_results);
-            return items;
+            // Combine widgets (already in results) with frecency items
+            results.extend(items);
+            results.sort_by(|a, b| b.1.cmp(&a.1));
+            results.truncate(max_results);
+            return results;
         }
 
         // Regular search with frecency boost and tag matching

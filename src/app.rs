@@ -3,7 +3,7 @@ use crate::config::Config;
 use crate::data::FrecencyStore;
 use crate::filter::ProviderFilter;
 use crate::paths;
-use crate::providers::ProviderManager;
+use crate::providers::{PomodoroConfig, ProviderManager, WeatherConfig, WeatherProviderType};
 use crate::theme;
 use crate::ui::MainWindow;
 use gtk4::prelude::*;
@@ -43,7 +43,38 @@ impl OwlryApp {
         let config = Rc::new(RefCell::new(Config::load_or_default()));
         let search_engine = config.borrow().providers.search_engine.clone();
         let terminal = config.borrow().general.terminal_command.clone();
-        let providers = Rc::new(RefCell::new(ProviderManager::with_config(&search_engine, &terminal)));
+        let media_enabled = config.borrow().providers.media;
+
+        // Build weather config if enabled
+        let weather_config = if config.borrow().providers.weather {
+            let cfg = config.borrow();
+            Some(WeatherConfig {
+                provider: cfg.providers.weather_provider.parse().unwrap_or(WeatherProviderType::WttrIn),
+                api_key: cfg.providers.weather_api_key.clone(),
+                location: cfg.providers.weather_location.clone().unwrap_or_default(),
+            })
+        } else {
+            None
+        };
+
+        // Build pomodoro config if enabled
+        let pomodoro_config = if config.borrow().providers.pomodoro {
+            let cfg = config.borrow();
+            Some(PomodoroConfig {
+                work_mins: cfg.providers.pomodoro_work_mins,
+                break_mins: cfg.providers.pomodoro_break_mins,
+            })
+        } else {
+            None
+        };
+
+        let providers = Rc::new(RefCell::new(ProviderManager::with_config(
+            &search_engine,
+            &terminal,
+            media_enabled,
+            weather_config,
+            pomodoro_config,
+        )));
         let frecency = Rc::new(RefCell::new(FrecencyStore::load_or_default()));
 
         // Create filter from CLI args and config
@@ -71,10 +102,27 @@ impl OwlryApp {
         // Position from top
         window.set_margin(Edge::Top, 200);
 
+        // Set up icon theme fallbacks
+        Self::setup_icon_theme();
+
         // Load CSS styling with config for theming
         Self::load_css(&config.borrow());
 
         window.present();
+    }
+
+    fn setup_icon_theme() {
+        // Ensure we have icon fallbacks for weather/media icons
+        // These may not exist in all icon themes
+        if let Some(display) = gtk4::gdk::Display::default() {
+            let icon_theme = gtk4::IconTheme::for_display(&display);
+
+            // Add Adwaita as fallback search path (has weather and media icons)
+            icon_theme.add_search_path("/usr/share/icons/Adwaita");
+            icon_theme.add_search_path("/usr/share/icons/breeze");
+
+            debug!("Icon theme search paths configured with Adwaita/breeze fallbacks");
+        }
     }
 
     fn load_css(config: &Config) {

@@ -120,6 +120,40 @@ pub struct ProvidersConfig {
     /// Enable file search (requires fd or locate)
     #[serde(default = "default_true")]
     pub files: bool,
+
+    // ─── Widget Providers ───────────────────────────────────────────────
+
+    /// Enable MPRIS media player widget
+    #[serde(default = "default_true")]
+    pub media: bool,
+
+    /// Enable weather widget
+    #[serde(default)]
+    pub weather: bool,
+
+    /// Weather provider: wttr.in (default), openweathermap, open-meteo
+    #[serde(default = "default_weather_provider")]
+    pub weather_provider: String,
+
+    /// API key for weather services that require it (e.g., OpenWeatherMap)
+    #[serde(default)]
+    pub weather_api_key: Option<String>,
+
+    /// Location for weather (city name or coordinates)
+    #[serde(default)]
+    pub weather_location: Option<String>,
+
+    /// Enable pomodoro timer widget
+    #[serde(default)]
+    pub pomodoro: bool,
+
+    /// Pomodoro work duration in minutes
+    #[serde(default = "default_pomodoro_work")]
+    pub pomodoro_work_mins: u32,
+
+    /// Pomodoro break duration in minutes
+    #[serde(default = "default_pomodoro_break")]
+    pub pomodoro_break_mins: u32,
 }
 
 fn default_search_engine() -> String {
@@ -132,6 +166,18 @@ fn default_true() -> bool {
 
 fn default_frecency_weight() -> f64 {
     0.3
+}
+
+fn default_weather_provider() -> String {
+    "wttr.in".to_string()
+}
+
+fn default_pomodoro_work() -> u32 {
+    25
+}
+
+fn default_pomodoro_break() -> u32 {
+    5
 }
 
 /// Detect the best launch wrapper for the current session
@@ -163,13 +209,14 @@ fn detect_launch_wrapper() -> Option<String> {
 /// Detect the best available terminal emulator
 /// Fallback chain:
 /// 1. $TERMINAL env var (user's explicit preference)
-/// 2. xdg-terminal-exec (freedesktop standard)
-/// 3. Common Wayland-native terminals (kitty, alacritty, wezterm, foot)
-/// 4. Common X11/legacy terminals (gnome-terminal, konsole, xfce4-terminal)
-/// 5. x-terminal-emulator (Debian alternatives)
-/// 6. xterm (ultimate fallback)
+/// 2. xdg-terminal-exec (freedesktop standard - if available)
+/// 3. Desktop-environment native terminal (GNOME→gnome-terminal, KDE→konsole, etc.)
+/// 4. Common Wayland-native terminals (kitty, alacritty, wezterm, foot)
+/// 5. Common X11/legacy terminals
+/// 6. x-terminal-emulator (Debian alternatives)
+/// 7. xterm (ultimate fallback - the cockroach of terminals)
 fn detect_terminal() -> String {
-    // 1. Check $TERMINAL env var first
+    // 1. Check $TERMINAL env var first (user's explicit preference)
     if let Ok(term) = std::env::var("TERMINAL") {
         if !term.is_empty() && command_exists(&term) {
             debug!("Using $TERMINAL: {}", term);
@@ -183,7 +230,13 @@ fn detect_terminal() -> String {
         return "xdg-terminal-exec".to_string();
     }
 
-    // 3. Common Wayland-native terminals (preferred)
+    // 3. Desktop-environment aware detection
+    if let Some(term) = detect_de_terminal() {
+        debug!("Using DE-native terminal: {}", term);
+        return term;
+    }
+
+    // 4. Common Wayland-native terminals (preferred for modern setups)
     let wayland_terminals = ["kitty", "alacritty", "wezterm", "foot"];
     for term in wayland_terminals {
         if command_exists(term) {
@@ -192,8 +245,8 @@ fn detect_terminal() -> String {
         }
     }
 
-    // 4. Common X11/legacy terminals
-    let legacy_terminals = ["gnome-terminal", "konsole", "xfce4-terminal", "tilix", "terminator"];
+    // 5. Common X11/legacy terminals
+    let legacy_terminals = ["gnome-terminal", "konsole", "xfce4-terminal", "mate-terminal", "tilix", "terminator"];
     for term in legacy_terminals {
         if command_exists(term) {
             debug!("Found legacy terminal: {}", term);
@@ -201,15 +254,62 @@ fn detect_terminal() -> String {
         }
     }
 
-    // 5. Try x-terminal-emulator (Debian alternatives system)
+    // 6. Try x-terminal-emulator (Debian alternatives system)
     if command_exists("x-terminal-emulator") {
         debug!("Using x-terminal-emulator");
         return "x-terminal-emulator".to_string();
     }
 
-    // 6. Ultimate fallback
+    // 7. Ultimate fallback - xterm exists everywhere
     debug!("Falling back to xterm");
     "xterm".to_string()
+}
+
+/// Detect desktop environment and return its native terminal
+fn detect_de_terminal() -> Option<String> {
+    // Check XDG_CURRENT_DESKTOP first
+    let desktop = std::env::var("XDG_CURRENT_DESKTOP")
+        .ok()
+        .map(|s| s.to_lowercase());
+
+    // Also check for Wayland compositor-specific env vars
+    let is_hyprland = std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok();
+    let is_sway = std::env::var("SWAYSOCK").is_ok();
+
+    // Map desktop environments to their native/preferred terminals
+    let candidates: &[&str] = if is_hyprland {
+        // Hyprland: foot and kitty are most popular in the community
+        &["foot", "kitty", "alacritty", "wezterm"]
+    } else if is_sway {
+        // Sway: foot is the recommended terminal (lightweight, Wayland-native)
+        &["foot", "alacritty", "kitty", "wezterm"]
+    } else if let Some(ref de) = desktop {
+        match de.as_str() {
+            s if s.contains("gnome") => &["gnome-terminal", "gnome-console", "kgx"],
+            s if s.contains("kde") || s.contains("plasma") => &["konsole"],
+            s if s.contains("xfce") => &["xfce4-terminal"],
+            s if s.contains("mate") => &["mate-terminal"],
+            s if s.contains("lxqt") => &["qterminal"],
+            s if s.contains("lxde") => &["lxterminal"],
+            s if s.contains("cinnamon") => &["gnome-terminal"],
+            s if s.contains("budgie") => &["tilix", "gnome-terminal"],
+            s if s.contains("pantheon") => &["io.elementary.terminal", "pantheon-terminal"],
+            s if s.contains("deepin") => &["deepin-terminal"],
+            s if s.contains("hyprland") => &["foot", "kitty", "alacritty", "wezterm"],
+            s if s.contains("sway") => &["foot", "alacritty", "kitty", "wezterm"],
+            _ => return None,
+        }
+    } else {
+        return None;
+    };
+
+    for term in candidates {
+        if command_exists(term) {
+            return Some(term.to_string());
+        }
+    }
+
+    None
 }
 
 /// Check if a command exists in PATH
@@ -235,8 +335,8 @@ impl Default for Config {
                 tabs: default_tabs(),
             },
             appearance: AppearanceConfig {
-                width: 700,
-                height: 500,
+                width: 850,
+                height: 650,
                 font_size: 14,
                 border_radius: 12,
                 theme: None,
@@ -258,6 +358,15 @@ impl Default for Config {
                 emoji: true,
                 scripts: true,
                 files: true,
+                // Widget providers
+                media: true,
+                weather: false,
+                weather_provider: "wttr.in".to_string(),
+                weather_api_key: None,
+                weather_location: Some("Berlin".to_string()),
+                pomodoro: false,
+                pomodoro_work_mins: 25,
+                pomodoro_break_mins: 5,
             },
         }
     }

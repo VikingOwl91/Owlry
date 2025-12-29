@@ -67,6 +67,13 @@
     opacity: 1;
 }
 
+/* Emoji icon for widgets (weather, media, pomodoro) */
+.owlry-emoji-icon {
+    font-size: 24px;
+    min-width: 32px;
+    min-height: 32px;
+}
+
 /* Result name */
 .owlry-result-name {
     font-size: var(--owlry-font-size, 14px);
@@ -164,6 +171,22 @@
 .owlry-badge-web {
     background-color: alpha(var(--owlry-badge-web, @teal_3), 0.2);
     color: var(--owlry-badge-web, @teal_3);
+}
+
+/* Widget provider badges */
+.owlry-badge-media {
+    background-color: alpha(var(--owlry-badge-media, #ec4899), 0.2);
+    color: var(--owlry-badge-media, #ec4899);
+}
+
+.owlry-badge-weather {
+    background-color: alpha(var(--owlry-badge-weather, #06b6d4), 0.2);
+    color: var(--owlry-badge-weather, #06b6d4);
+}
+
+.owlry-badge-pomo {
+    background-color: alpha(var(--owlry-badge-pomo, #f97316), 0.2);
+    color: var(--owlry-badge-pomo, #f97316);
 }
 
 /* Header bar */
@@ -281,6 +304,25 @@
     background-color: alpha(var(--owlry-badge-web, @teal_3), 0.2);
     color: var(--owlry-badge-web, @teal_3);
     border-color: alpha(var(--owlry-badge-web, @teal_3), 0.4);
+}
+
+/* Widget filter buttons */
+.owlry-filter-media:checked {
+    background-color: alpha(var(--owlry-badge-media, #ec4899), 0.2);
+    color: var(--owlry-badge-media, #ec4899);
+    border-color: alpha(var(--owlry-badge-media, #ec4899), 0.4);
+}
+
+.owlry-filter-weather:checked {
+    background-color: alpha(var(--owlry-badge-weather, #06b6d4), 0.2);
+    color: var(--owlry-badge-weather, #06b6d4);
+    border-color: alpha(var(--owlry-badge-weather, #06b6d4), 0.4);
+}
+
+.owlry-filter-pomodoro:checked {
+    background-color: alpha(var(--owlry-badge-pomo, #f97316), 0.2);
+    color: var(--owlry-badge-pomo, #f97316);
+    border-color: alpha(var(--owlry-badge-pomo, #f97316), 0.4);
 }
 
 /* Hints bar at bottom */

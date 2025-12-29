@@ -248,10 +248,13 @@ impl MainWindow {
             ProviderType::Dmenu => "Dmenu",
             ProviderType::Emoji => "Emoji",
             ProviderType::Files => "Files",
+            ProviderType::MediaPlayer => "Media",
+            ProviderType::Pomodoro => "Pomo",
             ProviderType::Scripts => "Scripts",
             ProviderType::Ssh => "SSH",
             ProviderType::System => "System",
             ProviderType::Uuctl => "uuctl",
+            ProviderType::Weather => "Weather",
             ProviderType::WebSearch => "Web",
         }
     }
@@ -267,10 +270,13 @@ impl MainWindow {
             ProviderType::Dmenu => "owlry-filter-dmenu",
             ProviderType::Emoji => "owlry-filter-emoji",
             ProviderType::Files => "owlry-filter-file",
+            ProviderType::MediaPlayer => "owlry-filter-media",
+            ProviderType::Pomodoro => "owlry-filter-pomodoro",
             ProviderType::Scripts => "owlry-filter-script",
             ProviderType::Ssh => "owlry-filter-ssh",
             ProviderType::System => "owlry-filter-sys",
             ProviderType::Uuctl => "owlry-filter-uuctl",
+            ProviderType::Weather => "owlry-filter-weather",
             ProviderType::WebSearch => "owlry-filter-web",
         }
     }
@@ -288,10 +294,13 @@ impl MainWindow {
                 ProviderType::Dmenu => "options",
                 ProviderType::Emoji => "emoji",
                 ProviderType::Files => "files",
+                ProviderType::MediaPlayer => "media",
+                ProviderType::Pomodoro => "pomodoro",
                 ProviderType::Scripts => "scripts",
                 ProviderType::Ssh => "SSH hosts",
                 ProviderType::System => "system",
                 ProviderType::Uuctl => "uuctl units",
+                ProviderType::Weather => "weather",
                 ProviderType::WebSearch => "web",
             })
             .collect();
@@ -531,10 +540,13 @@ impl MainWindow {
                     ProviderType::Dmenu => "options",
                     ProviderType::Emoji => "emoji",
                     ProviderType::Files => "files",
+                    ProviderType::MediaPlayer => "media",
+                    ProviderType::Pomodoro => "pomodoro",
                     ProviderType::Scripts => "scripts",
                     ProviderType::Ssh => "SSH hosts",
                     ProviderType::System => "system",
                     ProviderType::Uuctl => "uuctl units",
+                    ProviderType::Weather => "weather",
                     ProviderType::WebSearch => "web",
                 };
                 search_entry_for_change
@@ -584,13 +596,14 @@ impl MainWindow {
         let current_results_for_activate = self.current_results.clone();
         let config_for_activate = self.config.clone();
         let frecency_for_activate = self.frecency.clone();
+        let providers_for_activate = self.providers.clone();
         let window_for_activate = self.window.clone();
         let submenu_state_for_activate = self.submenu_state.clone();
         let mode_label_for_activate = self.mode_label.clone();
         let hints_label_for_activate = self.hints_label.clone();
         let search_entry_for_activate = self.search_entry.clone();
 
-        self.search_entry.connect_activate(move |_| {
+        self.search_entry.connect_activate(move |entry| {
             let selected = results_list_for_activate
                 .selected_row()
                 .or_else(|| results_list_for_activate.row_at_index(0));
@@ -616,9 +629,21 @@ impl MainWindow {
                             is_active,
                         );
                     } else {
-                        // Execute the command
-                        Self::launch_item(item, &config_for_activate.borrow(), &frecency_for_activate);
-                        window_for_activate.close();
+                        // Execute the command (or handle internal commands)
+                        let item = item.clone();
+                        drop(results);
+                        let should_close = Self::handle_item_action(
+                            &item,
+                            &config_for_activate.borrow(),
+                            &frecency_for_activate,
+                            &providers_for_activate,
+                        );
+                        if should_close {
+                            window_for_activate.close();
+                        } else {
+                            // Trigger search refresh for updated widget state
+                            entry.emit_by_name::<()>("changed", &[]);
+                        }
                     }
                 }
             }
@@ -794,6 +819,7 @@ impl MainWindow {
         let current_results = self.current_results.clone();
         let config = self.config.clone();
         let frecency = self.frecency.clone();
+        let providers = self.providers.clone();
         let window = self.window.clone();
         let submenu_state = self.submenu_state.clone();
         let results_list_for_click = self.results_list.clone();
@@ -822,8 +848,15 @@ impl MainWindow {
                         is_active,
                     );
                 } else {
-                    Self::launch_item(item, &config.borrow(), &frecency);
-                    window.close();
+                    let item = item.clone();
+                    drop(results);
+                    let should_close = Self::handle_item_action(&item, &config.borrow(), &frecency, &providers);
+                    if should_close {
+                        window.close();
+                    } else {
+                        // Trigger search refresh for updated widget state
+                        search_entry.emit_by_name::<()>("changed", &[]);
+                    }
                 }
             }
         });
@@ -926,6 +959,28 @@ impl MainWindow {
         }
 
         *self.current_results.borrow_mut() = results;
+    }
+
+    /// Handle item activation - returns true if window should close
+    fn handle_item_action(
+        item: &LaunchItem,
+        config: &Config,
+        frecency: &Rc<RefCell<FrecencyStore>>,
+        providers: &Rc<RefCell<ProviderManager>>,
+    ) -> bool {
+        // Check for POMODORO: internal command
+        if item.command.starts_with("POMODORO:") {
+            let action = item.command.strip_prefix("POMODORO:").unwrap_or("");
+            if let Some(pomodoro) = providers.borrow_mut().pomodoro_mut() {
+                pomodoro.handle_action(action);
+            }
+            // Don't close window - user might want to see updated state
+            return false;
+        }
+
+        // Regular item launch
+        Self::launch_item(item, config, frecency);
+        true
     }
 
     fn launch_item(item: &LaunchItem, config: &Config, frecency: &Rc<RefCell<FrecencyStore>>) {
