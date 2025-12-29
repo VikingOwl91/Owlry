@@ -48,6 +48,8 @@ pub struct MainWindow {
     hints_label: Label,
     filter_buttons: Rc<RefCell<HashMap<ProviderType, ToggleButton>>>,
     submenu_state: Rc<RefCell<SubmenuState>>,
+    /// Parsed tab config (ProviderTypes for cycling)
+    tab_order: Rc<Vec<ProviderType>>,
 }
 
 impl MainWindow {
@@ -108,8 +110,17 @@ impl MainWindow {
             .build();
         filter_tabs.add_css_class("owlry-filter-tabs");
 
-        // Create toggle buttons for each provider
-        let filter_buttons = Self::create_filter_buttons(&filter_tabs, &filter);
+        // Parse tabs config to ProviderTypes
+        let tab_order: Vec<ProviderType> = cfg
+            .general
+            .tabs
+            .iter()
+            .filter_map(|s| s.parse().ok())
+            .collect();
+        let tab_order = Rc::new(tab_order);
+
+        // Create toggle buttons for each provider (from config)
+        let filter_buttons = Self::create_filter_buttons(&filter_tabs, &filter, &cfg.general.tabs);
         let filter_buttons = Rc::new(RefCell::new(filter_buttons));
 
         header_box.append(&mode_label);
@@ -177,6 +188,7 @@ impl MainWindow {
             hints_label,
             filter_buttons,
             submenu_state: Rc::new(RefCell::new(SubmenuState::default())),
+            tab_order,
         };
 
         main_window.setup_signals();
@@ -191,38 +203,31 @@ impl MainWindow {
     fn create_filter_buttons(
         container: &GtkBox,
         filter: &Rc<RefCell<ProviderFilter>>,
+        tabs: &[String],
     ) -> HashMap<ProviderType, ToggleButton> {
-        let providers = [
-            (ProviderType::Application, "Apps", "Ctrl+1"),
-            (ProviderType::Command, "Cmds", "Ctrl+2"),
-            (ProviderType::Uuctl, "uuctl", "Ctrl+3"),
-        ];
-
         let mut buttons = HashMap::new();
 
-        for (provider_type, label, shortcut) in providers {
+        // Parse tab strings to ProviderType and create buttons
+        for (idx, tab_str) in tabs.iter().enumerate() {
+            let provider_type: ProviderType = match tab_str.parse() {
+                Ok(pt) => pt,
+                Err(e) => {
+                    log::warn!("Invalid tab config '{}': {}", tab_str, e);
+                    continue;
+                }
+            };
+
+            let label = Self::provider_tab_label(provider_type);
+            let shortcut = format!("Ctrl+{}", idx + 1);
+
             let button = ToggleButton::builder()
                 .label(label)
-                .tooltip_text(shortcut)
+                .tooltip_text(&shortcut)
                 .active(filter.borrow().is_enabled(provider_type))
                 .build();
 
             button.add_css_class("owlry-filter-button");
-            let css_class = match provider_type {
-                ProviderType::Application => "owlry-filter-app",
-                ProviderType::Bookmarks => "owlry-filter-bookmark",
-                ProviderType::Calculator => "owlry-filter-calc",
-                ProviderType::Clipboard => "owlry-filter-clip",
-                ProviderType::Command => "owlry-filter-cmd",
-                ProviderType::Dmenu => "owlry-filter-dmenu",
-                ProviderType::Emoji => "owlry-filter-emoji",
-                ProviderType::Files => "owlry-filter-file",
-                ProviderType::Scripts => "owlry-filter-script",
-                ProviderType::Ssh => "owlry-filter-ssh",
-                ProviderType::System => "owlry-filter-sys",
-                ProviderType::Uuctl => "owlry-filter-uuctl",
-                ProviderType::WebSearch => "owlry-filter-web",
-            };
+            let css_class = Self::provider_css_class(provider_type);
             button.add_css_class(css_class);
 
             container.append(&button);
@@ -230,6 +235,44 @@ impl MainWindow {
         }
 
         buttons
+    }
+
+    /// Get display label for a provider tab
+    fn provider_tab_label(provider: ProviderType) -> &'static str {
+        match provider {
+            ProviderType::Application => "Apps",
+            ProviderType::Bookmarks => "Bookmarks",
+            ProviderType::Calculator => "Calc",
+            ProviderType::Clipboard => "Clip",
+            ProviderType::Command => "Cmds",
+            ProviderType::Dmenu => "Dmenu",
+            ProviderType::Emoji => "Emoji",
+            ProviderType::Files => "Files",
+            ProviderType::Scripts => "Scripts",
+            ProviderType::Ssh => "SSH",
+            ProviderType::System => "System",
+            ProviderType::Uuctl => "uuctl",
+            ProviderType::WebSearch => "Web",
+        }
+    }
+
+    /// Get CSS class for a provider
+    fn provider_css_class(provider: ProviderType) -> &'static str {
+        match provider {
+            ProviderType::Application => "owlry-filter-app",
+            ProviderType::Bookmarks => "owlry-filter-bookmark",
+            ProviderType::Calculator => "owlry-filter-calc",
+            ProviderType::Clipboard => "owlry-filter-clip",
+            ProviderType::Command => "owlry-filter-cmd",
+            ProviderType::Dmenu => "owlry-filter-dmenu",
+            ProviderType::Emoji => "owlry-filter-emoji",
+            ProviderType::Files => "owlry-filter-file",
+            ProviderType::Scripts => "owlry-filter-script",
+            ProviderType::Ssh => "owlry-filter-ssh",
+            ProviderType::System => "owlry-filter-sys",
+            ProviderType::Uuctl => "owlry-filter-uuctl",
+            ProviderType::WebSearch => "owlry-filter-web",
+        }
     }
 
     fn build_placeholder(filter: &ProviderFilter) -> String {
@@ -507,7 +550,7 @@ impl MainWindow {
             let results: Vec<LaunchItem> = if use_frecency {
                 providers
                     .borrow_mut()
-                    .search_with_frecency(&parsed.query, max_results, &filter.borrow(), &frecency.borrow(), frecency_weight)
+                    .search_with_frecency(&parsed.query, max_results, &filter.borrow(), &frecency.borrow(), frecency_weight, parsed.tag_filter.as_deref())
                     .into_iter()
                     .map(|(item, _)| item)
                     .collect()
@@ -616,6 +659,7 @@ impl MainWindow {
         let mode_label = self.mode_label.clone();
         let hints_label = self.hints_label.clone();
         let submenu_state = self.submenu_state.clone();
+        let tab_order = self.tab_order.clone();
 
         key_controller.connect_key_pressed(move |_, key, _, modifiers| {
             let ctrl = modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK);
@@ -693,6 +737,7 @@ impl MainWindow {
                             &filter_buttons,
                             &search_entry,
                             &mode_label,
+                            &tab_order,
                             !shift,
                         );
                     }
@@ -705,45 +750,37 @@ impl MainWindow {
                             &filter_buttons,
                             &search_entry,
                             &mode_label,
+                            &tab_order,
                             false,
                         );
                     }
                     gtk4::glib::Propagation::Stop
                 }
-                // Ctrl+1/2/3 toggle specific providers (only when not in submenu)
-                Key::_1 if ctrl => {
+                // Ctrl+1-9 toggle specific providers based on tab order (only when not in submenu)
+                Key::_1 | Key::_2 | Key::_3 | Key::_4 | Key::_5 |
+                Key::_6 | Key::_7 | Key::_8 | Key::_9 if ctrl => {
                     if !submenu_state.borrow().active {
-                        Self::toggle_provider_button(
-                            ProviderType::Application,
-                            &filter,
-                            &filter_buttons,
-                            &search_entry,
-                            &mode_label,
-                        );
-                    }
-                    gtk4::glib::Propagation::Stop
-                }
-                Key::_2 if ctrl => {
-                    if !submenu_state.borrow().active {
-                        Self::toggle_provider_button(
-                            ProviderType::Command,
-                            &filter,
-                            &filter_buttons,
-                            &search_entry,
-                            &mode_label,
-                        );
-                    }
-                    gtk4::glib::Propagation::Stop
-                }
-                Key::_3 if ctrl => {
-                    if !submenu_state.borrow().active {
-                        Self::toggle_provider_button(
-                            ProviderType::Uuctl,
-                            &filter,
-                            &filter_buttons,
-                            &search_entry,
-                            &mode_label,
-                        );
+                        let idx = match key {
+                            Key::_1 => 0,
+                            Key::_2 => 1,
+                            Key::_3 => 2,
+                            Key::_4 => 3,
+                            Key::_5 => 4,
+                            Key::_6 => 5,
+                            Key::_7 => 6,
+                            Key::_8 => 7,
+                            Key::_9 => 8,
+                            _ => return gtk4::glib::Propagation::Proceed,
+                        };
+                        if let Some(&provider) = tab_order.get(idx) {
+                            Self::toggle_provider_button(
+                                provider,
+                                &filter,
+                                &filter_buttons,
+                                &search_entry,
+                                &mode_label,
+                            );
+                        }
                     }
                     gtk4::glib::Propagation::Stop
                 }
@@ -797,24 +834,24 @@ impl MainWindow {
         buttons: &Rc<RefCell<HashMap<ProviderType, ToggleButton>>>,
         entry: &Entry,
         mode_label: &Label,
+        tab_order: &[ProviderType],
         forward: bool,
     ) {
-        let order = [
-            ProviderType::Application,
-            ProviderType::Command,
-            ProviderType::Uuctl,
-        ];
+        if tab_order.is_empty() {
+            return;
+        }
+
         let current = filter.borrow().enabled_providers();
 
         let next = if current.len() == 1 {
-            let idx = order.iter().position(|p| p == &current[0]).unwrap_or(0);
+            let idx = tab_order.iter().position(|p| p == &current[0]).unwrap_or(0);
             if forward {
-                order[(idx + 1) % order.len()]
+                tab_order[(idx + 1) % tab_order.len()]
             } else {
-                order[(idx + order.len() - 1) % order.len()]
+                tab_order[(idx + tab_order.len() - 1) % tab_order.len()]
             }
         } else {
-            ProviderType::Application
+            tab_order[0]
         };
 
         {
@@ -862,7 +899,7 @@ impl MainWindow {
         let results: Vec<LaunchItem> = if use_frecency {
             self.providers
                 .borrow_mut()
-                .search_with_frecency(query, max_results, &self.filter.borrow(), &self.frecency.borrow(), frecency_weight)
+                .search_with_frecency(query, max_results, &self.filter.borrow(), &self.frecency.borrow(), frecency_weight, None)
                 .into_iter()
                 .map(|(item, _)| item)
                 .collect()

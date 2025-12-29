@@ -191,6 +191,7 @@ impl FileSearchProvider {
                     provider: ProviderType::Files,
                     command,
                     terminal: false,
+                    tags: Vec::new(),
                 }
             })
             .collect()

@@ -82,6 +82,25 @@ impl ResultRow {
             text_box.append(&name_label);
         }
 
+        // Tag badges (show first 3 tags)
+        if !item.tags.is_empty() {
+            let tags_box = GtkBox::builder()
+                .orientation(Orientation::Horizontal)
+                .spacing(4)
+                .halign(gtk4::Align::Start)
+                .build();
+
+            for tag in item.tags.iter().take(3) {
+                let tag_label = Label::builder()
+                    .label(tag)
+                    .build();
+                tag_label.add_css_class("owlry-tag-badge");
+                tags_box.append(&tag_label);
+            }
+
+            text_box.append(&tags_box);
+        }
+
         // Provider badge
         let badge = Label::builder()
             .label(&item.provider.to_string())

@@ -76,6 +76,7 @@ impl SystemProvider {
                 provider: ProviderType::System,
                 command: command.to_string(),
                 terminal: false,
+                tags: vec!["power".to_string(), "system".to_string()],
             });
         }
     }

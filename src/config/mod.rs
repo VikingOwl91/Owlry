@@ -22,6 +22,18 @@ pub struct GeneralConfig {
     /// If None or empty, launches directly via sh -c
     #[serde(default)]
     pub launch_wrapper: Option<String>,
+    /// Provider tabs shown in the header bar.
+    /// Valid values: app, cmd, uuctl, bookmark, calc, clip, dmenu, emoji, file, script, ssh, sys, web
+    #[serde(default = "default_tabs")]
+    pub tabs: Vec<String>,
+}
+
+fn default_tabs() -> Vec<String> {
+    vec![
+        "app".to_string(),
+        "cmd".to_string(),
+        "uuctl".to_string(),
+    ]
 }
 
 /// User-customizable theme colors
@@ -220,6 +232,7 @@ impl Default for Config {
                 max_results: 10,
                 terminal_command: terminal,
                 launch_wrapper: detect_launch_wrapper(),
+                tabs: default_tabs(),
             },
             appearance: AppearanceConfig {
                 width: 600,

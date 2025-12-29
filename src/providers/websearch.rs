@@ -136,6 +136,7 @@ impl WebSearchProvider {
             provider: ProviderType::WebSearch,
             command,
             terminal: false,
+            tags: vec!["web".to_string(), "search".to_string()],
         })
     }
 }

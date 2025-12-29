@@ -73,6 +73,7 @@ impl CalculatorProvider {
                     provider: ProviderType::Calculator,
                     command: format!("echo -n '{}' | wl-copy", result_str),
                     terminal: false,
+                    tags: vec!["math".to_string()],
                 })
             }
             Err(_) => None,
@@ -111,6 +112,7 @@ impl CalculatorProvider {
                     // Copy result to clipboard using wl-copy
                     command: format!("sh -c 'echo -n \"{}\" | wl-copy'", result_str),
                     terminal: false,
+                    tags: vec!["math".to_string()],
                 };
 
                 debug!("Calculator result: {} = {}", expr, result_str);

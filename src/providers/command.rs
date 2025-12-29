@@ -87,6 +87,7 @@ impl Provider for CommandProvider {
                     provider: ProviderType::Command,
                     command: name,
                     terminal: false,
+                    tags: Vec::new(),
                 };
 
                 self.items.push(item);

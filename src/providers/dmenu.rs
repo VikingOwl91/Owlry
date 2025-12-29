@@ -101,6 +101,7 @@ impl Provider for DmenuProvider {
                 provider: ProviderType::Dmenu,
                 command: line.to_string(),
                 terminal: false,
+                tags: Vec::new(),
             };
 
             self.items.push(item);

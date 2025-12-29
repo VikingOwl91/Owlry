@@ -87,6 +87,7 @@ impl ScriptsProvider {
                 provider: ProviderType::Scripts,
                 command: path.to_string_lossy().to_string(),
                 terminal: false,
+                tags: vec!["script".to_string()],
             });
         }
 

@@ -157,6 +157,7 @@ impl BookmarksProvider {
                                 provider: ProviderType::Bookmarks,
                                 command: format!("xdg-open '{}'", url.replace('\'', "'\\''")),
                                 terminal: false,
+                                tags: Vec::new(),
                             });
                         }
                     }

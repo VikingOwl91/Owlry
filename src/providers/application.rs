@@ -135,6 +135,12 @@ impl Provider for ApplicationProvider {
                 None => continue,
             };
 
+            // Extract categories as tags (lowercase for consistency)
+            let tags: Vec<String> = desktop_entry
+                .categories()
+                .map(|cats| cats.into_iter().map(|s| s.to_lowercase()).collect())
+                .unwrap_or_default();
+
             let item = LaunchItem {
                 id: path.to_string_lossy().to_string(),
                 name,
@@ -143,6 +149,7 @@ impl Provider for ApplicationProvider {
                 provider: ProviderType::Application,
                 command: run_cmd,
                 terminal: desktop_entry.terminal(),
+                tags,
             };
 
             self.items.push(item);

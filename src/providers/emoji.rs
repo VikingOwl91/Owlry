@@ -406,6 +406,7 @@ impl EmojiProvider {
                 // Copy emoji to clipboard using wl-copy
                 command: format!("printf '%s' '{}' | wl-copy", emoji),
                 terminal: false,
+                tags: Vec::new(), // TODO: Extract category from emoji data
             });
 
             // Store the search text for matching (not used directly but could be)

@@ -161,6 +161,7 @@ impl SshProvider {
             provider: ProviderType::Ssh,
             command,
             terminal: false, // We're already wrapping in terminal
+            tags: vec!["ssh".to_string()],
         });
     }
 }

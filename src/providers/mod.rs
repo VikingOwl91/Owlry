@@ -46,6 +46,8 @@ pub struct LaunchItem {
     pub provider: ProviderType,
     pub command: String,
     pub terminal: bool,
+    /// Tags/categories for filtering (e.g., from .desktop Categories)
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -282,7 +284,7 @@ impl ProviderManager {
         results
     }
 
-    /// Search with frecency boosting and calculator support
+    /// Search with frecency boosting, calculator support, and tag filtering
     pub fn search_with_frecency(
         &mut self,
         query: &str,
@@ -290,6 +292,7 @@ impl ProviderManager {
         filter: &crate::filter::ProviderFilter,
         frecency: &FrecencyStore,
         frecency_weight: f64,
+        tag_filter: Option<&str>,
     ) -> Vec<(LaunchItem, i64)> {
         #[cfg(feature = "dev-logging")]
         debug!("[Search] query={:?}, max={}, frecency_weight={}", query, max_results, frecency_weight);
@@ -352,6 +355,14 @@ impl ProviderManager {
                 .iter()
                 .filter(|p| filter.is_active(p.provider_type()))
                 .flat_map(|p| p.items().iter().cloned())
+                .filter(|item| {
+                    // Apply tag filter if present
+                    if let Some(tag) = tag_filter {
+                        item.tags.iter().any(|t| t.to_lowercase().contains(tag))
+                    } else {
+                        true
+                    }
+                })
                 .map(|item| {
                     let frecency_score = frecency.get_score(&item.id);
                     let boosted = (frecency_score * frecency_weight * 100.0) as i64;
@@ -364,24 +375,43 @@ impl ProviderManager {
             return items;
         }
 
-        // Regular search with frecency boost
+        // Regular search with frecency boost and tag matching
         let search_results: Vec<(LaunchItem, i64)> = self
             .providers
             .iter()
             .filter(|provider| filter.is_active(provider.provider_type()))
             .flat_map(|provider| {
                 provider.items().iter().filter_map(|item| {
+                    // Apply tag filter if present
+                    if let Some(tag) = tag_filter {
+                        if !item.tags.iter().any(|t| t.to_lowercase().contains(tag)) {
+                            return None;
+                        }
+                    }
+
                     let name_score = self.matcher.fuzzy_match(&item.name, query);
                     let desc_score = item
                         .description
                         .as_ref()
                         .and_then(|d| self.matcher.fuzzy_match(d, query));
 
-                    let base_score = match (name_score, desc_score) {
-                        (Some(n), Some(d)) => Some(n.max(d)),
-                        (Some(n), None) => Some(n),
-                        (None, Some(d)) => Some(d / 2),
-                        (None, None) => None,
+                    // Also match against tags (lower weight)
+                    let tag_score = item
+                        .tags
+                        .iter()
+                        .filter_map(|t| self.matcher.fuzzy_match(t, query))
+                        .max()
+                        .map(|s| s / 3); // Lower weight for tag matches
+
+                    let base_score = match (name_score, desc_score, tag_score) {
+                        (Some(n), Some(d), Some(t)) => Some(n.max(d).max(t)),
+                        (Some(n), Some(d), None) => Some(n.max(d)),
+                        (Some(n), None, Some(t)) => Some(n.max(t)),
+                        (Some(n), None, None) => Some(n),
+                        (None, Some(d), Some(t)) => Some((d / 2).max(t)),
+                        (None, Some(d), None) => Some(d / 2),
+                        (None, None, Some(t)) => Some(t),
+                        (None, None, None) => None,
                     };
 
                     base_score.map(|s| {

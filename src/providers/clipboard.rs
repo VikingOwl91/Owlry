@@ -99,6 +99,7 @@ impl ClipboardProvider {
                 provider: ProviderType::Clipboard,
                 command,
                 terminal: false,
+                tags: Vec::new(),
             });
         }
 

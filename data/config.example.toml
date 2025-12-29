@@ -13,6 +13,10 @@ terminal_command = "kitty"  # Auto-detected if not set
 #   ""                         # Direct execution
 # launch_wrapper = "uwsm app --"
 
+# Provider tabs shown in header bar (Ctrl+1, Ctrl+2, etc. to toggle)
+# Valid values: app, cmd, uuctl, bookmark, calc, clip, dmenu, emoji, file, script, ssh, sys, web
+tabs = ["app", "cmd", "uuctl"]
+
 [appearance]
 width = 600
 height = 400

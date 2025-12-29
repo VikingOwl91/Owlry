@@ -17,6 +17,7 @@ pub struct ProviderFilter {
 #[derive(Debug, Clone)]
 pub struct ParsedQuery {
     pub prefix: Option<ProviderType>,
+    pub tag_filter: Option<String>,
     pub query: String,
 }
 
@@ -161,6 +162,30 @@ impl ProviderFilter {
     pub fn parse_query(query: &str) -> ParsedQuery {
         let trimmed = query.trim_start();
 
+        // Check for tag filter pattern: ":tag:XXX query" or ":tag:XXX"
+        if let Some(rest) = trimmed.strip_prefix(":tag:") {
+            // Find the end of the tag (space or end of string)
+            if let Some(space_idx) = rest.find(' ') {
+                let tag = rest[..space_idx].to_lowercase();
+                let query_part = rest[space_idx + 1..].to_string();
+                #[cfg(feature = "dev-logging")]
+                debug!("[Filter] parse_query({:?}) -> tag={:?}, query={:?}", query, tag, query_part);
+                return ParsedQuery {
+                    prefix: None,
+                    tag_filter: Some(tag),
+                    query: query_part,
+                };
+            } else {
+                // Just the tag, no query yet
+                let tag = rest.to_lowercase();
+                return ParsedQuery {
+                    prefix: None,
+                    tag_filter: Some(tag),
+                    query: String::new(),
+                };
+            }
+        }
+
         // Check for prefix patterns (with trailing space)
         let prefixes = [
             (":app ", ProviderType::Application),
@@ -196,6 +221,7 @@ impl ProviderFilter {
                 debug!("[Filter] parse_query({:?}) -> prefix={:?}, query={:?}", query, provider, rest);
                 return ParsedQuery {
                     prefix: Some(provider),
+                    tag_filter: None,
                     query: rest.to_string(),
                 };
             }
@@ -236,6 +262,7 @@ impl ProviderFilter {
                 debug!("[Filter] parse_query({:?}) -> partial prefix {:?}", query, provider);
                 return ParsedQuery {
                     prefix: Some(provider),
+                    tag_filter: None,
                     query: String::new(),
                 };
             }
@@ -243,11 +270,12 @@ impl ProviderFilter {
 
         let result = ParsedQuery {
             prefix: None,
+            tag_filter: None,
             query: query.to_string(),
         };
 
         #[cfg(feature = "dev-logging")]
-        debug!("[Filter] parse_query({:?}) -> prefix={:?}, query={:?}", query, result.prefix, result.query);
+        debug!("[Filter] parse_query({:?}) -> prefix={:?}, tag={:?}, query={:?}", query, result.prefix, result.tag_filter, result.query);
 
         result
     }

@@ -46,6 +46,7 @@ impl UuctlProvider {
                 provider: ProviderType::Uuctl,
                 command: format!("systemctl --user restart {}", unit_name),
                 terminal: false,
+                tags: vec!["systemd".to_string(), "service".to_string()],
             });
 
             actions.push(LaunchItem {
@@ -56,6 +57,7 @@ impl UuctlProvider {
                 provider: ProviderType::Uuctl,
                 command: format!("systemctl --user stop {}", unit_name),
                 terminal: false,
+                tags: vec!["systemd".to_string(), "service".to_string()],
             });
 
             actions.push(LaunchItem {
@@ -66,6 +68,7 @@ impl UuctlProvider {
                 provider: ProviderType::Uuctl,
                 command: format!("systemctl --user reload {}", unit_name),
                 terminal: false,
+                tags: vec!["systemd".to_string(), "service".to_string()],
             });
 
             actions.push(LaunchItem {
@@ -76,6 +79,7 @@ impl UuctlProvider {
                 provider: ProviderType::Uuctl,
                 command: format!("systemctl --user kill {}", unit_name),
                 terminal: false,
+                tags: vec!["systemd".to_string(), "service".to_string()],
             });
         } else {
             actions.push(LaunchItem {
@@ -86,6 +90,7 @@ impl UuctlProvider {
                 provider: ProviderType::Uuctl,
                 command: format!("systemctl --user start {}", unit_name),
                 terminal: false,
+                tags: vec!["systemd".to_string(), "service".to_string()],
             });
         }
 
@@ -98,6 +103,7 @@ impl UuctlProvider {
             provider: ProviderType::Uuctl,
             command: format!("systemctl --user status {}", unit_name),
             terminal: true,
+            tags: vec!["systemd".to_string(), "service".to_string()],
         });
 
         actions.push(LaunchItem {
@@ -108,6 +114,7 @@ impl UuctlProvider {
             provider: ProviderType::Uuctl,
             command: format!("journalctl --user -u {} -f", unit_name),
             terminal: true,
+            tags: vec!["systemd".to_string(), "service".to_string()],
         });
 
         actions.push(LaunchItem {
@@ -118,6 +125,7 @@ impl UuctlProvider {
             provider: ProviderType::Uuctl,
             command: format!("systemctl --user enable {}", unit_name),
             terminal: false,
+            tags: vec!["systemd".to_string(), "service".to_string()],
         });
 
         actions.push(LaunchItem {
@@ -128,6 +136,7 @@ impl UuctlProvider {
             provider: ProviderType::Uuctl,
             command: format!("systemctl --user disable {}", unit_name),
             terminal: false,
+            tags: vec!["systemd".to_string(), "service".to_string()],
         });
 
         actions
@@ -189,6 +198,7 @@ impl UuctlProvider {
                 provider: ProviderType::Uuctl,
                 command: submenu_data, // Special marker for submenu
                 terminal: false,
+                tags: vec!["systemd".to_string(), "service".to_string()],
             });
         }
 
