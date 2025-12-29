@@ -14,7 +14,7 @@
     background-color: var(--owlry-bg, @theme_bg_color);
     border-radius: var(--owlry-border-radius, 12px);
     border: 1px solid var(--owlry-border, @borders);
-    padding: 16px;
+    padding: 12px;
 }
 
 /* Search entry */

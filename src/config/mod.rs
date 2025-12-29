@@ -235,8 +235,8 @@ impl Default for Config {
                 tabs: default_tabs(),
             },
             appearance: AppearanceConfig {
-                width: 600,
-                height: 400,
+                width: 700,
+                height: 500,
                 font_size: 14,
                 border_radius: 12,
                 theme: None,

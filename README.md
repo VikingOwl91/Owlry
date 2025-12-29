@@ -151,8 +151,8 @@ tabs = ["app", "cmd", "uuctl"]  # Header tabs (Ctrl+1, Ctrl+2, etc.)
 # launch_wrapper = "uwsm app --" # Auto-detected
 
 [appearance]
-width = 600
-height = 400
+width = 700
+height = 500
 font_size = 14
 border_radius = 12
 # theme = "owl"  # Or: catppuccin-mocha, nord, dracula, etc.
