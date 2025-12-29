@@ -126,10 +126,18 @@ Owlry follows the [XDG Base Directory Specification](https://specifications.free
 
 ## Configuration
 
-Copy the example config:
+Copy the example files:
 ```bash
+# Config
 mkdir -p ~/.config/owlry
 cp /usr/share/doc/owlry/config.example.toml ~/.config/owlry/config.toml
+
+# Optional: CSS overrides
+cp /usr/share/doc/owlry/style.example.css ~/.config/owlry/style.css
+
+# Optional: Example script
+mkdir -p ~/.local/share/owlry/scripts
+cp /usr/share/doc/owlry/scripts/example.sh ~/.local/share/owlry/scripts/
 ```
 
 ### Example Configuration
