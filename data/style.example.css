@@ -1,0 +1,73 @@
+/*
+ * Owlry Custom Style Overrides
+ * Copy to: ~/.config/owlry/style.css
+ *
+ * This file is loaded AFTER themes, allowing you to override
+ * specific styles without creating a full theme.
+ *
+ * Available CSS classes:
+ *   .owlry-window          - Main window container
+ *   .owlry-main            - Main content area
+ *   .owlry-header          - Header with mode and tabs
+ *   .owlry-search          - Search input field
+ *   .owlry-results         - Results list container
+ *   .owlry-result-row      - Individual result row
+ *   .owlry-result-name     - Result item name
+ *   .owlry-result-description - Result description text
+ *   .owlry-result-icon     - Result icon
+ *   .owlry-tag-badge       - Tag badges on results
+ *   .owlry-badge-*         - Provider badges (app, cmd, uuctl, etc.)
+ *   .owlry-filter-button   - Tab filter buttons
+ *   .owlry-filter-*        - Provider-specific filter buttons
+ *   .owlry-mode-indicator  - Current mode label
+ *   .owlry-hints           - Bottom hints bar
+ *
+ * CSS Variables (set in themes or override here):
+ *   --owlry-bg             - Main background color
+ *   --owlry-bg-secondary   - Secondary background
+ *   --owlry-border         - Border color
+ *   --owlry-text           - Primary text color
+ *   --owlry-text-secondary - Secondary text color
+ *   --owlry-accent         - Accent/highlight color
+ *   --owlry-accent-bright  - Bright accent color
+ *   --owlry-font-size      - Base font size (default: 14px)
+ *   --owlry-border-radius  - Border radius (default: 12px)
+ */
+
+/* Example: Make the window slightly larger */
+/*
+.owlry-main {
+    padding: 20px;
+}
+*/
+
+/* Example: Custom search field styling */
+/*
+.owlry-search {
+    font-size: 18px;
+    padding: 12px 16px;
+}
+*/
+
+/* Example: Highlight selected row differently */
+/*
+.owlry-result-row:selected {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-left: 4px solid var(--owlry-accent);
+}
+*/
+
+/* Example: Hide tag badges */
+/*
+.owlry-tag-badge {
+    display: none;
+}
+*/
+
+/* Example: Custom scrollbar */
+/*
+scrollbar slider {
+    background-color: rgba(128, 128, 128, 0.3);
+    border-radius: 4px;
+}
+*/

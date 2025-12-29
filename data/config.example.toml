@@ -1,28 +1,37 @@
 # Owlry Configuration
-# Copy to ~/.config/owlry/config.toml
+# Copy to: ~/.config/owlry/config.toml
 #
-# File locations (XDG Base Directory compliant):
-#   Config:  $XDG_CONFIG_HOME/owlry/config.toml   (~/.config/owlry/)
-#   Themes:  $XDG_CONFIG_HOME/owlry/themes/*.css
-#   Style:   $XDG_CONFIG_HOME/owlry/style.css     (custom CSS overrides)
-#   Scripts: $XDG_DATA_HOME/owlry/scripts/        (~/.local/share/owlry/)
-#   Data:    $XDG_DATA_HOME/owlry/frecency.json
+# File Locations (XDG Base Directory compliant):
+# ┌─────────────────────────────────────────────────────────────────────┐
+# │ Config:  ~/.config/owlry/config.toml      Main configuration       │
+# │ Themes:  ~/.config/owlry/themes/*.css     Custom theme files       │
+# │ Style:   ~/.config/owlry/style.css        CSS overrides            │
+# │ Scripts: ~/.local/share/owlry/scripts/    Executable scripts       │
+# │ Data:    ~/.local/share/owlry/frecency.json  Usage history         │
+# └─────────────────────────────────────────────────────────────────────┘
+
+# ═══════════════════════════════════════════════════════════════════════
+# GENERAL
+# ═══════════════════════════════════════════════════════════════════════
 
 [general]
 show_icons = true
 max_results = 10
-terminal_command = "kitty"  # Auto-detected if not set
 
-# Launch wrapper for app execution (auto-detected if not set)
-# Examples:
-#   "uwsm app --"              # For uwsm sessions
-#   "hyprctl dispatch exec --" # For Hyprland
-#   ""                         # Direct execution
+# Terminal emulator (auto-detected if not set)
+terminal_command = "kitty"
+
+# Launch wrapper for app execution (auto-detected for uwsm/Hyprland)
+# Examples: "uwsm app --", "hyprctl dispatch exec --", ""
 # launch_wrapper = "uwsm app --"
 
-# Provider tabs shown in header bar (Ctrl+1, Ctrl+2, etc. to toggle)
-# Valid values: app, cmd, uuctl, bookmark, calc, clip, dmenu, emoji, file, script, ssh, sys, web
+# Header tabs - providers shown as toggle buttons (Ctrl+1, Ctrl+2, etc.)
+# Values: app, cmd, uuctl, bookmark, calc, clip, dmenu, emoji, file, script, ssh, sys, web
 tabs = ["app", "cmd", "uuctl"]
+
+# ═══════════════════════════════════════════════════════════════════════
+# APPEARANCE
+# ═══════════════════════════════════════════════════════════════════════
 
 [appearance]
 width = 600
@@ -30,13 +39,13 @@ height = 400
 font_size = 14
 border_radius = 12
 
-# Theme: "owl" for built-in dark theme, or leave unset for GTK default
-# Custom themes: place in $XDG_CONFIG_HOME/owlry/themes/{name}.css
+# Theme name - loads ~/.config/owlry/themes/{name}.css
+# Built-in: owl, catppuccin-mocha, dracula, gruvbox-dark, nord,
+#           one-dark, rose-pine, solarized-dark, tokyo-night
+# Or leave unset for GTK default
 # theme = "owl"
 
-# Custom CSS: create $XDG_CONFIG_HOME/owlry/style.css for additional styling
-
-# Individual color overrides (CSS color values)
+# Color overrides (applied on top of theme)
 # [appearance.colors]
 # background = "#1a1b26"
 # background_secondary = "#24283b"
@@ -51,42 +60,56 @@ border_radius = 12
 # badge_dmenu = "#bb9af7"
 # badge_uuctl = "#f7768e"
 
-[providers]
-applications = true
-commands = true
-uuctl = true
+# ═══════════════════════════════════════════════════════════════════════
+# PROVIDERS
+# ═══════════════════════════════════════════════════════════════════════
 
-# Calculator provider (type "= 5+3" or "calc 5+3")
+[providers]
+# Core providers (appear in main search)
+applications = true      # .desktop applications
+commands = true          # Executables from $PATH
+uuctl = true             # systemd --user units
+
+# Frecency - boost frequently/recently used items
+# Data: ~/.local/share/owlry/frecency.json
+frecency = true
+frecency_weight = 0.3    # 0.0 = disabled, 1.0 = strong boost
+
+# ───────────────────────────────────────────────────────────────────────
+# Trigger Providers (activated by prefix)
+# ───────────────────────────────────────────────────────────────────────
+
+# Calculator: "= 5+3" or "calc 5+3" or ":calc"
 calculator = true
 
-# Frecency: boost frequently/recently used items in search results
-# Data stored in $XDG_DATA_HOME/owlry/frecency.json
-frecency = true
-frecency_weight = 0.3  # 0.0 = disabled, 1.0 = strong boost
-
-# Web search provider (type "? query" or "web query")
+# Web search: "? query" or "web query" or ":web"
 websearch = true
-# Options: google, duckduckgo, bing, startpage, searxng, brave, ecosia
-# Or custom URL with {query} placeholder, e.g. "https://search.example.com/?q={query}"
 search_engine = "duckduckgo"
+# Options: google, duckduckgo, bing, startpage, searxng, brave, ecosia
+# Custom: "https://search.example.com/?q={query}"
 
-# System commands (shutdown, reboot, lock, suspend, hibernate, logout, BIOS)
+# File search: "/ pattern" or "find pattern" or ":file"
+# Requires: fd or locate
+files = true
+
+# ───────────────────────────────────────────────────────────────────────
+# Prefix Providers (use :prefix to search)
+# ───────────────────────────────────────────────────────────────────────
+
+# System: :sys or :power - shutdown, reboot, lock, suspend, hibernate, logout
 system = true
 
-# SSH connections from ~/.ssh/config
+# SSH: :ssh - connections from ~/.ssh/config
 ssh = true
 
-# Clipboard history (requires cliphist)
+# Clipboard: :clip - history (requires cliphist)
 clipboard = true
 
-# Browser bookmarks (Chrome, Chromium, Brave, Edge, Vivaldi)
+# Bookmarks: :bm - browser bookmarks (Chrome, Chromium, Brave, Edge, Vivaldi)
 bookmarks = true
 
-# Emoji picker (copies to clipboard)
+# Emoji: :emoji - picker (copies to clipboard)
 emoji = true
 
-# Custom scripts from $XDG_DATA_HOME/owlry/scripts/ (~/.local/share/owlry/scripts/)
+# Scripts: :script - executables from ~/.local/share/owlry/scripts/
 scripts = true
-
-# File search (requires fd or locate, trigger with "/ pattern" or "find pattern")
-files = true
