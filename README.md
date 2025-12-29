@@ -10,32 +10,30 @@ A lightweight, owl-themed application launcher for Wayland, built with GTK4 and 
 
 ## Features
 
-- **Provider-based architecture** - Search applications, commands, system actions, SSH hosts, clipboard history, bookmarks, emoji, and more
-- **Fuzzy search** - Fast, typo-tolerant matching across all providers
-- **Filter tabs & prefixes** - Scope searches with UI tabs or `:app`, `:cmd`, `:sys` prefixes
-- **Calculator** - Quick math with `= 5+3` or `calc sin(pi/2)`
-- **Web search** - Search the web with `? query` or `web query`
-- **File search** - Find files with `/ filename` or `find config` (requires `fd` or `locate`)
-- **Frecency ranking** - Frequently/recently used items rank higher
-- **GTK4 theming** - Respects system theme by default, with optional custom themes
-- **Wayland native** - Uses Layer Shell for proper overlay behavior
+- **Provider-based architecture** — Search applications, commands, system actions, SSH hosts, clipboard history, bookmarks, emoji, and more
+- **Fuzzy search with tags** — Fast matching across names, descriptions, and category tags
+- **Configurable tabs** — Customize header tabs and keyboard shortcuts
+- **Filter prefixes** — Scope searches with `:app`, `:cmd`, `:tag:development`, etc.
+- **Calculator** — Quick math with `= 5+3` or `calc sin(pi/2)`
+- **Web search** — Search the web with `? query`
+- **File search** — Find files with `/ filename` (requires `fd` or `locate`)
+- **Frecency ranking** — Frequently/recently used items rank higher
+- **GTK4 theming** — System theme by default, with 9 built-in themes
+- **Wayland native** — Uses Layer Shell for proper overlay behavior
 
 ## Installation
 
 ### Arch Linux (AUR)
 
 ```bash
-# Using yay
 yay -S owlry
-
-# Using paru
+# or
 paru -S owlry
 ```
 
-### Build from source
+### Build from Source
 
-#### Dependencies
-
+**Dependencies:**
 ```bash
 # Arch Linux
 sudo pacman -S gtk4 gtk4-layer-shell
@@ -47,42 +45,31 @@ sudo apt install libgtk-4-dev libgtk4-layer-shell-dev
 sudo dnf install gtk4-devel gtk4-layer-shell-devel
 ```
 
-#### Optional dependencies
-
+**Optional dependencies:**
 ```bash
-# For clipboard history
+# Clipboard history
 sudo pacman -S cliphist wl-clipboard
 
-# For file search
-sudo pacman -S fd  # or: mlocate
+# File search (choose one)
+sudo pacman -S fd       # recommended
+sudo pacman -S mlocate  # alternative
 ```
 
-#### Build
-
-Requires Rust 1.90 or later.
-
+**Build (requires Rust 1.90+):**
 ```bash
 git clone https://somegit.dev/Owlibou/owlry.git
 cd owlry
 cargo build --release
+# Binary: target/release/owlry
 ```
-
-The binary will be at `target/release/owlry`.
 
 ## Usage
 
 ```bash
-# Launch with default settings (GTK theme, all providers)
-owlry
-
-# Launch with only applications
-owlry --mode app
-
-# Launch with specific providers
-owlry --providers app,cmd
-
-# Show help
-owlry --help
+owlry                      # Launch with defaults
+owlry --mode app           # Applications only
+owlry --providers app,cmd  # Specific providers
+owlry --help               # Show all options
 ```
 
 ### Keyboard Shortcuts
@@ -91,16 +78,12 @@ owlry --help
 |-----|--------|
 | `Enter` | Launch selected item |
 | `Escape` | Close launcher / exit submenu |
-| `Up` / `Down` | Navigate results |
-| `Tab` | Cycle filter modes |
-| `Shift+Tab` | Cycle filter modes (reverse) |
-| `Ctrl+1` | Toggle Applications filter |
-| `Ctrl+2` | Toggle Commands filter |
-| `Ctrl+3` | Toggle systemd filter |
+| `↑` / `↓` | Navigate results |
+| `Tab` | Cycle filter tabs |
+| `Shift+Tab` | Cycle filter tabs (reverse) |
+| `Ctrl+1..9` | Toggle tab by position |
 
 ### Search Prefixes
-
-Filter results by provider using prefixes:
 
 | Prefix | Provider | Example |
 |--------|----------|---------|
@@ -108,118 +91,63 @@ Filter results by provider using prefixes:
 | `:cmd` | PATH commands | `:cmd git` |
 | `:sys` | System actions | `:sys shutdown` |
 | `:ssh` | SSH hosts | `:ssh server` |
-| `:clip` | Clipboard history | `:clip password` |
-| `:bm` | Browser bookmarks | `:bm github` |
-| `:emoji` | Emoji picker | `:emoji heart` |
-| `:script` | Custom scripts | `:script backup` |
-| `:file` | File search | `:file config.toml` |
-| `:calc` | Calculator | `:calc 5+3` |
+| `:clip` | Clipboard | `:clip password` |
+| `:bm` | Bookmarks | `:bm github` |
+| `:emoji` | Emoji | `:emoji heart` |
+| `:script` | Scripts | `:script backup` |
+| `:file` | Files | `:file config` |
+| `:calc` | Calculator | `:calc sqrt(16)` |
 | `:web` | Web search | `:web rust docs` |
-| `:uuctl` | systemd services | `:uuctl docker` |
+| `:uuctl` | systemd | `:uuctl docker` |
+| `:tag:X` | Filter by tag | `:tag:development` |
 
 ### Trigger Prefixes
 
-Some providers can be triggered directly without filter mode:
-
 | Trigger | Provider | Example |
 |---------|----------|---------|
-| `=` | Calculator | `= 5+3` or `=5*2` |
+| `=` | Calculator | `= 5+3` |
 | `calc ` | Calculator | `calc sqrt(16)` |
 | `?` | Web search | `? rust programming` |
 | `web ` | Web search | `web linux tips` |
-| `search ` | Web search | `search owlry` |
 | `/` | File search | `/ .bashrc` |
 | `find ` | File search | `find config` |
 
-## Providers
+## File Locations
 
-### Applications
-Searches `.desktop` files from standard XDG directories.
+Owlry follows the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/latest/):
 
-### Commands
-Searches executable files in `$PATH`.
-
-### System
-Quick access to system actions:
-- Shutdown, Reboot, Suspend, Hibernate
-- Lock Screen, Log Out
-- **Reboot into BIOS** - Restart directly into UEFI/BIOS setup
-
-### SSH
-Parses `~/.ssh/config` and offers quick connections to configured hosts. Opens in your configured terminal.
-
-### Clipboard (requires cliphist)
-Search and paste from clipboard history. Requires `cliphist` and `wl-clipboard`:
-```bash
-sudo pacman -S cliphist wl-clipboard
-```
-
-### Bookmarks
-Reads bookmarks from Chromium-based browsers:
-- Chrome, Chromium, Brave, Edge, Vivaldi
-
-### Emoji
-Search 300+ emojis by name or keywords. Selected emoji is copied to clipboard via `wl-copy`.
-
-### Scripts
-Runs executable scripts from `~/.config/owlry/scripts/`. Create the directory and add your scripts:
-```bash
-mkdir -p ~/.config/owlry/scripts
-echo '#!/bin/bash
-# My backup script
-rsync -av ~/Documents /backup/' > ~/.config/owlry/scripts/backup
-chmod +x ~/.config/owlry/scripts/backup
-```
-
-### Calculator
-Evaluate math expressions with `= expr` or `calc expr`:
-- Basic: `= 5+3`, `= 10/3`
-- Functions: `= sqrt(16)`, `= sin(pi/2)`
-- Constants: `= pi`, `= e`
-
-### Web Search
-Search the web with `? query` or `web query`. Configurable search engine:
-- Google, DuckDuckGo, Bing, Brave, Ecosia, Startpage, SearXNG
-- Or custom URL with `{query}` placeholder
-
-### File Search (requires fd or locate)
-Search files with `/ pattern` or `find pattern`:
-```bash
-sudo pacman -S fd  # recommended, faster
-# or
-sudo pacman -S mlocate && sudo updatedb
-```
-
-### systemd User Services
-Lists and controls user-level systemd services. Select a service to access actions:
-- Start / Stop / Restart / Reload
-- Kill (force stop)
-- Status (opens in terminal)
-- Journal (live logs in terminal)
-- Enable / Disable (autostart)
+| Path | Purpose |
+|------|---------|
+| `~/.config/owlry/config.toml` | Main configuration |
+| `~/.config/owlry/themes/*.css` | Custom themes |
+| `~/.config/owlry/style.css` | CSS overrides |
+| `~/.local/share/owlry/scripts/` | User scripts |
+| `~/.local/share/owlry/frecency.json` | Usage history |
 
 ## Configuration
 
-Configuration file: `~/.config/owlry/config.toml`
-
+Copy the example config:
 ```bash
 mkdir -p ~/.config/owlry
 cp /usr/share/doc/owlry/config.example.toml ~/.config/owlry/config.toml
 ```
 
+### Example Configuration
+
 ```toml
 [general]
 show_icons = true
 max_results = 10
-# terminal_command = "kitty"  # Auto-detected if not set
-# launch_wrapper = "uwsm app --"  # Auto-detected for uwsm/hyprland
+tabs = ["app", "cmd", "uuctl"]  # Header tabs (Ctrl+1, Ctrl+2, etc.)
+# terminal_command = "kitty"    # Auto-detected
+# launch_wrapper = "uwsm app --" # Auto-detected
 
 [appearance]
 width = 600
 height = 400
 font_size = 14
 border_radius = 12
-# theme = "owl"  # Optional: "owl" or custom theme name
+# theme = "owl"  # Or: catppuccin-mocha, nord, dracula, etc.
 
 [providers]
 applications = true
@@ -227,7 +155,7 @@ commands = true
 uuctl = true
 calculator = true
 websearch = true
-search_engine = "duckduckgo"  # google, bing, brave, ecosia, startpage, searxng
+search_engine = "duckduckgo"
 system = true
 ssh = true
 clipboard = true
@@ -236,72 +164,83 @@ emoji = true
 scripts = true
 files = true
 frecency = true
-frecency_weight = 0.3  # 0.0 = disabled, 1.0 = strong boost
+frecency_weight = 0.3
 ```
 
-### Default Values
+### Tab Configuration
 
-| Setting | Default |
-|---------|---------|
-| `show_icons` | `true` |
-| `max_results` | `10` |
-| `terminal_command` | Auto-detected ($TERMINAL -> xdg-terminal-exec -> kitty/alacritty/etc) |
-| `launch_wrapper` | Auto-detected (uwsm -> hyprctl -> none) |
-| `width` | `600` |
-| `height` | `400` |
-| `font_size` | `14` |
-| `border_radius` | `12` |
-| `theme` | None (GTK default) |
+Customize which providers appear as header tabs:
 
-### Launch Wrapper
+```toml
+[general]
+# Available: app, cmd, uuctl, bookmark, calc, clip, dmenu,
+#            emoji, file, script, ssh, sys, web
+tabs = ["app", "cmd", "ssh", "sys"]
+```
 
-When running in uwsm-managed or Hyprland sessions, owlry auto-detects and uses the appropriate launch wrapper:
+Keyboard shortcuts `Ctrl+1` through `Ctrl+9` map to tab positions.
 
-| Session | Wrapper | Purpose |
-|---------|---------|---------|
-| uwsm | `uwsm app --` | Proper systemd scope and session management |
-| Hyprland | `hyprctl dispatch exec --` | Native Hyprland window management |
-| Other | None (direct `sh -c`) | Standard shell execution |
+## Providers
+
+| Provider | Description | Trigger |
+|----------|-------------|---------|
+| **Applications** | `.desktop` files from XDG directories | `:app` |
+| **Commands** | Executables in `$PATH` | `:cmd` |
+| **System** | Shutdown, reboot, suspend, lock, BIOS | `:sys` |
+| **SSH** | Hosts from `~/.ssh/config` | `:ssh` |
+| **Clipboard** | History via cliphist | `:clip` |
+| **Bookmarks** | Chrome, Brave, Edge, Vivaldi | `:bm` |
+| **Emoji** | 300+ searchable emoji | `:emoji` |
+| **Scripts** | User scripts | `:script` |
+| **Calculator** | Math expressions | `=` or `:calc` |
+| **Web Search** | Configurable engine | `?` or `:web` |
+| **Files** | fd/locate search | `/` or `:file` |
+| **systemd** | User services with actions | `:uuctl` |
+
+### Tags
+
+Items are tagged for better search:
+- **Applications**: Categories from `.desktop` files (development, utility, etc.)
+- **System**: `power`, `system`
+- **SSH**: `ssh`
+- **Scripts**: `script`
+- **systemd**: `systemd`, `service`
+
+Filter by tag with `:tag:tagname`:
+```
+:tag:development     # Show development apps
+:tag:utility vim     # Search utilities for "vim"
+```
+
+### Scripts
+
+Create executable scripts in `~/.local/share/owlry/scripts/`:
+
+```bash
+mkdir -p ~/.local/share/owlry/scripts
+cat > ~/.local/share/owlry/scripts/backup.sh << 'EOF'
+#!/bin/bash
+rsync -av ~/Documents /backup/
+notify-send "Backup complete"
+EOF
+chmod +x ~/.local/share/owlry/scripts/backup.sh
+```
 
 ## Theming
 
-### GTK Theme (Default)
-
-By default, Owlry inherits colors from your system GTK4 theme (Adwaita, Breeze, etc.).
-
 ### Built-in Themes
-
-Owlry includes an owl-inspired dark theme:
-
-```toml
-[appearance]
-theme = "owl"
-```
-
-### Included Example Themes
-
-Example themes are installed to `/usr/share/owlry/themes/`:
 
 | Theme | Description |
 |-------|-------------|
-| `owl` | Owl-inspired dark theme with amber accents |
-| `catppuccin-mocha` | Soothing pastel theme |
-| `nord` | Arctic, north-bluish palette |
-| `rose-pine` | All natural pine, faux fur and soho vibes |
-| `dracula` | Dark theme for vampires |
-| `gruvbox-dark` | Retro groove color scheme |
-| `tokyo-night` | Lights of Tokyo at night |
-| `solarized-dark` | Precision colors for machines and people |
-| `one-dark` | Atom's iconic One Dark theme |
-
-To use an example theme:
-
-```bash
-mkdir -p ~/.config/owlry/themes
-cp /usr/share/owlry/themes/catppuccin-mocha.css ~/.config/owlry/themes/
-```
-
-Then set in config:
+| `owl` | Dark theme with amber accents |
+| `catppuccin-mocha` | Soothing pastel |
+| `nord` | Arctic blue palette |
+| `rose-pine` | Natural pine vibes |
+| `dracula` | Dark vampire theme |
+| `gruvbox-dark` | Retro groove |
+| `tokyo-night` | Tokyo city lights |
+| `solarized-dark` | Precision colors |
+| `one-dark` | Atom's One Dark |
 
 ```toml
 [appearance]
@@ -310,7 +249,7 @@ theme = "catppuccin-mocha"
 
 ### Custom Theme
 
-Create a custom theme file at `~/.config/owlry/themes/mytheme.css`:
+Create `~/.config/owlry/themes/mytheme.css`:
 
 ```css
 :root {
@@ -324,7 +263,24 @@ Create a custom theme file at `~/.config/owlry/themes/mytheme.css`:
 }
 ```
 
-### CSS Variables Reference
+### CSS Overrides
+
+For tweaks without a full theme, create `~/.config/owlry/style.css`:
+
+```css
+/* Larger search input */
+.owlry-search {
+    font-size: 18px;
+    padding: 12px 16px;
+}
+
+/* Hide tag badges */
+.owlry-tag-badge {
+    display: none;
+}
+```
+
+### CSS Variables
 
 | Variable | Description |
 |----------|-------------|
@@ -333,22 +289,17 @@ Create a custom theme file at `~/.config/owlry/themes/mytheme.css`:
 | `--owlry-border` | Border color |
 | `--owlry-text` | Primary text |
 | `--owlry-text-secondary` | Muted text |
-| `--owlry-accent` | Accent/highlight color |
+| `--owlry-accent` | Accent color |
 | `--owlry-accent-bright` | Bright accent |
 | `--owlry-font-size` | Base font size |
-| `--owlry-border-radius` | Border radius |
-| `--owlry-badge-*` | Provider badge colors (app, cmd, sys, ssh, clip, emoji, etc.) |
-
-### Custom Stylesheet
-
-For full control, create `~/.config/owlry/style.css` with any GTK4 CSS.
+| `--owlry-border-radius` | Corner radius |
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 or later - see [LICENSE](LICENSE) for details.
+GNU General Public License v3.0 — see [LICENSE](LICENSE).
 
 ## Acknowledgments
 
-- [GTK4](https://gtk.org/) - UI toolkit
-- [gtk4-layer-shell](https://github.com/wmww/gtk4-layer-shell) - Wayland Layer Shell bindings
-- [fuzzy-matcher](https://crates.io/crates/fuzzy-matcher) - Fuzzy search algorithm
+- [GTK4](https://gtk.org/) — UI toolkit
+- [gtk4-layer-shell](https://github.com/wmww/gtk4-layer-shell) — Wayland Layer Shell
+- [fuzzy-matcher](https://crates.io/crates/fuzzy-matcher) — Fuzzy search
