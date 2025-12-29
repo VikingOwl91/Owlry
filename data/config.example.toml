@@ -1,5 +1,12 @@
 # Owlry Configuration
 # Copy to ~/.config/owlry/config.toml
+#
+# File locations (XDG Base Directory compliant):
+#   Config:  $XDG_CONFIG_HOME/owlry/config.toml   (~/.config/owlry/)
+#   Themes:  $XDG_CONFIG_HOME/owlry/themes/*.css
+#   Style:   $XDG_CONFIG_HOME/owlry/style.css     (custom CSS overrides)
+#   Scripts: $XDG_DATA_HOME/owlry/scripts/        (~/.local/share/owlry/)
+#   Data:    $XDG_DATA_HOME/owlry/frecency.json
 
 [general]
 show_icons = true
@@ -24,7 +31,10 @@ font_size = 14
 border_radius = 12
 
 # Theme: "owl" for built-in dark theme, or leave unset for GTK default
+# Custom themes: place in $XDG_CONFIG_HOME/owlry/themes/{name}.css
 # theme = "owl"
+
+# Custom CSS: create $XDG_CONFIG_HOME/owlry/style.css for additional styling
 
 # Individual color overrides (CSS color values)
 # [appearance.colors]
@@ -50,6 +60,7 @@ uuctl = true
 calculator = true
 
 # Frecency: boost frequently/recently used items in search results
+# Data stored in $XDG_DATA_HOME/owlry/frecency.json
 frecency = true
 frecency_weight = 0.3  # 0.0 = disabled, 1.0 = strong boost
 
@@ -74,7 +85,7 @@ bookmarks = true
 # Emoji picker (copies to clipboard)
 emoji = true
 
-# Custom scripts from ~/.config/owlry/scripts/
+# Custom scripts from $XDG_DATA_HOME/owlry/scripts/ (~/.local/share/owlry/scripts/)
 scripts = true
 
 # File search (requires fd or locate, trigger with "/ pattern" or "find pattern")
