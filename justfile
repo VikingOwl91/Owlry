@@ -100,6 +100,58 @@ version := `grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/'`
 show-version:
     @echo "Current version: {{version}}"
 
+# Show all crate versions
+show-versions:
+    #!/usr/bin/env bash
+    echo "=== Crate Versions ==="
+    for toml in Cargo.toml crates/*/Cargo.toml; do
+        name=$(grep '^name' "$toml" | head -1 | sed 's/.*"\(.*\)"/\1/')
+        ver=$(grep '^version' "$toml" | head -1 | sed 's/.*"\(.*\)"/\1/')
+        printf "  %-30s %s\n" "$name" "$ver"
+    done
+
+# Get version of a specific crate
+crate-version crate:
+    @grep '^version' crates/{{crate}}/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/'
+
+# Bump a specific crate version (usage: just bump-crate owlry-plugin-calculator 0.2.0)
+bump-crate crate new_version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    toml="crates/{{crate}}/Cargo.toml"
+    if [ ! -f "$toml" ]; then
+        echo "Error: $toml not found"
+        exit 1
+    fi
+    old=$(grep '^version' "$toml" | head -1 | sed 's/.*"\(.*\)"/\1/')
+    if [ "$old" = "{{new_version}}" ]; then
+        echo "{{crate}} is already at {{new_version}}, skipping"
+        exit 0
+    fi
+    echo "Bumping {{crate}} from $old to {{new_version}}"
+    sed -i 's/^version = ".*"/version = "{{new_version}}"/' "$toml"
+    cargo check -p {{crate}}
+    git add "$toml" Cargo.lock
+    git commit -m "chore({{crate}}): bump version to {{new_version}}"
+    echo "{{crate}} bumped to {{new_version}}"
+
+# Bump all plugins to same version (usage: just bump-plugins 0.2.0)
+bump-plugins new_version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for toml in crates/owlry-plugin-*/Cargo.toml; do
+        crate=$(basename $(dirname "$toml"))
+        old=$(grep '^version' "$toml" | head -1 | sed 's/.*"\(.*\)"/\1/')
+        if [ "$old" != "{{new_version}}" ]; then
+            echo "Bumping $crate from $old to {{new_version}}"
+            sed -i 's/^version = ".*"/version = "{{new_version}}"/' "$toml"
+        fi
+    done
+    cargo check --workspace
+    git add crates/owlry-plugin-*/Cargo.toml Cargo.lock
+    git commit -m "chore(plugins): bump all plugins to {{new_version}}"
+    echo "All plugins bumped to {{new_version}}"
+
 # Bump version (usage: just bump 0.2.0)
 bump new_version:
     #!/usr/bin/env bash
@@ -180,6 +232,130 @@ aur-test:
     echo ""
     echo "Package built successfully!"
     ls -lh *.pkg.tar.zst
+
+# === AUR Package Management (individual packages) ===
+
+# Update a specific AUR package (usage: just aur-update-pkg owlry-plugin-calculator)
+aur-update-pkg pkg:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    aur_dir="aur/{{pkg}}"
+
+    if [ ! -d "$aur_dir" ]; then
+        echo "Error: $aur_dir not found"
+        exit 1
+    fi
+
+    # Determine crate name (strip owlry- prefix for meta-packages)
+    case "{{pkg}}" in
+        owlry-essentials|owlry-tools|owlry-widgets|owlry-full)
+            # Meta-packages have no crate, use PKGBUILD version
+            crate_ver=$(grep '^pkgver=' "$aur_dir/PKGBUILD" | sed 's/pkgver=//')
+            ;;
+        *)
+            # Get version from crate
+            crate_dir="crates/{{pkg}}"
+            if [ ! -d "$crate_dir" ]; then
+                echo "Error: $crate_dir not found"
+                exit 1
+            fi
+            crate_ver=$(grep '^version' "$crate_dir/Cargo.toml" | head -1 | sed 's/.*"\(.*\)"/\1/')
+            ;;
+    esac
+
+    cd "$aur_dir"
+    url="https://somegit.dev/Owlibou/owlry"
+
+    echo "Updating {{pkg}} PKGBUILD to version $crate_ver"
+    sed -i "s/^pkgver=.*/pkgver=$crate_ver/" PKGBUILD
+    sed -i 's/^pkgrel=.*/pkgrel=1/' PKGBUILD
+
+    # Update checksums for packages that download source
+    if grep -q "^source=" PKGBUILD; then
+        echo "Updating checksums..."
+        b2sum=$(curl -sL "$url/archive/v$crate_ver.tar.gz" | b2sum | cut -d' ' -f1)
+        sed -i "s/^b2sums=.*/b2sums=('$b2sum')/" PKGBUILD
+    fi
+
+    # Generate .SRCINFO
+    echo "Generating .SRCINFO..."
+    makepkg --printsrcinfo > .SRCINFO
+
+    git diff
+    echo ""
+    echo "{{pkg}} updated to $crate_ver. Run 'just aur-publish-pkg {{pkg}}' to publish."
+
+# Publish a specific AUR package
+aur-publish-pkg pkg:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    aur_dir="aur/{{pkg}}"
+
+    if [ ! -d "$aur_dir" ]; then
+        echo "Error: $aur_dir not found"
+        exit 1
+    fi
+
+    cd "$aur_dir"
+    ver=$(grep '^pkgver=' PKGBUILD | sed 's/pkgver=//')
+
+    git add PKGBUILD .SRCINFO
+    git commit -m "Update to v$ver"
+    git push origin master
+
+    echo "{{pkg}} v$ver published!"
+
+# Test a specific AUR package build locally
+aur-test-pkg pkg:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "aur/{{pkg}}"
+
+    echo "Testing {{pkg}} PKGBUILD..."
+    makepkg -sf
+
+    echo ""
+    echo "Package built successfully!"
+    ls -lh *.pkg.tar.zst
+
+# Update all plugin AUR packages
+aur-update-plugins:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for dir in aur/owlry-plugin-*/; do
+        pkg=$(basename "$dir")
+        echo "=== Updating $pkg ==="
+        just aur-update-pkg "$pkg"
+        echo ""
+    done
+
+# Publish all plugin AUR packages
+aur-publish-plugins:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for dir in aur/owlry-plugin-*/; do
+        pkg=$(basename "$dir")
+        echo "=== Publishing $pkg ==="
+        just aur-publish-pkg "$pkg"
+        echo ""
+    done
+
+# List all AUR packages with their versions
+aur-status:
+    #!/usr/bin/env bash
+    echo "=== AUR Package Status ==="
+    for dir in aur/*/; do
+        pkg=$(basename "$dir")
+        if [ -f "$dir/PKGBUILD" ]; then
+            ver=$(grep '^pkgver=' "$dir/PKGBUILD" | sed 's/pkgver=//')
+            if [ -d "$dir/.git" ]; then
+                status="✓"
+            else
+                status="✗ (not initialized)"
+            fi
+            printf "  %s %-30s %s\n" "$status" "$pkg" "$ver"
+        fi
+    done
 
 # Full release workflow (bump + tag + aur)
 release-full new_version: (bump new_version)
