@@ -23,7 +23,7 @@ Edit `Cargo.toml`:
 [package]
 name = "owlry-plugin-myplugin"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [lib]
 crate-type = ["cdylib"]
@@ -38,7 +38,7 @@ Edit `src/lib.rs`:
 use abi_stable::std_types::{ROption, RStr, RString, RVec};
 use owlry_plugin_api::{
     owlry_plugin, PluginInfo, PluginItem, ProviderHandle, ProviderInfo,
-    ProviderKind, API_VERSION,
+    ProviderKind, ProviderPosition, API_VERSION,
 };
 
 extern "C" fn plugin_info() -> PluginInfo {
@@ -59,6 +59,8 @@ extern "C" fn plugin_providers() -> RVec<ProviderInfo> {
         icon: RString::from("application-x-executable"),
         provider_type: ProviderKind::Static,
         type_id: RString::from("myplugin"),
+        position: ProviderPosition::Normal,
+        priority: 0,  // Use frecency-based ordering
     }].into()
 }
 
@@ -198,11 +200,18 @@ pub struct ProviderInfo {
     pub icon: RString,                  // Default icon name
     pub provider_type: ProviderKind,    // Static or Dynamic
     pub type_id: RString,               // Short ID for badges
+    pub position: ProviderPosition,     // Normal or Widget
+    pub priority: i32,                  // Result ordering (higher = first)
 }
 
 pub enum ProviderKind {
     Static,   // Items loaded at startup via refresh()
     Dynamic,  // Items computed per-query via query()
+}
+
+pub enum ProviderPosition {
+    Normal,  // Standard results (sorted by score/frecency)
+    Widget,  // Displayed at top when query is empty
 }
 ```
 

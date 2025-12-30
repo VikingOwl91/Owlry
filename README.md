@@ -32,10 +32,10 @@ yay -S owlry
 yay -S owlry-plugin-calculator owlry-plugin-weather
 
 # Or install bundles:
-yay -S owlry-essentials  # calculator, system, ssh, scripts, bookmarks
-yay -S owlry-widgets     # weather, media, pomodoro
-yay -S owlry-tools       # clipboard, emoji, websearch, filesearch, systemd
-yay -S owlry-full        # everything
+yay -S owlry-meta-essentials  # calculator, system, ssh, scripts, bookmarks
+yay -S owlry-meta-widgets     # weather, media, pomodoro
+yay -S owlry-meta-tools       # clipboard, emoji, websearch, filesearch, systemd
+yay -S owlry-meta-full        # everything
 
 # For custom Lua/Rune plugins
 yay -S owlry-lua   # Lua 5.4 runtime
@@ -53,7 +53,7 @@ yay -S owlry-rune  # Rune runtime
 | `owlry-plugin-clipboard` | History via cliphist |
 | `owlry-plugin-emoji` | 400+ searchable emoji |
 | `owlry-plugin-scripts` | User scripts |
-| `owlry-plugin-bookmarks` | Chrome, Brave, Edge bookmarks |
+| `owlry-plugin-bookmarks` | Firefox, Chrome, Brave, Edge bookmarks |
 | `owlry-plugin-websearch` | Web search (`? query`) |
 | `owlry-plugin-filesearch` | File search (`/ filename`) |
 | `owlry-plugin-systemd` | User services with actions |
@@ -158,6 +158,21 @@ Owlry follows the [XDG Base Directory Specification](https://specifications.free
 | `~/.local/share/owlry/scripts/` | User scripts |
 | `~/.local/share/owlry/frecency.json` | Usage history |
 
+System locations:
+| Path | Purpose |
+|------|---------|
+| `/usr/lib/owlry/plugins/*.so` | Installed native plugins |
+| `/usr/lib/owlry/runtimes/*.so` | Lua/Rune script runtimes |
+| `/usr/share/doc/owlry/config.example.toml` | Example configuration |
+
+### Quick Start
+
+```bash
+# Copy example config
+mkdir -p ~/.config/owlry
+cp /usr/share/doc/owlry/config.example.toml ~/.config/owlry/config.toml
+```
+
 ### Example Configuration
 
 ```toml
@@ -169,8 +184,8 @@ tabs = ["app", "cmd", "uuctl"]
 # launch_wrapper = "uwsm app --" # Auto-detected
 
 [appearance]
-width = 700
-height = 500
+width = 850
+height = 650
 font_size = 14
 border_radius = 12
 # theme = "owl"  # Or: catppuccin-mocha, nord, dracula, etc.
@@ -178,16 +193,17 @@ border_radius = 12
 [plugins]
 disabled = []  # Plugin IDs to disable, e.g., ["emoji", "pomodoro"]
 
-# Per-plugin configuration (new in 0.4.0)
-[plugins.weather]
-provider = "wttr.in"  # or: openweathermap, open-meteo
-location = "Berlin"   # city name or "lat,lon"
-# api_key = "..."     # Required for OpenWeatherMap
+[providers]
+applications = true    # .desktop files
+commands = true        # PATH executables
+frecency = true        # Boost frequently used items
+frecency_weight = 0.3  # 0.0-1.0
 
-[plugins.pomodoro]
-work_mins = 25        # Work session duration
-break_mins = 5        # Break duration
+# Web search engine: google, duckduckgo, bing, startpage, brave, ecosia
+search_engine = "duckduckgo"
 ```
+
+See `/usr/share/doc/owlry/config.example.toml` for all options with documentation.
 
 ## Plugin System
 

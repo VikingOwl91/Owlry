@@ -143,9 +143,10 @@ chmod +x ~/.local/share/owlry/scripts/backup.sh
 **Prefix:** `:bm`
 **Package:** `owlry-plugin-bookmarks`
 
-Browser bookmarks from Chromium-based browsers.
+Browser bookmarks from Firefox and Chromium-based browsers.
 
 **Supported browsers:**
+- Firefox (reads places.sqlite)
 - Google Chrome
 - Brave
 - Microsoft Edge
@@ -236,13 +237,7 @@ Current weather displayed at the top of results.
 - OpenWeatherMap (requires API key)
 - Open-Meteo (no API key required)
 
-**Configuration:**
-```toml
-[plugins.weather]
-provider = "wttr.in"  # or: openweathermap, open-meteo
-location = "London"   # city name or "lat,lon" (empty for auto-detect)
-# api_key = "..."     # Required for OpenWeatherMap
-```
+**Note:** Weather configuration is currently embedded in the plugin. Future versions will support runtime configuration.
 
 **Features:**
 - Temperature, condition, humidity, wind speed
@@ -274,13 +269,6 @@ MPRIS media player controls.
 
 Pomodoro timer with work/break cycles.
 
-**Configuration:**
-```toml
-[plugins.pomodoro]
-work_mins = 25    # Work session duration (default: 25)
-break_mins = 5    # Break duration (default: 5)
-```
-
 **Features:**
 - Configurable work session duration
 - Configurable break duration
@@ -301,17 +289,17 @@ For convenience, plugins are available in bundle meta-packages:
 
 | Bundle | Plugins |
 |--------|---------|
-| `owlry-essentials` | calculator, system, ssh, scripts, bookmarks |
-| `owlry-widgets` | weather, media, pomodoro |
-| `owlry-tools` | clipboard, emoji, websearch, filesearch, systemd |
-| `owlry-full` | All of the above |
+| `owlry-meta-essentials` | calculator, system, ssh, scripts, bookmarks |
+| `owlry-meta-widgets` | weather, media, pomodoro |
+| `owlry-meta-tools` | clipboard, emoji, websearch, filesearch, systemd |
+| `owlry-meta-full` | All of the above |
 
 ```bash
 # Install everything
-yay -S owlry-full
+yay -S owlry-meta-full
 
 # Or pick a bundle
-yay -S owlry-essentials owlry-widgets
+yay -S owlry-meta-essentials owlry-meta-widgets
 ```
 
 ---
