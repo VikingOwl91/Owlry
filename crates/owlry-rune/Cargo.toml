@@ -1,6 +1,6 @@
 [package]
 name = "owlry-rune"
-version = "0.4.3"
+version = "0.4.4"
 edition = "2024"
 rust-version = "1.90"
 description = "Rune scripting runtime for owlry plugins"
