@@ -56,7 +56,10 @@ impl OwlryApp {
         let native_providers = Self::load_native_plugins(&config.borrow());
 
         // Create provider manager with native plugins
+        #[cfg(feature = "lua")]
         let mut provider_manager = ProviderManager::with_native_plugins(native_providers);
+        #[cfg(not(feature = "lua"))]
+        let provider_manager = ProviderManager::with_native_plugins(native_providers);
 
         // Load Lua plugins if enabled (requires lua feature)
         #[cfg(feature = "lua")]
@@ -75,7 +78,7 @@ impl OwlryApp {
         );
         let filter = Rc::new(RefCell::new(filter));
 
-        let window = MainWindow::new(app, config.clone(), providers.clone(), frecency.clone(), filter.clone());
+        let window = MainWindow::new(app, config.clone(), providers.clone(), frecency.clone(), filter.clone(), args.prompt.clone());
 
         // Set up layer shell for Wayland overlay behavior
         window.init_layer_shell();

@@ -67,6 +67,18 @@
     opacity: 1;
 }
 
+/* Symbolic icons - inherit text color */
+.owlry-symbolic-icon {
+    -gtk-icon-style: symbolic;
+}
+
+/* Emoji icon - displayed as large text */
+.owlry-emoji-icon {
+    font-size: 24px;
+    min-width: 32px;
+    min-height: 32px;
+}
+
 /* Result name */
 .owlry-result-name {
     font-size: var(--owlry-font-size, 14px);

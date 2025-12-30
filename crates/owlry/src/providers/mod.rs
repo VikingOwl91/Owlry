@@ -80,13 +80,13 @@ impl std::str::FromStr for ProviderType {
             "cmd" | "command" | "commands" => Ok(ProviderType::Command),
             "dmenu" => Ok(ProviderType::Dmenu),
             "emoji" | "emojis" => Ok(ProviderType::Emoji),
-            "file" | "files" | "find" => Ok(ProviderType::Files),
+            "file" | "files" | "find" | "filesearch" => Ok(ProviderType::Files),
             "media" | "mpris" | "player" => Ok(ProviderType::MediaPlayer),
             "pomo" | "pomodoro" | "timer" => Ok(ProviderType::Pomodoro),
             "script" | "scripts" => Ok(ProviderType::Scripts),
             "ssh" => Ok(ProviderType::Ssh),
             "sys" | "system" | "power" => Ok(ProviderType::System),
-            "uuctl" => Ok(ProviderType::Uuctl),
+            "uuctl" | "systemd" => Ok(ProviderType::Uuctl),
             "weather" => Ok(ProviderType::Weather),
             "web" | "websearch" | "search" => Ok(ProviderType::WebSearch),
             // Plugin types are prefixed with "plugin:" (e.g., "plugin:github-repos")
@@ -273,12 +273,14 @@ impl ProviderManager {
     }
 
     /// Add a dynamic provider (e.g., from a Lua plugin)
+    #[allow(dead_code)]
     pub fn add_provider(&mut self, provider: Box<dyn Provider>) {
         info!("Added plugin provider: {}", provider.name());
         self.providers.push(provider);
     }
 
     /// Add multiple providers at once (for batch plugin loading)
+    #[allow(dead_code)]
     pub fn add_providers(&mut self, providers: Vec<Box<dyn Provider>>) {
         for provider in providers {
             self.add_provider(provider);
@@ -394,6 +396,10 @@ impl ProviderManager {
         if filter.active_prefix().is_none() && query.is_empty() {
             // Widget priority scores based on type
             for provider in &self.widget_providers {
+                // Skip if this provider type is filtered out
+                if !filter.is_active(provider.provider_type()) {
+                    continue;
+                }
                 let base_score = match provider.type_id() {
                     "weather" => 12000,
                     "pomodoro" => 11500,
@@ -407,9 +413,15 @@ impl ProviderManager {
         }
 
         // Query dynamic providers (calculator, websearch, filesearch)
-        // Each provider internally checks if the query matches its prefix
+        // Only query if:
+        // 1. Their specific filter is active (e.g., :file prefix or Files tab selected), OR
+        // 2. No specific single-mode filter is active (showing all providers)
         if !query.is_empty() {
             for (provider_idx, provider) in self.dynamic_providers.iter().enumerate() {
+                // Skip if this provider type is explicitly filtered out
+                if !filter.is_active(provider.provider_type()) {
+                    continue;
+                }
                 let dynamic_results = provider.query(query);
                 let base_score = match provider.type_id() {
                     "calc" => 10000,

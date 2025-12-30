@@ -82,41 +82,41 @@ impl WeatherConfig {
         let config_content = config_path
             .and_then(|p| fs::read_to_string(p).ok());
 
-        if let Some(content) = config_content {
-            if let Ok(toml) = content.parse::<toml::Table>() {
-                // Try [plugins.weather] first (new format)
-                if let Some(plugins) = toml.get("plugins").and_then(|v| v.as_table()) {
-                    if let Some(weather) = plugins.get("weather").and_then(|v| v.as_table()) {
-                        return Self::from_toml_table(weather);
-                    }
-                }
+        if let Some(content) = config_content
+            && let Ok(toml) = content.parse::<toml::Table>()
+        {
+            // Try [plugins.weather] first (new format)
+            if let Some(plugins) = toml.get("plugins").and_then(|v| v.as_table())
+                && let Some(weather) = plugins.get("weather").and_then(|v| v.as_table())
+            {
+                return Self::from_toml_table(weather);
+            }
 
-                // Fallback to [providers] section (old format)
-                if let Some(providers) = toml.get("providers").and_then(|v| v.as_table()) {
-                    let provider_str = providers
-                        .get("weather_provider")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("wttr.in");
+            // Fallback to [providers] section (old format)
+            if let Some(providers) = toml.get("providers").and_then(|v| v.as_table()) {
+                let provider_str = providers
+                    .get("weather_provider")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("wttr.in");
 
-                    let provider = provider_str.parse().unwrap_or(WeatherProviderType::WttrIn);
+                let provider = provider_str.parse().unwrap_or(WeatherProviderType::WttrIn);
 
-                    let api_key = providers
-                        .get("weather_api_key")
-                        .and_then(|v| v.as_str())
-                        .map(String::from);
+                let api_key = providers
+                    .get("weather_api_key")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
 
-                    let location = providers
-                        .get("weather_location")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
+                let location = providers
+                    .get("weather_location")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
 
-                    return Self {
-                        provider,
-                        api_key,
-                        location,
-                    };
-                }
+                return Self {
+                    provider,
+                    api_key,
+                    location,
+                };
             }
         }
 

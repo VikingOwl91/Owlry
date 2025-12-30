@@ -7,6 +7,17 @@ pub struct ResultRow {
     row: ListBoxRow,
 }
 
+/// Check if a string looks like an emoji (starts with a non-ASCII character
+/// and is very short - typically 1-4 chars for complex emojis with ZWJ)
+fn is_emoji_icon(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    // Emojis are non-ASCII and typically very short (1-8 chars for complex ZWJ sequences)
+    let first_char = s.chars().next().unwrap();
+    !first_char.is_ascii() && s.chars().count() <= 8
+}
+
 impl ResultRow {
     #[allow(clippy::new_ret_no_self)]
     pub fn new(item: &LaunchItem) -> ListBoxRow {
@@ -26,46 +37,64 @@ impl ResultRow {
             .margin_end(12)
             .build();
 
-        // Icon - handle GResource paths, file paths, icon names, and fallbacks
+        // Icon - handle GResource paths, file paths, icon names, emojis, and fallbacks
         let icon_widget: Widget = if let Some(icon_path) = &item.icon {
-            let img = if icon_path.starts_with("/org/owlry/launcher/icons/") {
+            if is_emoji_icon(icon_path) {
+                // Emoji character - display as text label
+                let emoji_label = Label::builder()
+                    .label(icon_path)
+                    .width_request(32)
+                    .height_request(32)
+                    .valign(gtk4::Align::Center)
+                    .halign(gtk4::Align::Center)
+                    .build();
+                emoji_label.add_css_class("owlry-result-icon");
+                emoji_label.add_css_class("owlry-emoji-icon");
+                emoji_label.upcast()
+            } else if icon_path.starts_with("/org/owlry/launcher/icons/") {
                 // GResource path - load from bundled resources
-                Image::from_resource(icon_path)
+                let img = Image::from_resource(icon_path);
+                img.set_pixel_size(32);
+                img.add_css_class("owlry-result-icon");
+                img.upcast()
             } else if icon_path.starts_with('/') {
                 // Absolute file path
-                Image::from_file(icon_path)
+                let img = Image::from_file(icon_path);
+                img.set_pixel_size(32);
+                img.add_css_class("owlry-result-icon");
+                img.upcast()
             } else {
                 // Icon theme name
-                Image::from_icon_name(icon_path)
-            };
-            img.set_pixel_size(32);
-            img.add_css_class("owlry-result-icon");
-            img.upcast()
+                let img = Image::from_icon_name(icon_path);
+                img.set_pixel_size(32);
+                img.add_css_class("owlry-result-icon");
+                img.upcast()
+            }
         } else {
-            // Default icon based on provider type
+            // Default icon based on provider type (using symbolic icons for theme color support)
             let default_icon = match &item.provider {
-                crate::providers::ProviderType::Application => "application-x-executable",
-                crate::providers::ProviderType::Bookmarks => "user-bookmarks",
-                crate::providers::ProviderType::Calculator => "accessories-calculator",
-                crate::providers::ProviderType::Clipboard => "edit-paste",
-                crate::providers::ProviderType::Command => "utilities-terminal",
+                crate::providers::ProviderType::Application => "application-x-executable-symbolic",
+                crate::providers::ProviderType::Bookmarks => "user-bookmarks-symbolic",
+                crate::providers::ProviderType::Calculator => "accessories-calculator-symbolic",
+                crate::providers::ProviderType::Clipboard => "edit-paste-symbolic",
+                crate::providers::ProviderType::Command => "utilities-terminal-symbolic",
                 crate::providers::ProviderType::Dmenu => "view-list-symbolic",
-                crate::providers::ProviderType::Emoji => "face-smile",
-                crate::providers::ProviderType::Files => "folder",
-                crate::providers::ProviderType::Scripts => "application-x-executable",
-                crate::providers::ProviderType::Ssh => "network-server",
-                crate::providers::ProviderType::System => "system-shutdown",
-                crate::providers::ProviderType::Uuctl => "system-run",
-                crate::providers::ProviderType::WebSearch => "web-browser",
-                // Widget providers now have icons set, but keep fallbacks
+                crate::providers::ProviderType::Emoji => "face-smile-symbolic",
+                crate::providers::ProviderType::Files => "folder-symbolic",
+                crate::providers::ProviderType::Scripts => "application-x-executable-symbolic",
+                crate::providers::ProviderType::Ssh => "network-server-symbolic",
+                crate::providers::ProviderType::System => "system-shutdown-symbolic",
+                crate::providers::ProviderType::Uuctl => "system-run-symbolic",
+                crate::providers::ProviderType::WebSearch => "web-browser-symbolic",
                 crate::providers::ProviderType::Weather => "weather-clear-symbolic",
                 crate::providers::ProviderType::MediaPlayer => "media-playback-start-symbolic",
                 crate::providers::ProviderType::Pomodoro => "alarm-symbolic",
-                crate::providers::ProviderType::Plugin(_) => "application-x-addon",
+                crate::providers::ProviderType::Plugin(_) => "application-x-addon-symbolic",
             };
             let img = Image::from_icon_name(default_icon);
             img.set_pixel_size(32);
             img.add_css_class("owlry-result-icon");
+            img.add_css_class("owlry-symbolic-icon");
             img.upcast()
         };
 

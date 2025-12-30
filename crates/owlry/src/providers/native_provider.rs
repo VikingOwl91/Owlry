@@ -42,6 +42,16 @@ impl NativeProvider {
         }
     }
 
+    /// Get the ProviderType for this native provider
+    /// Maps type_id string to the appropriate ProviderType variant
+    fn get_provider_type(&self) -> ProviderType {
+        // Parse type_id to get the proper ProviderType
+        // This uses the FromStr impl which maps strings like "clipboard" -> ProviderType::Clipboard
+        self.info.type_id.as_str().parse().unwrap_or_else(|_| {
+            ProviderType::Plugin(self.info.type_id.to_string())
+        })
+    }
+
     /// Convert a plugin API item to a core LaunchItem
     fn convert_item(&self, item: ApiPluginItem) -> LaunchItem {
         LaunchItem {
@@ -49,7 +59,7 @@ impl NativeProvider {
             name: item.name.to_string(),
             description: item.description.as_ref().map(|s| s.to_string()).into(),
             icon: item.icon.as_ref().map(|s| s.to_string()).into(),
-            provider: ProviderType::Plugin(self.info.type_id.to_string()),
+            provider: self.get_provider_type(),
             command: item.command.to_string(),
             terminal: item.terminal,
             tags: item.keywords.iter().map(|s| s.to_string()).collect(),
@@ -113,7 +123,7 @@ impl Provider for NativeProvider {
     }
 
     fn provider_type(&self) -> ProviderType {
-        ProviderType::Plugin(self.info.type_id.to_string())
+        self.get_provider_type()
     }
 
     fn refresh(&mut self) {

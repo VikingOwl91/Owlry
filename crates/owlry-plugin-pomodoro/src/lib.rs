@@ -57,31 +57,31 @@ impl PomodoroConfig {
         let config_content = config_path
             .and_then(|p| fs::read_to_string(p).ok());
 
-        if let Some(content) = config_content {
-            if let Ok(toml) = content.parse::<toml::Table>() {
-                // Try [plugins.pomodoro] first (new format)
-                if let Some(plugins) = toml.get("plugins").and_then(|v| v.as_table()) {
-                    if let Some(pomodoro) = plugins.get("pomodoro").and_then(|v| v.as_table()) {
-                        return Self::from_toml_table(pomodoro);
-                    }
-                }
+        if let Some(content) = config_content
+            && let Ok(toml) = content.parse::<toml::Table>()
+        {
+            // Try [plugins.pomodoro] first (new format)
+            if let Some(plugins) = toml.get("plugins").and_then(|v| v.as_table())
+                && let Some(pomodoro) = plugins.get("pomodoro").and_then(|v| v.as_table())
+            {
+                return Self::from_toml_table(pomodoro);
+            }
 
-                // Fallback to [providers] section (old format)
-                if let Some(providers) = toml.get("providers").and_then(|v| v.as_table()) {
-                    let work_mins = providers
-                        .get("pomodoro_work_mins")
-                        .and_then(|v| v.as_integer())
-                        .map(|v| v as u32)
-                        .unwrap_or(DEFAULT_WORK_MINS);
+            // Fallback to [providers] section (old format)
+            if let Some(providers) = toml.get("providers").and_then(|v| v.as_table()) {
+                let work_mins = providers
+                    .get("pomodoro_work_mins")
+                    .and_then(|v| v.as_integer())
+                    .map(|v| v as u32)
+                    .unwrap_or(DEFAULT_WORK_MINS);
 
-                    let break_mins = providers
-                        .get("pomodoro_break_mins")
-                        .and_then(|v| v.as_integer())
-                        .map(|v| v as u32)
-                        .unwrap_or(DEFAULT_BREAK_MINS);
+                let break_mins = providers
+                    .get("pomodoro_break_mins")
+                    .and_then(|v| v.as_integer())
+                    .map(|v| v as u32)
+                    .unwrap_or(DEFAULT_BREAK_MINS);
 
-                    return Self { work_mins, break_mins };
-                }
+                return Self { work_mins, break_mins };
             }
         }
 

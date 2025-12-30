@@ -6,10 +6,13 @@ use std::process::Command;
 
 use crate::paths;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
+    #[serde(default)]
     pub general: GeneralConfig,
+    #[serde(default)]
     pub appearance: AppearanceConfig,
+    #[serde(default)]
     pub providers: ProvidersConfig,
     #[serde(default)]
     pub plugins: PluginsConfig,
@@ -17,9 +20,13 @@ pub struct Config {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeneralConfig {
+    #[serde(default = "default_true")]
     pub show_icons: bool,
+    #[serde(default = "default_max_results")]
     pub max_results: usize,
-    pub terminal_command: String,
+    /// Terminal command (auto-detected if not specified)
+    #[serde(default)]
+    pub terminal_command: Option<String>,
     /// Launch wrapper command for app execution.
     /// Examples: "uwsm app --", "hyprctl dispatch exec --", "systemd-run --user --"
     /// If None or empty, launches directly via sh -c
@@ -31,6 +38,22 @@ pub struct GeneralConfig {
     pub tabs: Vec<String>,
 }
 
+impl Default for GeneralConfig {
+    fn default() -> Self {
+        Self {
+            show_icons: true,
+            max_results: 100,
+            terminal_command: None,
+            launch_wrapper: None,
+            tabs: default_tabs(),
+        }
+    }
+}
+
+fn default_max_results() -> usize {
+    100
+}
+
 fn default_tabs() -> Vec<String> {
     vec![
         "app".to_string(),
@@ -40,9 +63,10 @@ fn default_tabs() -> Vec<String> {
 }
 
 /// User-customizable theme colors
-/// All fields are optional - unset values inherit from GTK theme
+/// All fields are optional - unset values inherit from theme or GTK defaults
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ThemeColors {
+    // Core colors
     pub background: Option<String>,
     pub background_secondary: Option<String>,
     pub border: Option<String>,
@@ -64,13 +88,21 @@ pub struct ThemeColors {
     pub badge_sys: Option<String>,
     pub badge_uuctl: Option<String>,
     pub badge_web: Option<String>,
+    // Widget badge colors
+    pub badge_media: Option<String>,
+    pub badge_weather: Option<String>,
+    pub badge_pomo: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppearanceConfig {
+    #[serde(default = "default_width")]
     pub width: i32,
+    #[serde(default = "default_height")]
     pub height: i32,
+    #[serde(default = "default_font_size")]
     pub font_size: u32,
+    #[serde(default = "default_border_radius")]
     pub border_radius: u32,
     /// Theme name: None = GTK default, "owl" = built-in owl theme
     #[serde(default)]
@@ -80,10 +112,31 @@ pub struct AppearanceConfig {
     pub colors: ThemeColors,
 }
 
+impl Default for AppearanceConfig {
+    fn default() -> Self {
+        Self {
+            width: 850,
+            height: 650,
+            font_size: 14,
+            border_radius: 12,
+            theme: None,
+            colors: ThemeColors::default(),
+        }
+    }
+}
+
+fn default_width() -> i32 { 850 }
+fn default_height() -> i32 { 650 }
+fn default_font_size() -> u32 { 14 }
+fn default_border_radius() -> u32 { 12 }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProvidersConfig {
+    #[serde(default = "default_true")]
     pub applications: bool,
+    #[serde(default = "default_true")]
     pub commands: bool,
+    #[serde(default = "default_true")]
     pub uuctl: bool,
     /// Enable calculator provider (= expression or calc expression)
     #[serde(default = "default_true")]
@@ -157,6 +210,36 @@ pub struct ProvidersConfig {
     /// Pomodoro break duration in minutes
     #[serde(default = "default_pomodoro_break")]
     pub pomodoro_break_mins: u32,
+}
+
+impl Default for ProvidersConfig {
+    fn default() -> Self {
+        Self {
+            applications: true,
+            commands: true,
+            uuctl: true,
+            calculator: true,
+            frecency: true,
+            frecency_weight: 0.3,
+            websearch: true,
+            search_engine: "duckduckgo".to_string(),
+            system: true,
+            ssh: true,
+            clipboard: true,
+            bookmarks: true,
+            emoji: true,
+            scripts: true,
+            files: true,
+            media: true,
+            weather: false,
+            weather_provider: "wttr.in".to_string(),
+            weather_api_key: None,
+            weather_location: Some("Berlin".to_string()),
+            pomodoro: false,
+            pomodoro_work_mins: 25,
+            pomodoro_break_mins: 5,
+        }
+    }
 }
 
 /// Configuration for plugins
@@ -450,57 +533,7 @@ fn command_exists(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        let terminal = detect_terminal();
-        info!("Detected terminal: {}", terminal);
-
-        Self {
-            general: GeneralConfig {
-                show_icons: true,
-                max_results: 10,
-                terminal_command: terminal,
-                launch_wrapper: detect_launch_wrapper(),
-                tabs: default_tabs(),
-            },
-            appearance: AppearanceConfig {
-                width: 850,
-                height: 650,
-                font_size: 14,
-                border_radius: 12,
-                theme: None,
-                colors: ThemeColors::default(),
-            },
-            providers: ProvidersConfig {
-                applications: true,
-                commands: true,
-                uuctl: true,
-                calculator: true,
-                frecency: true,
-                frecency_weight: 0.3,
-                websearch: true,
-                search_engine: "duckduckgo".to_string(),
-                system: true,
-                ssh: true,
-                clipboard: true,
-                bookmarks: true,
-                emoji: true,
-                scripts: true,
-                files: true,
-                // Widget providers
-                media: true,
-                weather: false,
-                weather_provider: "wttr.in".to_string(),
-                weather_api_key: None,
-                weather_location: Some("Berlin".to_string()),
-                pomodoro: false,
-                pomodoro_work_mins: 25,
-                pomodoro_break_mins: 5,
-            },
-            plugins: PluginsConfig::default(),
-        }
-    }
-}
+// Note: Config derives Default via #[derive(Default)] - all sub-structs have impl Default
 
 impl Config {
     pub fn config_path() -> Option<PathBuf> {
@@ -517,23 +550,37 @@ impl Config {
     pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
         let path = Self::config_path().ok_or("Could not determine config path")?;
 
-        if !path.exists() {
+        let mut config = if !path.exists() {
             info!("Config file not found, using defaults");
-            return Ok(Self::default());
+            Self::default()
+        } else {
+            let content = std::fs::read_to_string(&path)?;
+            let config: Config = toml::from_str(&content)?;
+            info!("Loaded config from {:?}", path);
+            config
+        };
+
+        // Auto-detect terminal if not configured or configured terminal doesn't exist
+        match &config.general.terminal_command {
+            None => {
+                let terminal = detect_terminal();
+                info!("Detected terminal: {}", terminal);
+                config.general.terminal_command = Some(terminal);
+            }
+            Some(term) if !command_exists(term) => {
+                warn!("Configured terminal '{}' not found, auto-detecting", term);
+                let terminal = detect_terminal();
+                info!("Using detected terminal: {}", terminal);
+                config.general.terminal_command = Some(terminal);
+            }
+            Some(term) => {
+                debug!("Using configured terminal: {}", term);
+            }
         }
 
-        let content = std::fs::read_to_string(&path)?;
-        let mut config: Config = toml::from_str(&content)?;
-        info!("Loaded config from {:?}", path);
-
-        // Validate terminal - if configured terminal doesn't exist, auto-detect
-        if !command_exists(&config.general.terminal_command) {
-            warn!(
-                "Configured terminal '{}' not found, auto-detecting",
-                config.general.terminal_command
-            );
-            config.general.terminal_command = detect_terminal();
-            info!("Using detected terminal: {}", config.general.terminal_command);
+        // Auto-detect launch wrapper if not configured
+        if config.general.launch_wrapper.is_none() {
+            config.general.launch_wrapper = detect_launch_wrapper();
         }
 
         Ok(config)

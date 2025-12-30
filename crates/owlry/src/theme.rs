@@ -72,6 +72,17 @@ pub fn generate_variables_css(config: &AppearanceConfig) -> String {
         css.push_str(&format!("    --owlry-badge-web: {};\n", badge_web));
     }
 
+    // Widget badge colors
+    if let Some(ref badge_media) = config.colors.badge_media {
+        css.push_str(&format!("    --owlry-badge-media: {};\n", badge_media));
+    }
+    if let Some(ref badge_weather) = config.colors.badge_weather {
+        css.push_str(&format!("    --owlry-badge-weather: {};\n", badge_weather));
+    }
+    if let Some(ref badge_pomo) = config.colors.badge_pomo {
+        css.push_str(&format!("    --owlry-badge-pomo: {};\n", badge_pomo));
+    }
+
     css.push_str("}\n");
     css
 }

@@ -21,6 +21,10 @@ pub struct CliArgs {
     #[arg(long, short = 'p', value_delimiter = ',', value_parser = parse_provider)]
     pub providers: Option<Vec<ProviderType>>,
 
+    /// Custom prompt text for the search input (useful for dmenu mode)
+    #[arg(long)]
+    pub prompt: Option<String>,
+
     /// Subcommand to run (if any)
     #[command(subcommand)]
     pub command: Option<Command>,

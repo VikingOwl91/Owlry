@@ -156,6 +156,7 @@ pub fn discover_plugins(plugins_dir: &Path) -> PluginResult<HashMap<String, (Plu
 }
 
 /// Check if a plugin is compatible with the given owlry version
+#[allow(dead_code)]
 pub fn check_compatibility(manifest: &PluginManifest, owlry_version: &str) -> PluginResult<()> {
     if !manifest.is_compatible_with(owlry_version) {
         return Err(PluginError::VersionMismatch {
@@ -230,6 +231,7 @@ impl PluginManifest {
     }
 
     /// Check if this plugin is compatible with the given owlry version
+    #[allow(dead_code)]
     pub fn is_compatible_with(&self, owlry_version: &str) -> bool {
         let req = match semver::VersionReq::parse(&self.plugin.owlry_version) {
             Ok(r) => r,

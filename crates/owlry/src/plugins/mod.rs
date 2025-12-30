@@ -43,6 +43,7 @@ pub use api::provider::{PluginItem, ProviderRegistration};
 #[allow(unused_imports)]
 pub use api::{ActionRegistration, HookEvent, ThemeRegistration};
 
+#[allow(unused_imports)]
 pub use error::{PluginError, PluginResult};
 
 #[cfg(feature = "lua")]

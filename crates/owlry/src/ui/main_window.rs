@@ -35,6 +35,19 @@ struct SubmenuState {
     saved_search: String,
 }
 
+/// State for lazy loading results
+#[derive(Default)]
+struct LazyLoadState {
+    /// All matching results (may be more than displayed)
+    all_results: Vec<LaunchItem>,
+    /// Number of items currently displayed
+    displayed_count: usize,
+}
+
+/// Number of items to display initially and per batch
+const INITIAL_RESULTS: usize = 15;
+const LOAD_MORE_BATCH: usize = 10;
+
 pub struct MainWindow {
     window: ApplicationWindow,
     search_entry: Entry,
@@ -51,6 +64,11 @@ pub struct MainWindow {
     submenu_state: Rc<RefCell<SubmenuState>>,
     /// Parsed tab config (ProviderTypes for cycling)
     tab_order: Rc<Vec<ProviderType>>,
+    /// Custom prompt text (overrides dynamic placeholder when set)
+    #[allow(dead_code)]
+    custom_prompt: Option<String>,
+    /// Lazy loading state
+    lazy_state: Rc<RefCell<LazyLoadState>>,
 }
 
 impl MainWindow {
@@ -60,6 +78,7 @@ impl MainWindow {
         providers: Rc<RefCell<ProviderManager>>,
         frecency: Rc<RefCell<FrecencyStore>>,
         filter: Rc<RefCell<ProviderFilter>>,
+        custom_prompt: Option<String>,
     ) -> Self {
         let cfg = config.borrow();
 
@@ -111,24 +130,21 @@ impl MainWindow {
             .build();
         filter_tabs.add_css_class("owlry-filter-tabs");
 
-        // Parse tabs config to ProviderTypes
-        let tab_order: Vec<ProviderType> = cfg
-            .general
-            .tabs
-            .iter()
-            .filter_map(|s| s.parse().ok())
-            .collect();
-        let tab_order = Rc::new(tab_order);
+        // Get enabled providers from filter (which respects CLI --mode/--providers or config)
+        // This makes tabs dynamic based on what's actually enabled
+        let enabled = filter.borrow().enabled_providers();
+        let tab_strings: Vec<String> = enabled.iter().map(|p| p.to_string()).collect();
+        let tab_order = Rc::new(enabled);
 
-        // Create toggle buttons for each provider (from config)
-        let filter_buttons = Self::create_filter_buttons(&filter_tabs, &filter, &cfg.general.tabs);
+        // Create toggle buttons for each enabled provider
+        let filter_buttons = Self::create_filter_buttons(&filter_tabs, &filter, &tab_strings);
         let filter_buttons = Rc::new(RefCell::new(filter_buttons));
 
         header_box.append(&mode_label);
         header_box.append(&filter_tabs);
 
-        // Search entry with dynamic placeholder
-        let placeholder = Self::build_placeholder(&filter.borrow());
+        // Search entry with dynamic placeholder (or custom prompt if provided)
+        let placeholder = custom_prompt.clone().unwrap_or_else(|| Self::build_placeholder(&filter.borrow()));
         let search_entry = Entry::builder()
             .placeholder_text(&placeholder)
             .hexpand(true)
@@ -175,6 +191,8 @@ impl MainWindow {
 
         drop(cfg);
 
+        let lazy_state = Rc::new(RefCell::new(LazyLoadState::default()));
+
         let main_window = Self {
             window,
             search_entry,
@@ -190,9 +208,12 @@ impl MainWindow {
             filter_buttons,
             submenu_state: Rc::new(RefCell::new(SubmenuState::default())),
             tab_order,
+            custom_prompt,
+            lazy_state,
         };
 
         main_window.setup_signals();
+        main_window.setup_lazy_loading();
         main_window.update_results("");
 
         // Ensure search entry has focus when window is shown
@@ -232,11 +253,11 @@ impl MainWindow {
 
                 let mut results = current_results_for_auto.borrow_mut();
                 for type_id in &widget_ids {
-                    if let Some(new_item) = providers_for_auto.borrow().get_widget_item(type_id) {
-                        if let Some(existing) = results.iter_mut().find(|i| i.id == new_item.id) {
-                            existing.name = new_item.name;
-                            existing.description = new_item.description;
-                        }
+                    if let Some(new_item) = providers_for_auto.borrow().get_widget_item(type_id)
+                        && let Some(existing) = results.iter_mut().find(|i| i.id == new_item.id)
+                    {
+                        existing.name = new_item.name;
+                        existing.description = new_item.description;
                     }
                 }
             }
@@ -263,11 +284,21 @@ impl MainWindow {
                 }
             };
 
-            let label = Self::provider_tab_label(&provider_type);
+            let base_label = Self::provider_tab_label(&provider_type);
+            // Show number hint in the label for first 9 tabs (using superscript)
+            let label = if idx < 9 {
+                let superscript = match idx + 1 {
+                    1 => "¹", 2 => "²", 3 => "³", 4 => "⁴", 5 => "⁵",
+                    6 => "⁶", 7 => "⁷", 8 => "⁸", 9 => "⁹", _ => "",
+                };
+                format!("{}{}", base_label, superscript)
+            } else {
+                base_label.to_string()
+            };
             let shortcut = format!("Ctrl+{}", idx + 1);
 
             let button = ToggleButton::builder()
-                .label(label)
+                .label(&label)
                 .tooltip_text(&shortcut)
                 .active(filter.borrow().is_enabled(provider_type.clone()))
                 .build();
@@ -525,6 +556,7 @@ impl MainWindow {
         let mode_label = self.mode_label.clone();
         let search_entry_for_change = self.search_entry.clone();
         let submenu_state = self.submenu_state.clone();
+        let lazy_state = self.lazy_state.clone();
 
         self.search_entry.connect_changed(move |entry| {
             let raw_query = entry.text();
@@ -623,11 +655,21 @@ impl MainWindow {
                     .collect()
             };
 
+            // Clear existing results
             while let Some(child) = results_list.first_child() {
                 results_list.remove(&child);
             }
 
-            for item in &results {
+            // Lazy loading: store all results but only display initial batch
+            let initial_count = INITIAL_RESULTS.min(results.len());
+            {
+                let mut lazy = lazy_state.borrow_mut();
+                lazy.all_results = results.clone();
+                lazy.displayed_count = initial_count;
+            }
+
+            // Display only initial batch
+            for item in results.iter().take(initial_count) {
                 let row = ResultRow::new(item);
                 results_list.append(&row);
             }
@@ -636,7 +678,8 @@ impl MainWindow {
                 results_list.select_row(Some(&first_row));
             }
 
-            *current_results.borrow_mut() = results;
+            // current_results holds only what's displayed (for selection/activation)
+            *current_results.borrow_mut() = results.into_iter().take(initial_count).collect();
         });
 
         // Entry activate signal (Enter key in search entry)
@@ -847,6 +890,7 @@ impl MainWindow {
                 // Ctrl+1-9 toggle specific providers based on tab order (only when not in submenu)
                 Key::_1 | Key::_2 | Key::_3 | Key::_4 | Key::_5 |
                 Key::_6 | Key::_7 | Key::_8 | Key::_9 if ctrl => {
+                    info!("[UI] Ctrl+number detected: {:?}", key);
                     if !submenu_state.borrow().active {
                         let idx = match key {
                             Key::_1 => 0,
@@ -860,7 +904,9 @@ impl MainWindow {
                             Key::_9 => 8,
                             _ => return gtk4::glib::Propagation::Proceed,
                         };
+                        info!("[UI] Toggling tab at index {}", idx);
                         if let Some(provider) = tab_order.get(idx) {
+                            info!("[UI] Found provider: {:?}", provider);
                             Self::toggle_provider_button(
                                 provider.clone(),
                                 &filter,
@@ -868,6 +914,8 @@ impl MainWindow {
                                 &search_entry,
                                 &mode_label,
                             );
+                        } else {
+                            info!("[UI] No provider at index {}, tab_order len={}", idx, tab_order.len());
                         }
                     }
                     gtk4::glib::Propagation::Stop
@@ -955,25 +1003,65 @@ impl MainWindow {
         }
 
         let current = filter.borrow().enabled_providers();
+        let all_enabled = current.len() == tab_order.len();
 
-        let next = if current.len() == 1 {
-            let idx = tab_order.iter().position(|p| p == &current[0]).unwrap_or(0);
-            if forward {
-                tab_order[(idx + 1) % tab_order.len()].clone()
+        // Cycle: All -> Provider1 -> Provider2 -> ... -> ProviderN -> All
+        // In "All" mode (all providers enabled), we go to first provider (forward) or last (backward)
+        // In single-provider mode, we go to next provider or back to All at the boundary
+        if all_enabled {
+            // Currently showing all, go to first (forward) or last (backward) single provider
+            let next = if forward {
+                tab_order[0].clone()
             } else {
-                tab_order[(idx + tab_order.len() - 1) % tab_order.len()].clone()
+                tab_order[tab_order.len() - 1].clone()
+            };
+            {
+                let mut f = filter.borrow_mut();
+                f.set_single_mode(next.clone());
+            }
+            for (ptype, button) in buttons.borrow().iter() {
+                button.set_active(ptype == &next);
+            }
+        } else if current.len() == 1 {
+            let idx = tab_order.iter().position(|p| p == &current[0]).unwrap_or(0);
+            let at_boundary = if forward { idx == tab_order.len() - 1 } else { idx == 0 };
+
+            if at_boundary {
+                // At boundary, go back to "All" mode
+                {
+                    let mut f = filter.borrow_mut();
+                    for provider in tab_order {
+                        f.enable(provider.clone());
+                    }
+                }
+                for (_, button) in buttons.borrow().iter() {
+                    button.set_active(true);
+                }
+            } else {
+                // Move to next/previous provider
+                let next = if forward {
+                    tab_order[idx + 1].clone()
+                } else {
+                    tab_order[idx - 1].clone()
+                };
+                {
+                    let mut f = filter.borrow_mut();
+                    f.set_single_mode(next.clone());
+                }
+                for (ptype, button) in buttons.borrow().iter() {
+                    button.set_active(ptype == &next);
+                }
             }
         } else {
-            tab_order[0].clone()
-        };
-
-        {
-            let mut f = filter.borrow_mut();
-            f.set_single_mode(next.clone());
-        }
-
-        for (ptype, button) in buttons.borrow().iter() {
-            button.set_active(ptype == &next);
+            // Some but not all providers enabled - go to first provider
+            let next = tab_order[0].clone();
+            {
+                let mut f = filter.borrow_mut();
+                f.set_single_mode(next.clone());
+            }
+            for (ptype, button) in buttons.borrow().iter() {
+                button.set_active(ptype == &next);
+            }
         }
 
         mode_label.set_label(filter.borrow().mode_display_name());
@@ -1009,6 +1097,7 @@ impl MainWindow {
         let use_frecency = cfg.providers.frecency;
         drop(cfg);
 
+        // Fetch all matching results (up to max_results)
         let results: Vec<LaunchItem> = if use_frecency {
             self.providers
                 .borrow_mut()
@@ -1025,11 +1114,21 @@ impl MainWindow {
                 .collect()
         };
 
+        // Clear existing results
         while let Some(child) = self.results_list.first_child() {
             self.results_list.remove(&child);
         }
 
-        for item in &results {
+        // Store all results for lazy loading
+        let initial_count = INITIAL_RESULTS.min(results.len());
+        {
+            let mut lazy = self.lazy_state.borrow_mut();
+            lazy.all_results = results.clone();
+            lazy.displayed_count = initial_count;
+        }
+
+        // Display initial batch only
+        for item in results.iter().take(initial_count) {
             let row = ResultRow::new(item);
             self.results_list.append(&row);
         }
@@ -1038,7 +1137,74 @@ impl MainWindow {
             self.results_list.select_row(Some(&first_row));
         }
 
-        *self.current_results.borrow_mut() = results;
+        // current_results holds what's currently displayed
+        *self.current_results.borrow_mut() = results.into_iter().take(initial_count).collect();
+    }
+
+    /// Set up lazy loading scroll detection
+    fn setup_lazy_loading(&self) {
+        let vadj = self.scrolled.vadjustment();
+        let results_list = self.results_list.clone();
+        let lazy_state = self.lazy_state.clone();
+        let current_results = self.current_results.clone();
+
+        // Load more on scroll
+        vadj.connect_value_changed(move |adj| {
+            let value = adj.value();
+            let upper = adj.upper();
+            let page_size = adj.page_size();
+
+            // Load more when near bottom (within 50px)
+            let near_bottom = upper > page_size && (value + page_size >= upper - 50.0);
+            if near_bottom {
+                Self::load_more_items(&lazy_state, &results_list, &current_results);
+            }
+        });
+
+        // Also load more when selecting rows near the end (keyboard navigation)
+        let lazy_state2 = self.lazy_state.clone();
+        let results_list2 = self.results_list.clone();
+        let current_results2 = self.current_results.clone();
+
+        self.results_list.connect_row_selected(move |_, row| {
+            if let Some(row) = row {
+                let index = row.index();
+                let lazy = lazy_state2.borrow();
+                let displayed = lazy.displayed_count;
+                let all_count = lazy.all_results.len();
+                drop(lazy);
+
+                // Load more if within 3 items of the end
+                if displayed < all_count && (index as usize) >= displayed.saturating_sub(3) {
+                    Self::load_more_items(&lazy_state2, &results_list2, &current_results2);
+                }
+            }
+        });
+    }
+
+    /// Load more items from lazy state
+    fn load_more_items(
+        lazy_state: &Rc<RefCell<LazyLoadState>>,
+        results_list: &ListBox,
+        current_results: &Rc<RefCell<Vec<LaunchItem>>>,
+    ) {
+        let mut lazy = lazy_state.borrow_mut();
+        let all_count = lazy.all_results.len();
+        let displayed = lazy.displayed_count;
+
+        if displayed < all_count {
+            // Load next batch
+            let new_end = (displayed + LOAD_MORE_BATCH).min(all_count);
+            for item in lazy.all_results[displayed..new_end].iter() {
+                let row = ResultRow::new(item);
+                results_list.append(&row);
+            }
+            lazy.displayed_count = new_end;
+
+            // Update current_results
+            let mut current = current_results.borrow_mut();
+            current.extend(lazy.all_results[displayed..new_end].iter().cloned());
+        }
     }
 
     /// Handle item activation - returns true if window should close
@@ -1075,7 +1241,8 @@ impl MainWindow {
         debug!("[UI] Launch details: terminal={}, provider={:?}", item.terminal, item.provider);
 
         let cmd = if item.terminal {
-            format!("{} -e {}", config.general.terminal_command, item.command)
+            let terminal = config.general.terminal_command.as_deref().unwrap_or("xterm");
+            format!("{} -e {}", terminal, item.command)
         } else {
             item.command.clone()
         };

@@ -64,8 +64,17 @@ impl ProviderFilter {
             if config_providers.scripts {
                 set.insert(ProviderType::Scripts);
             }
-            // Note: Files, Calculator, WebSearch are dynamic providers
-            // that don't need to be in the filter set - they're triggered by prefix
+            // Dynamic providers: add to filter set so they work in "All" mode
+            // but can still be excluded when in single-provider mode
+            if config_providers.files {
+                set.insert(ProviderType::Files);
+            }
+            if config_providers.calculator {
+                set.insert(ProviderType::Calculator);
+            }
+            if config_providers.websearch {
+                set.insert(ProviderType::WebSearch);
+            }
             // Default to apps if nothing enabled
             if set.is_empty() {
                 set.insert(ProviderType::Application);
@@ -104,9 +113,11 @@ impl ProviderFilter {
             #[cfg(feature = "dev-logging")]
             debug!("[Filter] Toggled OFF {:?}, enabled: {:?}", provider, self.enabled);
         } else {
+            #[cfg(feature = "dev-logging")]
+            let provider_debug = format!("{:?}", provider);
             self.enabled.insert(provider);
             #[cfg(feature = "dev-logging")]
-            debug!("[Filter] Toggled ON {:?}, enabled: {:?}", provider, self.enabled);
+            debug!("[Filter] Toggled ON {}, enabled: {:?}", provider_debug, self.enabled);
         }
     }
 

@@ -60,6 +60,10 @@ install-local:
     sudo mkdir -p /usr/lib/owlry/plugins
     sudo mkdir -p /usr/lib/owlry/runtimes
 
+    echo "Cleaning up stale files..."
+    # Remove runtime files that may have ended up in plugins dir (from old installs)
+    sudo rm -f /usr/lib/owlry/plugins/libowlry_lua.so /usr/lib/owlry/plugins/libowlry_rune.so
+
     echo "Installing core binary..."
     sudo install -Dm755 target/release/owlry /usr/bin/owlry
 

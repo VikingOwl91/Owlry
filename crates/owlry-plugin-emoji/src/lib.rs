@@ -423,6 +423,7 @@ impl EmojiState {
                     name.to_string(),
                     format!("printf '%s' '{}' | wl-copy", emoji),
                 )
+                .with_icon(*emoji) // Use emoji character as icon
                 .with_description(format!("{} {}", emoji, keywords))
                 .with_keywords(vec![name.to_string(), keywords.to_string()]),
             );
