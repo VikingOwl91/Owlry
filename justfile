@@ -63,6 +63,14 @@ install-local:
     echo "Cleaning up stale files..."
     # Remove runtime files that may have ended up in plugins dir (from old installs)
     sudo rm -f /usr/lib/owlry/plugins/libowlry_lua.so /usr/lib/owlry/plugins/libowlry_rune.so
+    # Remove old short-named plugin files (from old AUR packages before naming standardization)
+    sudo rm -f /usr/lib/owlry/plugins/libbookmarks.so /usr/lib/owlry/plugins/libcalculator.so \
+        /usr/lib/owlry/plugins/libclipboard.so /usr/lib/owlry/plugins/libemoji.so \
+        /usr/lib/owlry/plugins/libfilesearch.so /usr/lib/owlry/plugins/libmedia.so \
+        /usr/lib/owlry/plugins/libpomodoro.so /usr/lib/owlry/plugins/libscripts.so \
+        /usr/lib/owlry/plugins/libssh.so /usr/lib/owlry/plugins/libsystem.so \
+        /usr/lib/owlry/plugins/libsystemd.so /usr/lib/owlry/plugins/libweather.so \
+        /usr/lib/owlry/plugins/libwebsearch.so
 
     echo "Installing core binary..."
     sudo install -Dm755 target/release/owlry /usr/bin/owlry

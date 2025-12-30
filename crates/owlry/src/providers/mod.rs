@@ -44,27 +44,17 @@ pub struct LaunchItem {
 
 /// Provider type identifier for filtering and badge display
 ///
-/// Note: Plugin is a special case that stores a type_id string
-/// for custom plugin-defined provider types.
+/// Core types are built-in providers. All native plugins use Plugin(type_id).
+/// This keeps the core app free of plugin-specific knowledge.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ProviderType {
+    /// Built-in: Desktop applications from XDG directories
     Application,
-    Bookmarks,
-    Calculator,
-    Clipboard,
+    /// Built-in: Shell commands from PATH
     Command,
+    /// Built-in: Pipe-based input (dmenu compatibility)
     Dmenu,
-    Emoji,
-    Files,
-    MediaPlayer,
-    Pomodoro,
-    Scripts,
-    Ssh,
-    System,
-    Uuctl,
-    Weather,
-    WebSearch,
-    /// Plugin-defined provider type with custom type_id
+    /// Plugin-defined provider type with its type_id (e.g., "calc", "weather", "emoji")
     Plugin(String),
 }
 
@@ -73,27 +63,11 @@ impl std::str::FromStr for ProviderType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
+            // Core built-in providers
             "app" | "apps" | "application" | "applications" => Ok(ProviderType::Application),
-            "bookmark" | "bookmarks" | "bm" => Ok(ProviderType::Bookmarks),
-            "calc" | "calculator" => Ok(ProviderType::Calculator),
-            "clip" | "clipboard" => Ok(ProviderType::Clipboard),
             "cmd" | "command" | "commands" => Ok(ProviderType::Command),
             "dmenu" => Ok(ProviderType::Dmenu),
-            "emoji" | "emojis" => Ok(ProviderType::Emoji),
-            "file" | "files" | "find" | "filesearch" => Ok(ProviderType::Files),
-            "media" | "mpris" | "player" => Ok(ProviderType::MediaPlayer),
-            "pomo" | "pomodoro" | "timer" => Ok(ProviderType::Pomodoro),
-            "script" | "scripts" => Ok(ProviderType::Scripts),
-            "ssh" => Ok(ProviderType::Ssh),
-            "sys" | "system" | "power" => Ok(ProviderType::System),
-            "uuctl" | "systemd" => Ok(ProviderType::Uuctl),
-            "weather" => Ok(ProviderType::Weather),
-            "web" | "websearch" | "search" => Ok(ProviderType::WebSearch),
-            // Plugin types are prefixed with "plugin:" (e.g., "plugin:github-repos")
-            other if other.starts_with("plugin:") => {
-                Ok(ProviderType::Plugin(other[7..].to_string()))
-            }
-            // Unknown types become plugin types
+            // Everything else is a plugin
             other => Ok(ProviderType::Plugin(other.to_string())),
         }
     }
@@ -103,21 +77,8 @@ impl std::fmt::Display for ProviderType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ProviderType::Application => write!(f, "app"),
-            ProviderType::Bookmarks => write!(f, "bookmark"),
-            ProviderType::Calculator => write!(f, "calc"),
-            ProviderType::Clipboard => write!(f, "clip"),
             ProviderType::Command => write!(f, "cmd"),
             ProviderType::Dmenu => write!(f, "dmenu"),
-            ProviderType::Emoji => write!(f, "emoji"),
-            ProviderType::Files => write!(f, "file"),
-            ProviderType::MediaPlayer => write!(f, "media"),
-            ProviderType::Pomodoro => write!(f, "pomo"),
-            ProviderType::Scripts => write!(f, "script"),
-            ProviderType::Ssh => write!(f, "ssh"),
-            ProviderType::System => write!(f, "sys"),
-            ProviderType::Uuctl => write!(f, "uuctl"),
-            ProviderType::Weather => write!(f, "weather"),
-            ProviderType::WebSearch => write!(f, "web"),
             ProviderType::Plugin(type_id) => write!(f, "{}", type_id),
         }
     }
@@ -146,19 +107,14 @@ pub struct ProviderManager {
     matcher: SkimMatcherV2,
 }
 
-/// Known dynamic provider type IDs (need per-query evaluation)
-const DYNAMIC_TYPE_IDS: &[&str] = &["calc", "websearch", "filesearch"];
-
-/// Known widget provider type IDs (appear at top of results)
-const WIDGET_TYPE_IDS: &[&str] = &["weather", "media", "pomodoro"];
-
 impl ProviderManager {
     /// Create a new ProviderManager with native plugins
     ///
-    /// Native plugins are loaded from /usr/lib/owlry/plugins/ and categorized into:
-    /// - Static providers (added to providers vec)
-    /// - Dynamic providers (queried per-keystroke: calculator, websearch, filesearch)
-    /// - Widget providers (shown at top: weather, media, pomodoro)
+    /// Native plugins are loaded from /usr/lib/owlry/plugins/ and categorized based on
+    /// their declared ProviderKind and ProviderPosition:
+    /// - Static providers with Normal position (added to providers vec)
+    /// - Dynamic providers (queried per-keystroke, declared via ProviderKind::Dynamic)
+    /// - Widget providers (shown at top, declared via ProviderPosition::Widget)
     pub fn with_native_plugins(native_providers: Vec<NativeProvider>) -> Self {
         let mut manager = Self {
             providers: Vec::new(),
@@ -180,17 +136,20 @@ impl ProviderManager {
             manager.providers.push(Box::new(ApplicationProvider::new()));
             manager.providers.push(Box::new(CommandProvider::new()));
 
-            // Categorize native plugins
+            // Categorize native plugins based on their declared ProviderKind and ProviderPosition
             for provider in native_providers {
                 let type_id = provider.type_id();
 
-                if DYNAMIC_TYPE_IDS.contains(&type_id) {
+                if provider.is_dynamic() {
+                    // Dynamic providers declare ProviderKind::Dynamic
                     info!("Registered dynamic provider: {} ({})", provider.name(), type_id);
                     manager.dynamic_providers.push(provider);
-                } else if WIDGET_TYPE_IDS.contains(&type_id) {
+                } else if provider.is_widget() {
+                    // Widgets declare ProviderPosition::Widget
                     info!("Registered widget provider: {} ({})", provider.name(), type_id);
                     manager.widget_providers.push(provider);
                 } else {
+                    // Static providers with Normal position
                     info!("Registered static provider: {} ({})", provider.name(), type_id);
                     manager.providers.push(Box::new(provider));
                 }
@@ -393,19 +352,11 @@ impl ProviderManager {
         // 1. No specific filter prefix is active
         // 2. Query is empty (user hasn't started searching)
         // This keeps widgets visible on launch but hides them during active search
+        // Widgets are always visible regardless of filter settings (they declare position via API)
         if filter.active_prefix().is_none() && query.is_empty() {
-            // Widget priority scores based on type
+            // Widget priority comes from plugin-declared priority field
             for provider in &self.widget_providers {
-                // Skip if this provider type is filtered out
-                if !filter.is_active(provider.provider_type()) {
-                    continue;
-                }
-                let base_score = match provider.type_id() {
-                    "weather" => 12000,
-                    "pomodoro" => 11500,
-                    "media" => 11000,
-                    _ => 10500,
-                };
+                let base_score = provider.priority() as i64;
                 for (idx, item) in provider.items().iter().enumerate() {
                     results.push((item.clone(), base_score - idx as i64));
                 }
@@ -417,18 +368,14 @@ impl ProviderManager {
         // 1. Their specific filter is active (e.g., :file prefix or Files tab selected), OR
         // 2. No specific single-mode filter is active (showing all providers)
         if !query.is_empty() {
-            for (provider_idx, provider) in self.dynamic_providers.iter().enumerate() {
+            for provider in &self.dynamic_providers {
                 // Skip if this provider type is explicitly filtered out
                 if !filter.is_active(provider.provider_type()) {
                     continue;
                 }
                 let dynamic_results = provider.query(query);
-                let base_score = match provider.type_id() {
-                    "calc" => 10000,
-                    "websearch" => 9000,
-                    "filesearch" => 8000,
-                    _ => 7000 - (provider_idx as i64 * 1000),
-                };
+                // Priority comes from plugin-declared priority field
+                let base_score = provider.priority() as i64;
                 for (idx, item) in dynamic_results.into_iter().enumerate() {
                     results.push((item, base_score - idx as i64));
                 }

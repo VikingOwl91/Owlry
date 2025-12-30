@@ -315,48 +315,54 @@ impl MainWindow {
     }
 
     /// Get display label for a provider tab
+    /// Core types have fixed labels; plugins derive labels from type_id
     fn provider_tab_label(provider: &ProviderType) -> &'static str {
         match provider {
             ProviderType::Application => "Apps",
-            ProviderType::Bookmarks => "Bookmarks",
-            ProviderType::Calculator => "Calc",
-            ProviderType::Clipboard => "Clip",
             ProviderType::Command => "Cmds",
             ProviderType::Dmenu => "Dmenu",
-            ProviderType::Emoji => "Emoji",
-            ProviderType::Files => "Files",
-            ProviderType::MediaPlayer => "Media",
-            ProviderType::Pomodoro => "Pomo",
-            ProviderType::Scripts => "Scripts",
-            ProviderType::Ssh => "SSH",
-            ProviderType::System => "System",
-            ProviderType::Uuctl => "uuctl",
-            ProviderType::Weather => "Weather",
-            ProviderType::WebSearch => "Web",
-            ProviderType::Plugin(_) => "Plugin",
+            ProviderType::Plugin(type_id) => match type_id.as_str() {
+                "bookmarks" => "Bookmarks",
+                "calc" => "Calc",
+                "clipboard" => "Clip",
+                "emoji" => "Emoji",
+                "filesearch" => "Files",
+                "media" => "Media",
+                "pomodoro" => "Pomo",
+                "scripts" => "Scripts",
+                "ssh" => "SSH",
+                "system" => "System",
+                "uuctl" => "uuctl",
+                "weather" => "Weather",
+                "websearch" => "Web",
+                _ => "Plugin",
+            },
         }
     }
 
     /// Get CSS class for a provider
+    /// Core types have fixed CSS classes; plugins derive from type_id
     fn provider_css_class(provider: &ProviderType) -> &'static str {
         match provider {
             ProviderType::Application => "owlry-filter-app",
-            ProviderType::Bookmarks => "owlry-filter-bookmark",
-            ProviderType::Calculator => "owlry-filter-calc",
-            ProviderType::Clipboard => "owlry-filter-clip",
             ProviderType::Command => "owlry-filter-cmd",
             ProviderType::Dmenu => "owlry-filter-dmenu",
-            ProviderType::Emoji => "owlry-filter-emoji",
-            ProviderType::Files => "owlry-filter-file",
-            ProviderType::MediaPlayer => "owlry-filter-media",
-            ProviderType::Pomodoro => "owlry-filter-pomodoro",
-            ProviderType::Scripts => "owlry-filter-script",
-            ProviderType::Ssh => "owlry-filter-ssh",
-            ProviderType::System => "owlry-filter-sys",
-            ProviderType::Uuctl => "owlry-filter-uuctl",
-            ProviderType::Weather => "owlry-filter-weather",
-            ProviderType::WebSearch => "owlry-filter-web",
-            ProviderType::Plugin(_) => "owlry-filter-plugin",
+            ProviderType::Plugin(type_id) => match type_id.as_str() {
+                "bookmarks" => "owlry-filter-bookmark",
+                "calc" => "owlry-filter-calc",
+                "clipboard" => "owlry-filter-clip",
+                "emoji" => "owlry-filter-emoji",
+                "filesearch" => "owlry-filter-file",
+                "media" => "owlry-filter-media",
+                "pomodoro" => "owlry-filter-pomodoro",
+                "scripts" => "owlry-filter-script",
+                "ssh" => "owlry-filter-ssh",
+                "system" => "owlry-filter-sys",
+                "uuctl" => "owlry-filter-uuctl",
+                "weather" => "owlry-filter-weather",
+                "websearch" => "owlry-filter-web",
+                _ => "owlry-filter-plugin",
+            },
         }
     }
 
@@ -366,22 +372,24 @@ impl MainWindow {
             .iter()
             .map(|p| match p {
                 ProviderType::Application => "applications",
-                ProviderType::Bookmarks => "bookmarks",
-                ProviderType::Calculator => "calculator",
-                ProviderType::Clipboard => "clipboard",
                 ProviderType::Command => "commands",
                 ProviderType::Dmenu => "options",
-                ProviderType::Emoji => "emoji",
-                ProviderType::Files => "files",
-                ProviderType::MediaPlayer => "media",
-                ProviderType::Pomodoro => "pomodoro",
-                ProviderType::Scripts => "scripts",
-                ProviderType::Ssh => "SSH hosts",
-                ProviderType::System => "system",
-                ProviderType::Uuctl => "uuctl units",
-                ProviderType::Weather => "weather",
-                ProviderType::WebSearch => "web",
-                ProviderType::Plugin(_) => "plugins",
+                ProviderType::Plugin(type_id) => match type_id.as_str() {
+                    "bookmarks" => "bookmarks",
+                    "calc" => "calculator",
+                    "clipboard" => "clipboard",
+                    "emoji" => "emoji",
+                    "filesearch" => "files",
+                    "media" => "media",
+                    "pomodoro" => "pomodoro",
+                    "scripts" => "scripts",
+                    "ssh" => "SSH hosts",
+                    "system" => "system",
+                    "uuctl" => "uuctl units",
+                    "weather" => "weather",
+                    "websearch" => "web",
+                    _ => "plugins",
+                },
             })
             .collect();
 
@@ -612,22 +620,24 @@ impl MainWindow {
             if let Some(ref prefix) = parsed.prefix {
                 let prefix_name = match prefix {
                     ProviderType::Application => "applications",
-                    ProviderType::Bookmarks => "bookmarks",
-                    ProviderType::Calculator => "calculator",
-                    ProviderType::Clipboard => "clipboard",
                     ProviderType::Command => "commands",
                     ProviderType::Dmenu => "options",
-                    ProviderType::Emoji => "emoji",
-                    ProviderType::Files => "files",
-                    ProviderType::MediaPlayer => "media",
-                    ProviderType::Pomodoro => "pomodoro",
-                    ProviderType::Scripts => "scripts",
-                    ProviderType::Ssh => "SSH hosts",
-                    ProviderType::System => "system",
-                    ProviderType::Uuctl => "uuctl units",
-                    ProviderType::Weather => "weather",
-                    ProviderType::WebSearch => "web",
-                    ProviderType::Plugin(_) => "plugins",
+                    ProviderType::Plugin(type_id) => match type_id.as_str() {
+                        "bookmarks" => "bookmarks",
+                        "calc" => "calculator",
+                        "clipboard" => "clipboard",
+                        "emoji" => "emoji",
+                        "filesearch" => "files",
+                        "media" => "media",
+                        "pomodoro" => "pomodoro",
+                        "scripts" => "scripts",
+                        "ssh" => "SSH hosts",
+                        "system" => "system",
+                        "uuctl" => "uuctl units",
+                        "weather" => "weather",
+                        "websearch" => "web",
+                        _ => "plugins",
+                    },
                 };
                 search_entry_for_change
                     .set_placeholder_text(Some(&format!("Search {}...", prefix_name)));

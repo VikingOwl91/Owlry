@@ -9,7 +9,8 @@
 
 use abi_stable::std_types::{ROption, RStr, RString, RVec};
 use owlry_plugin_api::{
-    owlry_plugin, PluginInfo, PluginItem, ProviderHandle, ProviderInfo, ProviderKind, API_VERSION,
+    owlry_plugin, PluginInfo, PluginItem, ProviderHandle, ProviderInfo, ProviderKind,
+    ProviderPosition, API_VERSION,
 };
 use std::process::Command;
 
@@ -137,6 +138,8 @@ extern "C" fn plugin_providers() -> RVec<ProviderInfo> {
         icon: RString::from(PROVIDER_ICON),
         provider_type: ProviderKind::Static,
         type_id: RString::from(PROVIDER_TYPE_ID),
+        position: ProviderPosition::Normal,
+        priority: 0, // Static: use frecency ordering
     }]
     .into()
 }

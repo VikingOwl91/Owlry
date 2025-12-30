@@ -31,7 +31,9 @@ use abi_stable::StableAbi;
 pub use abi_stable::std_types::{ROption, RStr, RString, RVec};
 
 /// Current plugin API version - plugins must match this
-pub const API_VERSION: u32 = 1;
+/// v2: Added ProviderPosition for widget support
+/// v3: Added priority field for plugin-declared result ordering
+pub const API_VERSION: u32 = 3;
 
 /// Plugin metadata returned by the info function
 #[repr(C)]
@@ -65,6 +67,14 @@ pub struct ProviderInfo {
     pub provider_type: ProviderKind,
     /// Short type identifier for UI badges (e.g., "calc", "web")
     pub type_id: RString,
+    /// Display position (Normal or Widget)
+    pub position: ProviderPosition,
+    /// Priority for result ordering (higher values appear first)
+    /// Suggested ranges:
+    /// - Widgets: 10000-12000
+    /// - Dynamic providers: 7000-10000
+    /// - Static providers: 0-5000 (use 0 for frecency-based ordering)
+    pub priority: i32,
 }
 
 /// Provider behavior type
@@ -75,6 +85,20 @@ pub enum ProviderKind {
     Static,
     /// Dynamic providers evaluate queries in real-time via query()
     Dynamic,
+}
+
+/// Provider display position
+///
+/// Controls where in the result list this provider's items appear.
+#[repr(C)]
+#[derive(StableAbi, Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ProviderPosition {
+    /// Standard position in results (sorted by score/frecency)
+    #[default]
+    Normal,
+    /// Widget position - appears at top of results when query is empty
+    /// Widgets are always visible regardless of filter settings
+    Widget,
 }
 
 /// A single searchable/launchable item returned by providers

@@ -12,7 +12,8 @@
 
 use abi_stable::std_types::{ROption, RStr, RString, RVec};
 use owlry_plugin_api::{
-    owlry_plugin, PluginInfo, PluginItem, ProviderHandle, ProviderInfo, ProviderKind, API_VERSION,
+    owlry_plugin, PluginInfo, PluginItem, ProviderHandle, ProviderInfo, ProviderKind,
+    ProviderPosition, API_VERSION,
 };
 use std::path::Path;
 use std::process::Command;
@@ -207,6 +208,8 @@ extern "C" fn plugin_providers() -> RVec<ProviderInfo> {
         icon: RString::from(PROVIDER_ICON),
         provider_type: ProviderKind::Dynamic,
         type_id: RString::from(PROVIDER_TYPE_ID),
+        position: ProviderPosition::Normal,
+        priority: 8000, // Dynamic: file search
     }]
     .into()
 }

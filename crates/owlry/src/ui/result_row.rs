@@ -56,6 +56,10 @@ impl ResultRow {
                 let img = Image::from_resource(icon_path);
                 img.set_pixel_size(32);
                 img.add_css_class("owlry-result-icon");
+                // SVG icons from resources should be treated as symbolic for color inheritance
+                if icon_path.ends_with(".svg") {
+                    img.add_css_class("owlry-symbolic-icon");
+                }
                 img.upcast()
             } else if icon_path.starts_with('/') {
                 // Absolute file path
@@ -68,27 +72,19 @@ impl ResultRow {
                 let img = Image::from_icon_name(icon_path);
                 img.set_pixel_size(32);
                 img.add_css_class("owlry-result-icon");
+                // Add symbolic class for icons ending with "-symbolic"
+                if icon_path.ends_with("-symbolic") {
+                    img.add_css_class("owlry-symbolic-icon");
+                }
                 img.upcast()
             }
         } else {
-            // Default icon based on provider type (using symbolic icons for theme color support)
+            // Default icon based on provider type (only core types, plugins should provide icons)
             let default_icon = match &item.provider {
                 crate::providers::ProviderType::Application => "application-x-executable-symbolic",
-                crate::providers::ProviderType::Bookmarks => "user-bookmarks-symbolic",
-                crate::providers::ProviderType::Calculator => "accessories-calculator-symbolic",
-                crate::providers::ProviderType::Clipboard => "edit-paste-symbolic",
                 crate::providers::ProviderType::Command => "utilities-terminal-symbolic",
                 crate::providers::ProviderType::Dmenu => "view-list-symbolic",
-                crate::providers::ProviderType::Emoji => "face-smile-symbolic",
-                crate::providers::ProviderType::Files => "folder-symbolic",
-                crate::providers::ProviderType::Scripts => "application-x-executable-symbolic",
-                crate::providers::ProviderType::Ssh => "network-server-symbolic",
-                crate::providers::ProviderType::System => "system-shutdown-symbolic",
-                crate::providers::ProviderType::Uuctl => "system-run-symbolic",
-                crate::providers::ProviderType::WebSearch => "web-browser-symbolic",
-                crate::providers::ProviderType::Weather => "weather-clear-symbolic",
-                crate::providers::ProviderType::MediaPlayer => "media-playback-start-symbolic",
-                crate::providers::ProviderType::Pomodoro => "alarm-symbolic",
+                // Plugins should provide their own icon; fallback to generic addon icon
                 crate::providers::ProviderType::Plugin(_) => "application-x-addon-symbolic",
             };
             let img = Image::from_icon_name(default_icon);

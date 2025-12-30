@@ -3,7 +3,7 @@
 //! A static provider that reads browser bookmarks from various browsers.
 //!
 //! Supported browsers:
-//! - Firefox (via places.sqlite using SQLx)
+//! - Firefox (via places.sqlite using rusqlite with bundled SQLite)
 //! - Chrome
 //! - Chromium
 //! - Brave
@@ -11,11 +11,11 @@
 
 use abi_stable::std_types::{ROption, RStr, RString, RVec};
 use owlry_plugin_api::{
-    owlry_plugin, PluginInfo, PluginItem, ProviderHandle, ProviderInfo, ProviderKind, API_VERSION,
+    owlry_plugin, PluginInfo, PluginItem, ProviderHandle, ProviderInfo, ProviderKind,
+    ProviderPosition, API_VERSION,
 };
+use rusqlite::{Connection, OpenFlags};
 use serde::Deserialize;
-use sqlx::sqlite::SqlitePoolOptions;
-use sqlx::Row;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -248,19 +248,9 @@ impl BookmarksState {
                 }
             }
 
-            // Load Firefox bookmarks with favicons (async via tokio)
-            let rt = match tokio::runtime::Runtime::new() {
-                Ok(rt) => rt,
-                Err(_) => {
-                    loading.store(false, Ordering::SeqCst);
-                    return;
-                }
-            };
-
+            // Load Firefox bookmarks with favicons (synchronous with rusqlite)
             for path in Self::firefox_places_paths() {
-                rt.block_on(async {
-                    Self::read_firefox_bookmarks_async(&path, &mut items).await;
-                });
+                Self::read_firefox_bookmarks(&path, &mut items);
             }
 
             // Save to cache for next startup
@@ -323,21 +313,24 @@ impl BookmarksState {
         }
     }
 
-    /// Read Firefox bookmarks asynchronously
-    async fn read_firefox_bookmarks_async(places_path: &PathBuf, items: &mut Vec<PluginItem>) {
+    /// Read Firefox bookmarks using rusqlite (synchronous, bundled SQLite)
+    fn read_firefox_bookmarks(places_path: &PathBuf, items: &mut Vec<PluginItem>) {
         let temp_dir = std::env::temp_dir();
         let temp_db = temp_dir.join("owlry_places_temp.sqlite");
 
+        // Copy database to temp location to avoid locking issues
         if fs::copy(places_path, &temp_db).is_err() {
             return;
         }
 
+        // Also copy WAL file if it exists
         let wal_path = places_path.with_extension("sqlite-wal");
         if wal_path.exists() {
             let temp_wal = temp_db.with_extension("sqlite-wal");
             let _ = fs::copy(&wal_path, &temp_wal);
         }
 
+        // Copy favicons database if available
         let favicons_path = Self::firefox_favicons_path(places_path);
         let temp_favicons = temp_dir.join("owlry_favicons_temp.sqlite");
         if let Some(ref fp) = favicons_path {
@@ -348,21 +341,10 @@ impl BookmarksState {
             }
         }
 
-        let db_url = format!("sqlite:{}?mode=ro", temp_db.display());
-        let favicons_url = if favicons_path.is_some() {
-            Some(format!("sqlite:{}?mode=ro", temp_favicons.display()))
-        } else {
-            None
-        };
-
         let cache_dir = Self::ensure_favicon_cache_dir();
 
-        let bookmarks = Self::fetch_firefox_bookmarks_with_favicons(
-            &db_url,
-            favicons_url.as_deref(),
-            cache_dir.as_ref(),
-        )
-        .await;
+        // Read bookmarks from places.sqlite
+        let bookmarks = Self::fetch_firefox_bookmarks(&temp_db, &temp_favicons, cache_dir.as_ref());
 
         // Clean up temp files
         let _ = fs::remove_file(&temp_db);
@@ -385,19 +367,18 @@ impl BookmarksState {
         }
     }
 
-    /// Fetch Firefox bookmarks with their favicons
-    async fn fetch_firefox_bookmarks_with_favicons(
-        places_url: &str,
-        favicons_url: Option<&str>,
+    /// Fetch Firefox bookmarks with optional favicons
+    fn fetch_firefox_bookmarks(
+        places_path: &Path,
+        favicons_path: &Path,
         cache_dir: Option<&PathBuf>,
     ) -> Vec<(String, String, Option<String>)> {
-        // First, fetch bookmarks from places.sqlite
-        let pool = match SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect(places_url)
-            .await
-        {
-            Ok(p) => p,
+        // Open places.sqlite in read-only mode
+        let conn = match Connection::open_with_flags(
+            places_path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        ) {
+            Ok(c) => c,
             Err(_) => return Vec::new(),
         };
 
@@ -416,43 +397,38 @@ impl BookmarksState {
             LIMIT 500
         "#;
 
-        let rows = match sqlx::query(query).fetch_all(&pool).await {
-            Ok(r) => r,
+        let mut stmt = match conn.prepare(query) {
+            Ok(s) => s,
             Err(_) => return Vec::new(),
         };
 
-        let bookmarks: Vec<(String, String)> = rows
-            .into_iter()
-            .filter_map(|row| {
-                let title: Option<String> = row.get("title");
-                let url: Option<String> = row.get("url");
-                match (title, url) {
-                    (Some(t), Some(u)) => Some((t, u)),
-                    _ => None,
-                }
+        let bookmarks: Vec<(String, String)> = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })
-            .collect();
+            .ok()
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            .unwrap_or_default();
 
-        // If no favicons database or cache dir, return without favicons
-        let (favicons_url, cache_dir) = match (favicons_url, cache_dir) {
-            (Some(f), Some(c)) => (f, c),
-            _ => return bookmarks.into_iter().map(|(t, u)| (t, u, None)).collect(),
+        // If no favicons or cache dir, return without favicons
+        let cache_dir = match cache_dir {
+            Some(c) => c,
+            None => return bookmarks.into_iter().map(|(t, u)| (t, u, None)).collect(),
         };
 
-        // Connect to favicons database
-        let fav_pool = match SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect(favicons_url)
-            .await
-        {
-            Ok(p) => p,
+        // Try to open favicons database
+        let fav_conn = match Connection::open_with_flags(
+            favicons_path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        ) {
+            Ok(c) => c,
             Err(_) => return bookmarks.into_iter().map(|(t, u)| (t, u, None)).collect(),
         };
 
         // Fetch favicons for each URL
         let mut results = Vec::new();
         for (title, url) in bookmarks {
-            let favicon_path = Self::get_favicon_for_url(&fav_pool, &url, cache_dir).await;
+            let favicon_path = Self::get_favicon_for_url(&fav_conn, &url, cache_dir);
             results.push((title, url, favicon_path));
         }
 
@@ -460,8 +436,8 @@ impl BookmarksState {
     }
 
     /// Get favicon for a URL, caching to file if needed
-    async fn get_favicon_for_url(
-        pool: &sqlx::SqlitePool,
+    fn get_favicon_for_url(
+        conn: &Connection,
         page_url: &str,
         cache_dir: &Path,
     ) -> Option<String> {
@@ -486,13 +462,11 @@ impl BookmarksState {
             LIMIT 1
         "#;
 
-        let row = sqlx::query(query)
-            .bind(page_url)
-            .fetch_optional(pool)
-            .await
-            .ok()??;
+        let data: Option<Vec<u8>> = conn
+            .query_row(query, [page_url], |row| row.get(0))
+            .ok();
 
-        let data: Vec<u8> = row.get("data");
+        let data = data?;
         if data.is_empty() {
             return None;
         }
@@ -549,6 +523,8 @@ extern "C" fn plugin_providers() -> RVec<ProviderInfo> {
         icon: RString::from(PROVIDER_ICON),
         provider_type: ProviderKind::Static,
         type_id: RString::from(PROVIDER_TYPE_ID),
+        position: ProviderPosition::Normal,
+        priority: 0, // Static: use frecency ordering
     }]
     .into()
 }
@@ -623,7 +599,7 @@ mod tests {
         // This will find paths if Firefox is installed
         let paths = BookmarksState::firefox_places_paths();
         // Path detection should work (may be empty if Firefox not installed)
-        assert!(paths.len() >= 0);
+        let _ = paths.len(); // Just ensure it doesn't panic
     }
 
     #[test]
@@ -656,7 +632,7 @@ mod tests {
 
     #[test]
     fn test_process_folder() {
-        let mut state = BookmarksState::new();
+        let mut items = Vec::new();
 
         let folder = ChromeBookmarkNode {
             name: Some("Test Folder".to_string()),
@@ -672,9 +648,9 @@ mod tests {
             ]),
         };
 
-        BookmarksState::process_chrome_folder_static(&folder, &mut state.items);
-        assert_eq!(state.items.len(), 1);
-        assert_eq!(state.items[0].name.as_str(), "Test Bookmark");
+        BookmarksState::process_chrome_folder_static(&folder, &mut items);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name.as_str(), "Test Bookmark");
     }
 
     #[test]

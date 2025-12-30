@@ -37,43 +37,44 @@ impl ProviderFilter {
         } else {
             // Use config file settings, default to apps only
             let mut set = HashSet::new();
+            // Core providers
             if config_providers.applications {
                 set.insert(ProviderType::Application);
             }
             if config_providers.commands {
                 set.insert(ProviderType::Command);
             }
+            // Plugin providers - use Plugin(type_id) for all
             if config_providers.uuctl {
-                set.insert(ProviderType::Uuctl);
+                set.insert(ProviderType::Plugin("uuctl".to_string()));
             }
             if config_providers.system {
-                set.insert(ProviderType::System);
+                set.insert(ProviderType::Plugin("system".to_string()));
             }
             if config_providers.ssh {
-                set.insert(ProviderType::Ssh);
+                set.insert(ProviderType::Plugin("ssh".to_string()));
             }
             if config_providers.clipboard {
-                set.insert(ProviderType::Clipboard);
+                set.insert(ProviderType::Plugin("clipboard".to_string()));
             }
             if config_providers.bookmarks {
-                set.insert(ProviderType::Bookmarks);
+                set.insert(ProviderType::Plugin("bookmarks".to_string()));
             }
             if config_providers.emoji {
-                set.insert(ProviderType::Emoji);
+                set.insert(ProviderType::Plugin("emoji".to_string()));
             }
             if config_providers.scripts {
-                set.insert(ProviderType::Scripts);
+                set.insert(ProviderType::Plugin("scripts".to_string()));
             }
-            // Dynamic providers: add to filter set so they work in "All" mode
-            // but can still be excluded when in single-provider mode
+            // Dynamic providers
             if config_providers.files {
-                set.insert(ProviderType::Files);
+                set.insert(ProviderType::Plugin("filesearch".to_string()));
             }
             if config_providers.calculator {
-                set.insert(ProviderType::Calculator);
+                set.insert(ProviderType::Plugin("calc".to_string()));
             }
             if config_providers.websearch {
-                set.insert(ProviderType::WebSearch);
+                set.insert(ProviderType::Plugin("websearch".to_string()));
             }
             // Default to apps if nothing enabled
             if set.is_empty() {
@@ -170,6 +171,7 @@ impl ProviderFilter {
     }
 
     /// Parse query for prefix syntax
+    /// Prefixes map to Plugin(type_id) for plugin providers
     pub fn parse_query(query: &str) -> ParsedQuery {
         let trimmed = query.trim_start();
 
@@ -197,37 +199,57 @@ impl ProviderFilter {
             }
         }
 
-        // Check for prefix patterns (with trailing space)
-        let prefixes = [
+        // Core provider prefixes
+        let core_prefixes: &[(&str, ProviderType)] = &[
             (":app ", ProviderType::Application),
             (":apps ", ProviderType::Application),
-            (":bm ", ProviderType::Bookmarks),
-            (":bookmark ", ProviderType::Bookmarks),
-            (":bookmarks ", ProviderType::Bookmarks),
-            (":calc ", ProviderType::Calculator),
-            (":calculator ", ProviderType::Calculator),
-            (":clip ", ProviderType::Clipboard),
-            (":clipboard ", ProviderType::Clipboard),
             (":cmd ", ProviderType::Command),
             (":command ", ProviderType::Command),
-            (":emoji ", ProviderType::Emoji),
-            (":emojis ", ProviderType::Emoji),
-            (":file ", ProviderType::Files),
-            (":files ", ProviderType::Files),
-            (":find ", ProviderType::Files),
-            (":script ", ProviderType::Scripts),
-            (":scripts ", ProviderType::Scripts),
-            (":ssh ", ProviderType::Ssh),
-            (":sys ", ProviderType::System),
-            (":system ", ProviderType::System),
-            (":power ", ProviderType::System),
-            (":uuctl ", ProviderType::Uuctl),
-            (":web ", ProviderType::WebSearch),
-            (":search ", ProviderType::WebSearch),
         ];
 
-        for (prefix_str, provider) in prefixes {
+        // Plugin provider prefixes - mapped to Plugin(type_id)
+        let plugin_prefixes: &[(&str, &str)] = &[
+            (":bm ", "bookmarks"),
+            (":bookmark ", "bookmarks"),
+            (":bookmarks ", "bookmarks"),
+            (":calc ", "calc"),
+            (":calculator ", "calc"),
+            (":clip ", "clipboard"),
+            (":clipboard ", "clipboard"),
+            (":emoji ", "emoji"),
+            (":emojis ", "emoji"),
+            (":file ", "filesearch"),
+            (":files ", "filesearch"),
+            (":find ", "filesearch"),
+            (":script ", "scripts"),
+            (":scripts ", "scripts"),
+            (":ssh ", "ssh"),
+            (":sys ", "system"),
+            (":system ", "system"),
+            (":power ", "system"),
+            (":uuctl ", "uuctl"),
+            (":systemd ", "uuctl"),
+            (":web ", "websearch"),
+            (":search ", "websearch"),
+        ];
+
+        // Check core prefixes
+        for (prefix_str, provider) in core_prefixes {
             if let Some(rest) = trimmed.strip_prefix(prefix_str) {
+                #[cfg(feature = "dev-logging")]
+                debug!("[Filter] parse_query({:?}) -> prefix={:?}, query={:?}", query, provider, rest);
+                return ParsedQuery {
+                    prefix: Some(provider.clone()),
+                    tag_filter: None,
+                    query: rest.to_string(),
+                };
+            }
+        }
+
+        // Check plugin prefixes
+        for (prefix_str, type_id) in plugin_prefixes {
+            if let Some(rest) = trimmed.strip_prefix(prefix_str) {
+                let provider = ProviderType::Plugin(type_id.to_string());
                 #[cfg(feature = "dev-logging")]
                 debug!("[Filter] parse_query({:?}) -> prefix={:?}, query={:?}", query, provider, rest);
                 return ParsedQuery {
@@ -238,37 +260,54 @@ impl ProviderFilter {
             }
         }
 
-        // Handle prefix without trailing space (still typing)
-        let partial_prefixes = [
+        // Handle partial prefixes (still typing)
+        let partial_core: &[(&str, ProviderType)] = &[
             (":app", ProviderType::Application),
             (":apps", ProviderType::Application),
-            (":bm", ProviderType::Bookmarks),
-            (":bookmark", ProviderType::Bookmarks),
-            (":bookmarks", ProviderType::Bookmarks),
-            (":calc", ProviderType::Calculator),
-            (":calculator", ProviderType::Calculator),
-            (":clip", ProviderType::Clipboard),
-            (":clipboard", ProviderType::Clipboard),
             (":cmd", ProviderType::Command),
             (":command", ProviderType::Command),
-            (":emoji", ProviderType::Emoji),
-            (":emojis", ProviderType::Emoji),
-            (":file", ProviderType::Files),
-            (":files", ProviderType::Files),
-            (":find", ProviderType::Files),
-            (":script", ProviderType::Scripts),
-            (":scripts", ProviderType::Scripts),
-            (":ssh", ProviderType::Ssh),
-            (":sys", ProviderType::System),
-            (":system", ProviderType::System),
-            (":power", ProviderType::System),
-            (":uuctl", ProviderType::Uuctl),
-            (":web", ProviderType::WebSearch),
-            (":search", ProviderType::WebSearch),
         ];
 
-        for (prefix_str, provider) in partial_prefixes {
-            if trimmed == prefix_str {
+        let partial_plugin: &[(&str, &str)] = &[
+            (":bm", "bookmarks"),
+            (":bookmark", "bookmarks"),
+            (":bookmarks", "bookmarks"),
+            (":calc", "calc"),
+            (":calculator", "calc"),
+            (":clip", "clipboard"),
+            (":clipboard", "clipboard"),
+            (":emoji", "emoji"),
+            (":emojis", "emoji"),
+            (":file", "filesearch"),
+            (":files", "filesearch"),
+            (":find", "filesearch"),
+            (":script", "scripts"),
+            (":scripts", "scripts"),
+            (":ssh", "ssh"),
+            (":sys", "system"),
+            (":system", "system"),
+            (":power", "system"),
+            (":uuctl", "uuctl"),
+            (":systemd", "uuctl"),
+            (":web", "websearch"),
+            (":search", "websearch"),
+        ];
+
+        for (prefix_str, provider) in partial_core {
+            if trimmed == *prefix_str {
+                #[cfg(feature = "dev-logging")]
+                debug!("[Filter] parse_query({:?}) -> partial prefix {:?}", query, provider);
+                return ParsedQuery {
+                    prefix: Some(provider.clone()),
+                    tag_filter: None,
+                    query: String::new(),
+                };
+            }
+        }
+
+        for (prefix_str, type_id) in partial_plugin {
+            if trimmed == *prefix_str {
+                let provider = ProviderType::Plugin(type_id.to_string());
                 #[cfg(feature = "dev-logging")]
                 debug!("[Filter] parse_query({:?}) -> partial prefix {:?}", query, provider);
                 return ParsedQuery {
@@ -296,22 +335,9 @@ impl ProviderFilter {
         let mut providers: Vec<_> = self.enabled.iter().cloned().collect();
         providers.sort_by_key(|p| match p {
             ProviderType::Application => 0,
-            ProviderType::Bookmarks => 1,
-            ProviderType::Calculator => 2,
-            ProviderType::Clipboard => 3,
-            ProviderType::Command => 4,
-            ProviderType::Dmenu => 5,
-            ProviderType::Emoji => 6,
-            ProviderType::Files => 7,
-            ProviderType::MediaPlayer => 8,
-            ProviderType::Pomodoro => 9,
-            ProviderType::Scripts => 10,
-            ProviderType::Ssh => 11,
-            ProviderType::System => 12,
-            ProviderType::Uuctl => 13,
-            ProviderType::Weather => 14,
-            ProviderType::WebSearch => 15,
-            ProviderType::Plugin(_) => 100, // Plugin providers sort last
+            ProviderType::Command => 1,
+            ProviderType::Dmenu => 2,
+            ProviderType::Plugin(_) => 100, // Plugin providers sort after core
         });
         providers
     }
@@ -321,21 +347,8 @@ impl ProviderFilter {
         if let Some(ref prefix) = self.active_prefix {
             return match prefix {
                 ProviderType::Application => "Apps",
-                ProviderType::Bookmarks => "Bookmarks",
-                ProviderType::Calculator => "Calc",
-                ProviderType::Clipboard => "Clipboard",
                 ProviderType::Command => "Commands",
                 ProviderType::Dmenu => "dmenu",
-                ProviderType::Emoji => "Emoji",
-                ProviderType::Files => "Files",
-                ProviderType::MediaPlayer => "Media",
-                ProviderType::Pomodoro => "Pomodoro",
-                ProviderType::Scripts => "Scripts",
-                ProviderType::Ssh => "SSH",
-                ProviderType::System => "System",
-                ProviderType::Uuctl => "uuctl",
-                ProviderType::Weather => "Weather",
-                ProviderType::WebSearch => "Web",
                 ProviderType::Plugin(_) => "Plugin",
             };
         }
@@ -344,21 +357,8 @@ impl ProviderFilter {
         if enabled.len() == 1 {
             match &enabled[0] {
                 ProviderType::Application => "Apps",
-                ProviderType::Bookmarks => "Bookmarks",
-                ProviderType::Calculator => "Calc",
-                ProviderType::Clipboard => "Clipboard",
                 ProviderType::Command => "Commands",
                 ProviderType::Dmenu => "dmenu",
-                ProviderType::Emoji => "Emoji",
-                ProviderType::Files => "Files",
-                ProviderType::MediaPlayer => "Media",
-                ProviderType::Pomodoro => "Pomodoro",
-                ProviderType::Scripts => "Scripts",
-                ProviderType::Ssh => "SSH",
-                ProviderType::System => "System",
-                ProviderType::Uuctl => "uuctl",
-                ProviderType::Weather => "Weather",
-                ProviderType::WebSearch => "Web",
                 ProviderType::Plugin(_) => "Plugin",
             }
         } else {
@@ -390,6 +390,13 @@ mod tests {
         let result = ProviderFilter::parse_query(":cmd");
         assert_eq!(result.prefix, Some(ProviderType::Command));
         assert_eq!(result.query, "");
+    }
+
+    #[test]
+    fn test_parse_query_plugin_prefix() {
+        let result = ProviderFilter::parse_query(":calc 5+3");
+        assert_eq!(result.prefix, Some(ProviderType::Plugin("calc".to_string())));
+        assert_eq!(result.query, "5+3");
     }
 
     #[test]

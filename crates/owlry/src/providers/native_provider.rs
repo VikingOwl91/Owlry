@@ -9,7 +9,7 @@
 use std::sync::{Arc, RwLock};
 
 use log::debug;
-use owlry_plugin_api::{PluginItem as ApiPluginItem, ProviderHandle, ProviderInfo, ProviderKind};
+use owlry_plugin_api::{PluginItem as ApiPluginItem, ProviderHandle, ProviderInfo, ProviderKind, ProviderPosition};
 
 use super::{LaunchItem, Provider, ProviderType};
 use crate::plugins::native_loader::NativePlugin;
@@ -43,13 +43,9 @@ impl NativeProvider {
     }
 
     /// Get the ProviderType for this native provider
-    /// Maps type_id string to the appropriate ProviderType variant
+    /// All native plugins return Plugin(type_id) - the core has no hardcoded plugin types
     fn get_provider_type(&self) -> ProviderType {
-        // Parse type_id to get the proper ProviderType
-        // This uses the FromStr impl which maps strings like "clipboard" -> ProviderType::Clipboard
-        self.info.type_id.as_str().parse().unwrap_or_else(|_| {
-            ProviderType::Plugin(self.info.type_id.to_string())
-        })
+        ProviderType::Plugin(self.info.type_id.to_string())
     }
 
     /// Convert a plugin API item to a core LaunchItem
@@ -107,6 +103,17 @@ impl NativeProvider {
     /// Get the provider type ID (e.g., "calc", "clipboard", "weather")
     pub fn type_id(&self) -> &str {
         self.info.type_id.as_str()
+    }
+
+    /// Check if this is a widget provider (appears at top of results)
+    pub fn is_widget(&self) -> bool {
+        self.info.position == ProviderPosition::Widget
+    }
+
+    /// Get the provider's priority for result ordering
+    /// Higher values appear first in results
+    pub fn priority(&self) -> i32 {
+        self.info.priority
     }
 
     /// Execute an action command on the provider
