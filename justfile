@@ -295,9 +295,8 @@ aur-update-pkg pkg:
     fi
 
     url="https://somegit.dev/Owlibou/owlry"
-    core_ver="{{version}}"
 
-    # Determine crate version
+    # Determine crate version (unified versioning: all crates share same version)
     case "{{pkg}}" in
         owlry-essentials|owlry-tools|owlry-widgets|owlry-full)
             # Meta-packages have no crate, keep current version
@@ -322,16 +321,8 @@ aur-update-pkg pkg:
     sed -i "s/^pkgver=.*/pkgver=$crate_ver/" PKGBUILD
     sed -i 's/^pkgrel=.*/pkgrel=1/' PKGBUILD
 
-    # Update _srcver for plugins/runtimes (they download from core version tag)
-    if grep -q "^_srcver=" PKGBUILD; then
-        echo "  _srcver=$core_ver"
-        sed -i "s/^_srcver=.*/_srcver=$core_ver/" PKGBUILD
-        # Update checksum using core version
-        echo "Updating checksums (from v$core_ver)..."
-        b2sum=$(curl -sL "$url/archive/v$core_ver.tar.gz" | b2sum | cut -d' ' -f1)
-        sed -i "s/^b2sums=.*/b2sums=('$b2sum')/" PKGBUILD
-    elif grep -q "^source=" PKGBUILD; then
-        # Core package uses pkgver for source
+    # Update checksums (unified versioning: all packages use same version)
+    if grep -q "^source=" PKGBUILD; then
         echo "Updating checksums..."
         b2sum=$(curl -sL "$url/archive/v$crate_ver.tar.gz" | b2sum | cut -d' ' -f1)
         sed -i "s/^b2sums=.*/b2sums=('$b2sum')/" PKGBUILD
