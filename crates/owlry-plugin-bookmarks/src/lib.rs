@@ -672,7 +672,7 @@ mod tests {
             ]),
         };
 
-        state.process_chrome_folder(&folder);
+        BookmarksState::process_chrome_folder_static(&folder, &mut state.items);
         assert_eq!(state.items.len(), 1);
         assert_eq!(state.items[0].name.as_str(), "Test Bookmark");
     }
