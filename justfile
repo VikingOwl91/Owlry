@@ -152,6 +152,21 @@ bump-plugins new_version:
     git commit -m "chore(plugins): bump all plugins to {{new_version}}"
     echo "All plugins bumped to {{new_version}}"
 
+# Bump meta-packages (no crate, just AUR version)
+bump-meta new_version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for pkg in owlry-essentials owlry-tools owlry-widgets owlry-full; do
+        file="aur/$pkg/PKGBUILD"
+        old=$(grep '^pkgver=' "$file" | sed 's/pkgver=//')
+        if [ "$old" != "{{new_version}}" ]; then
+            echo "Bumping $pkg from $old to {{new_version}}"
+            sed -i 's/^pkgver=.*/pkgver={{new_version}}/' "$file"
+            (cd "aur/$pkg" && makepkg --printsrcinfo > .SRCINFO)
+        fi
+    done
+    echo "Meta-packages bumped to {{new_version}}"
+
 # Bump all non-core crates (plugins + runtimes) to same version
 bump-all new_version:
     #!/usr/bin/env bash
@@ -380,6 +395,16 @@ aur-publish-plugins:
         just aur-publish-pkg "$pkg"
         echo ""
     done
+
+# Publish all meta-packages
+aur-publish-meta:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for pkg in owlry-essentials owlry-tools owlry-widgets owlry-full; do
+        echo "=== Publishing $pkg ==="
+        just aur-publish-pkg "$pkg"
+    done
+    echo "All meta-packages published!"
 
 # List all AUR packages with their versions
 aur-status:
