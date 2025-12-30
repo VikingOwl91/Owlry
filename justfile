@@ -4,39 +4,91 @@
 default:
     @just --list
 
-# Build debug
+# Build debug (all workspace members)
 build:
-    cargo build
+    cargo build --workspace
+
+# Build core binary only
+build-core:
+    cargo build -p owlry
 
 # Build release
 release:
-    cargo build --release
+    cargo build --workspace --release
 
 # Run in debug mode
 run *ARGS:
-    cargo run -- {{ARGS}}
+    cargo run -p owlry -- {{ARGS}}
 
 # Run tests
 test:
-    cargo test
+    cargo test --workspace
 
 # Check code
 check:
-    cargo check
-    cargo clippy
+    cargo check --workspace
+    cargo clippy --workspace
 
 # Format code
 fmt:
-    cargo fmt
+    cargo fmt --all
 
 # Clean build artifacts
 clean:
     cargo clean
 
+# Build a specific plugin (when plugins exist)
+plugin name:
+    cargo build -p owlry-plugin-{{name}} --release
+
+# Build all plugins
+plugins:
+    cargo build --workspace --release --exclude owlry
+
+# Install locally (core + plugins + runtimes)
+install-local:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    echo "Building release..."
+    cargo build --workspace --release
+
+    echo "Creating directories..."
+    sudo mkdir -p /usr/lib/owlry/plugins
+    sudo mkdir -p /usr/lib/owlry/runtimes
+
+    echo "Installing core binary..."
+    sudo install -Dm755 target/release/owlry /usr/bin/owlry
+
+    echo "Installing plugins..."
+    for plugin in target/release/libowlry_plugin_*.so; do
+        if [ -f "$plugin" ]; then
+            name=$(basename "$plugin")
+            sudo install -Dm755 "$plugin" "/usr/lib/owlry/plugins/$name"
+            echo "  → $name"
+        fi
+    done
+
+    echo "Installing runtimes..."
+    if [ -f "target/release/libowlry_lua.so" ]; then
+        sudo install -Dm755 target/release/libowlry_lua.so /usr/lib/owlry/runtimes/liblua.so
+        echo "  → liblua.so"
+    fi
+    if [ -f "target/release/libowlry_rune.so" ]; then
+        sudo install -Dm755 target/release/libowlry_rune.so /usr/lib/owlry/runtimes/librune.so
+        echo "  → librune.so"
+    fi
+
+    echo ""
+    echo "Installation complete!"
+    echo "  - /usr/bin/owlry"
+    echo "  - $(ls /usr/lib/owlry/plugins/*.so 2>/dev/null | wc -l) plugins"
+    echo "  - $(ls /usr/lib/owlry/runtimes/*.so 2>/dev/null | wc -l) runtimes"
+
 # === Release Management ===
 
-# AUR package directory
-aur_dir := "/home/cnachtigall/data/git/aur/owlry"
+# AUR package directories (relative to project root)
+aur_core_dir := "aur/owlry"
 
 # Get current version from Cargo.toml
 version := `grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/'`
@@ -73,11 +125,11 @@ tag:
     git push origin "v{{version}}"
     echo "Tag v{{version}} pushed"
 
-# Update AUR package
+# Update AUR package (core)
 aur-update:
     #!/usr/bin/env bash
     set -euo pipefail
-    cd "{{aur_dir}}"
+    cd "{{aur_core_dir}}"
 
     url="https://somegit.dev/Owlibou/owlry"
 
@@ -101,11 +153,11 @@ aur-update:
     echo "AUR package updated. Review changes above."
     echo "Run 'just aur-publish' to commit and push."
 
-# Publish AUR package
+# Publish AUR package (core)
 aur-publish:
     #!/usr/bin/env bash
     set -euo pipefail
-    cd "{{aur_dir}}"
+    cd "{{aur_core_dir}}"
 
     git add PKGBUILD .SRCINFO
     git commit -m "Update to v{{version}}"
@@ -113,11 +165,11 @@ aur-publish:
 
     echo "AUR package v{{version}} published!"
 
-# Test AUR package build locally
+# Test AUR package build locally (core)
 aur-test:
     #!/usr/bin/env bash
     set -euo pipefail
-    cd "{{aur_dir}}"
+    cd "{{aur_core_dir}}"
 
     echo "Testing PKGBUILD..."
     makepkg -sf

@@ -3,11 +3,18 @@
 #
 # File Locations (XDG Base Directory compliant):
 # ┌─────────────────────────────────────────────────────────────────────┐
-# │ Config:  ~/.config/owlry/config.toml      Main configuration       │
-# │ Themes:  ~/.config/owlry/themes/*.css     Custom theme files       │
-# │ Style:   ~/.config/owlry/style.css        CSS overrides            │
-# │ Scripts: ~/.local/share/owlry/scripts/    Executable scripts       │
-# │ Data:    ~/.local/share/owlry/frecency.json  Usage history         │
+# │ Config:  ~/.config/owlry/config.toml        Main configuration     │
+# │ Themes:  ~/.config/owlry/themes/*.css       Custom theme files     │
+# │ Style:   ~/.config/owlry/style.css          CSS overrides          │
+# │ Plugins: ~/.config/owlry/plugins/           User Lua/Rune plugins  │
+# │ Scripts: ~/.local/share/owlry/scripts/      Executable scripts     │
+# │ Data:    ~/.local/share/owlry/frecency.json Usage history          │
+# └─────────────────────────────────────────────────────────────────────┘
+#
+# System Plugin Locations:
+# ┌─────────────────────────────────────────────────────────────────────┐
+# │ Native:   /usr/lib/owlry/plugins/*.so       Installed plugins      │
+# │ Runtimes: /usr/lib/owlry/runtimes/*.so      Lua/Rune runtimes      │
 # └─────────────────────────────────────────────────────────────────────┘
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -56,80 +63,69 @@ border_radius = 12
 # text_secondary = "#565f89"
 # accent = "#7aa2f7"
 # accent_bright = "#89b4fa"
-# badge_app = "#9ece6a"
-# badge_calc = "#e0af68"
-# badge_cmd = "#7aa2f7"
-# badge_dmenu = "#bb9af7"
-# badge_uuctl = "#f7768e"
 
 # ═══════════════════════════════════════════════════════════════════════
-# PROVIDERS
+# PLUGINS
 # ═══════════════════════════════════════════════════════════════════════
+#
+# All installed plugins are loaded by default. Use 'disabled' to blacklist.
+# Plugin IDs: calculator, system, ssh, clipboard, emoji, scripts, bookmarks,
+#             websearch, filesearch, systemd, weather, media, pomodoro
+
+[plugins]
+# Plugins to disable (by ID)
+disabled = []
+
+# Examples:
+# disabled = ["emoji", "pomodoro"]     # Disable specific plugins
+# disabled = ["weather", "media"]      # Disable widget plugins
+
+# ═══════════════════════════════════════════════════════════════════════
+# CORE PROVIDERS
+# ═══════════════════════════════════════════════════════════════════════
+#
+# These are built into the core binary, not plugins.
 
 [providers]
-# Core providers (appear in main search)
-applications = true      # .desktop applications
+# Core providers (always available)
+applications = true      # .desktop applications from XDG dirs
 commands = true          # Executables from $PATH
-uuctl = true             # systemd --user units
 
 # Frecency - boost frequently/recently used items
-# Data: ~/.local/share/owlry/frecency.json
+# Data stored in: ~/.local/share/owlry/frecency.json
 frecency = true
 frecency_weight = 0.3    # 0.0 = disabled, 1.0 = strong boost
 
-# ───────────────────────────────────────────────────────────────────────
-# Trigger Providers (activated by prefix)
-# ───────────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+# PLUGIN SETTINGS
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Settings for specific plugins. Only applies if the plugin is installed.
 
-# Calculator: "= 5+3" or "calc 5+3" or ":calc"
-calculator = true
-
-# Web search: "? query" or "web query" or ":web"
-websearch = true
+# Web Search plugin
+[providers.websearch]
 search_engine = "duckduckgo"
 # Options: google, duckduckgo, bing, startpage, searxng, brave, ecosia
-# Custom: "https://search.example.com/?q={query}"
+# Custom URL: "https://search.example.com/?q={query}"
 
-# File search: "/ pattern" or "find pattern" or ":file"
-# Requires: fd or locate
-files = true
+# File Search plugin
+[providers.filesearch]
+max_results = 50
+# search_paths = ["/home", "/etc"]  # Custom paths (default: $HOME)
 
-# ───────────────────────────────────────────────────────────────────────
-# Prefix Providers (use :prefix to search)
-# ───────────────────────────────────────────────────────────────────────
+# Weather widget plugin
+[providers.weather]
+enabled = true
+provider = "wttr.in"      # wttr.in (default), openweathermap, open-meteo
+location = ""             # City name, "lat,lon", or empty for auto-detect
+# api_key = ""            # Required for OpenWeatherMap
 
-# System: :sys or :power - shutdown, reboot, lock, suspend, hibernate, logout
-system = true
+# Pomodoro timer plugin
+[providers.pomodoro]
+enabled = true
+work_mins = 25            # Work session duration
+break_mins = 5            # Break duration
 
-# SSH: :ssh - connections from ~/.ssh/config
-ssh = true
-
-# Clipboard: :clip - history (requires cliphist)
-clipboard = true
-
-# Bookmarks: :bm - browser bookmarks (Chrome, Chromium, Brave, Edge, Vivaldi)
-bookmarks = true
-
-# Emoji: :emoji - picker (copies to clipboard)
-emoji = true
-
-# Scripts: :script - executables from ~/.local/share/owlry/scripts/
-scripts = true
-
-# ───────────────────────────────────────────────────────────────────────
-# Widget Providers (shown at top of results)
-# ───────────────────────────────────────────────────────────────────────
-
-# MPRIS media player controls - shows now playing with play/pause/skip
-media = true
-
-# Weather widget - shows current conditions
-weather = false
-weather_provider = "wttr.in"  # wttr.in (default), openweathermap, open-meteo
-# weather_api_key = ""        # Required for OpenWeatherMap
-weather_location = "Berlin"   # City name, "lat,lon", or leave empty for auto
-
-# Pomodoro timer - work/break timer with controls
-pomodoro = false
-pomodoro_work_mins = 25       # Work session duration
-pomodoro_break_mins = 5       # Break duration
+# Media controls plugin
+[providers.media]
+enabled = true

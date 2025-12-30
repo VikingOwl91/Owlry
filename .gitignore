@@ -1,3 +1,13 @@
 /target
 CLAUDE.md
 media.md
+
+# AUR packages (each is its own git repo for aur.archlinux.org)
+aur/*/.git/
+aur/*/pkg/
+aur/*/src/
+aur/*/*.tar.zst
+aur/*/*.tar.gz
+aur/*/*.tar.xz
+aur/*/*.pkg.tar.*
+# Keep PKGBUILD and .SRCINFO tracked

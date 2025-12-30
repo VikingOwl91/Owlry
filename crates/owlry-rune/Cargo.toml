@@ -1,0 +1,44 @@
+[package]
+name = "owlry-rune"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+description = "Rune scripting runtime for owlry plugins"
+license = "GPL-3.0-or-later"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Shared plugin API
+owlry-plugin-api = { path = "../owlry-plugin-api" }
+
+# Rune scripting language
+rune = "0.14"
+rune-modules = { version = "0.14", features = ["full"] }
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# HTTP client for network API
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Configuration parsing
+toml = "0.8"
+
+# Semantic versioning
+semver = "1"
+
+# Date/time
+chrono = "0.4"
+
+# Directory paths
+dirs = "5"
+
+[dev-dependencies]
+tempfile = "3"

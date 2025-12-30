@@ -1,0 +1,92 @@
+[package]
+name = "owlry"
+version = "0.3.9"
+edition = "2024"
+rust-version = "1.90"
+description = "A lightweight, owl-themed application launcher for Wayland"
+authors = ["Your Name <you@example.com>"]
+license = "GPL-3.0-or-later"
+repository = "https://somegit.dev/Owlibou/owlry"
+keywords = ["launcher", "wayland", "gtk4", "linux"]
+categories = ["gui"]
+
+[dependencies]
+# Shared plugin API
+owlry-plugin-api = { path = "../owlry-plugin-api" }
+
+# GTK4 for the UI
+gtk4 = { version = "0.10", features = ["v4_12"] }
+
+# Layer shell support for Wayland overlay behavior
+gtk4-layer-shell = "0.7"
+
+# Async runtime for non-blocking operations
+tokio = { version = "1", features = ["rt", "sync", "process", "fs"] }
+
+# Fuzzy matching for search
+fuzzy-matcher = "0.3"
+
+# XDG desktop entry parsing
+freedesktop-desktop-entry = "0.7"
+
+# Directory utilities
+dirs = "5"
+
+# Low-level syscalls for stdin detection
+libc = "0.2"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Error handling
+thiserror = "2"
+
+# Configuration
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+# CLI argument parsing
+clap = { version = "4", features = ["derive"] }
+
+# Math expression evaluation for calculator
+meval = "0.2"
+
+# JSON serialization for data persistence
+serde_json = "1"
+
+# Date/time for frecency calculations
+chrono = { version = "0.4", features = ["serde"] }
+
+# D-Bus for MPRIS media player integration
+zbus = { version = "4", default-features = false, features = ["tokio"] }
+
+# HTTP client for weather API
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking"] }
+
+# Lua runtime for plugin system (optional - can be loaded dynamically via owlry-lua)
+mlua = { version = "0.10", features = ["lua54", "vendored", "send", "serialize"], optional = true }
+
+# Semantic versioning for plugin compatibility
+semver = "1"
+
+# Dynamic library loading for native plugins
+libloading = "0.8"
+
+# Desktop notifications (freedesktop notification spec)
+notify-rust = "4"
+
+[dev-dependencies]
+# Temporary directories for tests
+tempfile = "3"
+
+[build-dependencies]
+# GResource compilation for bundled icons
+glib-build-tools = "0.20"
+
+[features]
+default = ["lua"]
+# Enable verbose debug logging (for development/testing builds)
+dev-logging = []
+# Enable built-in Lua runtime (disable to use external owlry-lua package)
+lua = ["dep:mlua"]

@@ -1,0 +1,16 @@
+# Hello World Plugin for Owlry (Rune version)
+#
+# This example demonstrates a minimal Rune plugin.
+
+[plugin]
+id = "hello-rune"
+name = "Hello Rune"
+version = "1.0.0"
+description = "A simple greeting plugin written in Rune"
+author = "Owlry Team"
+license = "GPL-3.0-or-later"
+owlry_version = ">=0.3.0"
+entry = "init.rn"
+
+[provides]
+providers = ["greeting"]

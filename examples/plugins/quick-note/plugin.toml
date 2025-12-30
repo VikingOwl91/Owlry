@@ -1,0 +1,22 @@
+# Quick Note Plugin for Owlry
+#
+# This example demonstrates:
+# - Dynamic (query-based) provider
+# - Using owlry.fs for file operations
+# - Using owlry.path for path helpers
+
+[plugin]
+id = "quick-note"
+name = "Quick Note"
+version = "1.0.0"
+description = "Save quick notes to a file"
+author = "Owlry Team"
+license = "GPL-3.0-or-later"
+owlry_version = ">=0.3.0"
+
+[provides]
+providers = ["quick-note"]
+
+[permissions]
+# Allow writing to filesystem
+filesystem = ["~/.local/share/owlry/notes"]

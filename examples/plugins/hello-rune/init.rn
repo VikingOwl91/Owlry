@@ -1,0 +1,10 @@
+// Hello World Plugin for Owlry
+//
+// This minimal plugin demonstrates:
+// 1. Using owlry::log_* for logging
+// 2. Basic Rune syntax
+
+pub fn main() {
+    owlry::log_info("Hello Rune plugin loading...");
+    owlry::log_info("Hello Rune plugin loaded successfully!");
+}

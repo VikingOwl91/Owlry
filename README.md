@@ -10,26 +10,56 @@ A lightweight, owl-themed application launcher for Wayland, built with GTK4 and 
 
 ## Features
 
-- **Provider-based architecture** — Search applications, commands, system actions, SSH hosts, clipboard history, bookmarks, emoji, and more
+- **Modular plugin architecture** — Install only what you need
 - **Fuzzy search with tags** — Fast matching across names, descriptions, and category tags
-- **Configurable tabs** — Customize header tabs and keyboard shortcuts
+- **13 native plugins** — Calculator, clipboard, emoji, weather, media, and more
+- **Widget providers** — Weather, media controls, and pomodoro timer at the top of results
 - **Filter prefixes** — Scope searches with `:app`, `:cmd`, `:tag:development`, etc.
-- **Calculator** — Quick math with `= 5+3` or `calc sin(pi/2)`
-- **Web search** — Search the web with `? query`
-- **File search** — Find files with `/ filename` (requires `fd` or `locate`)
 - **Frecency ranking** — Frequently/recently used items rank higher
 - **GTK4 theming** — System theme by default, with 9 built-in themes
 - **Wayland native** — Uses Layer Shell for proper overlay behavior
+- **Extensible** — Create custom plugins in Lua or Rune
 
 ## Installation
 
 ### Arch Linux (AUR)
 
 ```bash
+# Minimal core (applications + commands only)
 yay -S owlry
-# or
-paru -S owlry
+
+# Add individual plugins
+yay -S owlry-plugin-calculator owlry-plugin-weather
+
+# Or install bundles:
+yay -S owlry-essentials  # calculator, system, ssh, scripts, bookmarks
+yay -S owlry-widgets     # weather, media, pomodoro
+yay -S owlry-tools       # clipboard, emoji, websearch, filesearch, systemd
+yay -S owlry-full        # everything
+
+# For custom Lua/Rune plugins
+yay -S owlry-lua   # Lua 5.4 runtime
+yay -S owlry-rune  # Rune runtime
 ```
+
+### Available Packages
+
+| Package | Description |
+|---------|-------------|
+| `owlry` | Core binary with applications and commands |
+| `owlry-plugin-calculator` | Math expressions (`= 5+3`) |
+| `owlry-plugin-system` | Shutdown, reboot, suspend, lock |
+| `owlry-plugin-ssh` | SSH hosts from `~/.ssh/config` |
+| `owlry-plugin-clipboard` | History via cliphist |
+| `owlry-plugin-emoji` | 400+ searchable emoji |
+| `owlry-plugin-scripts` | User scripts |
+| `owlry-plugin-bookmarks` | Chrome, Brave, Edge bookmarks |
+| `owlry-plugin-websearch` | Web search (`? query`) |
+| `owlry-plugin-filesearch` | File search (`/ filename`) |
+| `owlry-plugin-systemd` | User services with actions |
+| `owlry-plugin-weather` | Weather widget |
+| `owlry-plugin-media` | MPRIS media controls |
+| `owlry-plugin-pomodoro` | Pomodoro timer widget |
 
 ### Build from Source
 
@@ -45,22 +75,25 @@ sudo apt install libgtk-4-dev libgtk4-layer-shell-dev
 sudo dnf install gtk4-devel gtk4-layer-shell-devel
 ```
 
-**Optional dependencies:**
-```bash
-# Clipboard history
-sudo pacman -S cliphist wl-clipboard
-
-# File search (choose one)
-sudo pacman -S fd       # recommended
-sudo pacman -S mlocate  # alternative
-```
-
 **Build (requires Rust 1.90+):**
 ```bash
 git clone https://somegit.dev/Owlibou/owlry.git
 cd owlry
-cargo build --release
-# Binary: target/release/owlry
+
+# Build core only
+cargo build --release -p owlry
+
+# Build specific plugin
+cargo build --release -p owlry-plugin-calculator
+
+# Build everything
+cargo build --release --workspace
+```
+
+**Install plugins manually:**
+```bash
+sudo mkdir -p /usr/lib/owlry/plugins
+sudo cp target/release/libowlry_plugin_*.so /usr/lib/owlry/plugins/
 ```
 
 ## Usage
@@ -78,7 +111,7 @@ owlry --help               # Show all options
 |-----|--------|
 | `Enter` | Launch selected item |
 | `Escape` | Close launcher / exit submenu |
-| `↑` / `↓` | Navigate results |
+| `Up` / `Down` | Navigate results |
 | `Tab` | Cycle filter tabs |
 | `Shift+Tab` | Cycle filter tabs (reverse) |
 | `Ctrl+1..9` | Toggle tab by position |
@@ -112,7 +145,7 @@ owlry --help               # Show all options
 | `/` | File search | `/ .bashrc` |
 | `find ` | File search | `find config` |
 
-## File Locations
+## Configuration
 
 Owlry follows the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/latest/):
 
@@ -121,24 +154,9 @@ Owlry follows the [XDG Base Directory Specification](https://specifications.free
 | `~/.config/owlry/config.toml` | Main configuration |
 | `~/.config/owlry/themes/*.css` | Custom themes |
 | `~/.config/owlry/style.css` | CSS overrides |
+| `~/.config/owlry/plugins/` | User plugins (Lua/Rune) |
 | `~/.local/share/owlry/scripts/` | User scripts |
 | `~/.local/share/owlry/frecency.json` | Usage history |
-
-## Configuration
-
-Copy the example files:
-```bash
-# Config
-mkdir -p ~/.config/owlry
-cp /usr/share/doc/owlry/config.example.toml ~/.config/owlry/config.toml
-
-# Optional: CSS overrides
-cp /usr/share/doc/owlry/style.example.css ~/.config/owlry/style.css
-
-# Optional: Example script
-mkdir -p ~/.local/share/owlry/scripts
-cp /usr/share/doc/owlry/scripts/example.sh ~/.local/share/owlry/scripts/
-```
 
 ### Example Configuration
 
@@ -146,7 +164,7 @@ cp /usr/share/doc/owlry/scripts/example.sh ~/.local/share/owlry/scripts/
 [general]
 show_icons = true
 max_results = 10
-tabs = ["app", "cmd", "uuctl"]  # Header tabs (Ctrl+1, Ctrl+2, etc.)
+tabs = ["app", "cmd", "uuctl"]
 # terminal_command = "kitty"    # Auto-detected
 # launch_wrapper = "uwsm app --" # Auto-detected
 
@@ -157,82 +175,43 @@ font_size = 14
 border_radius = 12
 # theme = "owl"  # Or: catppuccin-mocha, nord, dracula, etc.
 
-[providers]
-applications = true
-commands = true
-uuctl = true
-calculator = true
-websearch = true
-search_engine = "duckduckgo"
-system = true
-ssh = true
-clipboard = true
-bookmarks = true
-emoji = true
-scripts = true
-files = true
-frecency = true
-frecency_weight = 0.3
+[plugins]
+disabled = []  # Plugin IDs to disable, e.g., ["emoji", "pomodoro"]
+
+# Per-plugin configuration (new in 0.4.0)
+[plugins.weather]
+provider = "wttr.in"  # or: openweathermap, open-meteo
+location = "Berlin"   # city name or "lat,lon"
+# api_key = "..."     # Required for OpenWeatherMap
+
+[plugins.pomodoro]
+work_mins = 25        # Work session duration
+break_mins = 5        # Break duration
 ```
 
-### Tab Configuration
+## Plugin System
 
-Customize which providers appear as header tabs:
+Owlry uses a modular plugin architecture. Plugins are loaded from:
+
+- `/usr/lib/owlry/plugins/*.so` — System plugins (AUR packages)
+- `~/.config/owlry/plugins/` — User plugins (requires `owlry-lua` or `owlry-rune`)
+
+### Disabling Plugins
+
+Add plugin IDs to the disabled list in your config:
 
 ```toml
-[general]
-# Available: app, cmd, uuctl, bookmark, calc, clip, dmenu,
-#            emoji, file, script, ssh, sys, web
-tabs = ["app", "cmd", "ssh", "sys"]
+[plugins]
+disabled = ["emoji", "pomodoro"]
 ```
 
-Keyboard shortcuts `Ctrl+1` through `Ctrl+9` map to tab positions.
+### Creating Custom Plugins
 
-## Providers
-
-| Provider | Description | Trigger |
-|----------|-------------|---------|
-| **Applications** | `.desktop` files from XDG directories | `:app` |
-| **Commands** | Executables in `$PATH` | `:cmd` |
-| **System** | Shutdown, reboot, suspend, lock, BIOS | `:sys` |
-| **SSH** | Hosts from `~/.ssh/config` | `:ssh` |
-| **Clipboard** | History via cliphist | `:clip` |
-| **Bookmarks** | Chrome, Brave, Edge, Vivaldi | `:bm` |
-| **Emoji** | 300+ searchable emoji | `:emoji` |
-| **Scripts** | User scripts | `:script` |
-| **Calculator** | Math expressions | `=` or `:calc` |
-| **Web Search** | Configurable engine | `?` or `:web` |
-| **Files** | fd/locate search | `/` or `:file` |
-| **systemd** | User services with actions | `:uuctl` |
-
-### Tags
-
-Items are tagged for better search:
-- **Applications**: Categories from `.desktop` files (development, utility, etc.)
-- **System**: `power`, `system`
-- **SSH**: `ssh`
-- **Scripts**: `script`
-- **systemd**: `systemd`, `service`
-
-Filter by tag with `:tag:tagname`:
-```
-:tag:development     # Show development apps
-:tag:utility vim     # Search utilities for "vim"
-```
-
-### Scripts
-
-Create executable scripts in `~/.local/share/owlry/scripts/`:
-
-```bash
-mkdir -p ~/.local/share/owlry/scripts
-cat > ~/.local/share/owlry/scripts/backup.sh << 'EOF'
-#!/bin/bash
-rsync -av ~/Documents /backup/
-notify-send "Backup complete"
-EOF
-chmod +x ~/.local/share/owlry/scripts/backup.sh
-```
+See [docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) for:
+- Native plugin development (Rust)
+- Lua plugin development
+- Rune plugin development
+- Available APIs
 
 ## Theming
 
@@ -271,23 +250,6 @@ Create `~/.config/owlry/themes/mytheme.css`:
 }
 ```
 
-### CSS Overrides
-
-For tweaks without a full theme, create `~/.config/owlry/style.css`:
-
-```css
-/* Larger search input */
-.owlry-search {
-    font-size: 18px;
-    padding: 12px 16px;
-}
-
-/* Hide tag badges */
-.owlry-tag-badge {
-    display: none;
-}
-```
-
 ### CSS Variables
 
 | Variable | Description |
@@ -299,8 +261,21 @@ For tweaks without a full theme, create `~/.config/owlry/style.css`:
 | `--owlry-text-secondary` | Muted text |
 | `--owlry-accent` | Accent color |
 | `--owlry-accent-bright` | Bright accent |
-| `--owlry-font-size` | Base font size |
-| `--owlry-border-radius` | Corner radius |
+
+## Architecture
+
+```
+owlry (core)
+├── Applications provider (XDG .desktop files)
+├── Commands provider (PATH executables)
+├── Dmenu provider (pipe compatibility)
+└── Plugin loader
+    ├── /usr/lib/owlry/plugins/*.so  (native plugins)
+    ├── /usr/lib/owlry/runtimes/     (Lua/Rune runtimes)
+    └── ~/.config/owlry/plugins/     (user plugins)
+```
+
+For detailed architecture information, see [CLAUDE.md](CLAUDE.md).
 
 ## License
 
@@ -310,4 +285,5 @@ GNU General Public License v3.0 — see [LICENSE](LICENSE).
 
 - [GTK4](https://gtk.org/) — UI toolkit
 - [gtk4-layer-shell](https://github.com/wmww/gtk4-layer-shell) — Wayland Layer Shell
+- [abi_stable](https://crates.io/crates/abi_stable) — ABI-stable Rust plugins
 - [fuzzy-matcher](https://crates.io/crates/fuzzy-matcher) — Fuzzy search

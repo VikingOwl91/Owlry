@@ -1,0 +1,33 @@
+[package]
+name = "owlry-plugin-weather"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Weather widget plugin for owlry - shows current weather with multiple API support"
+keywords = ["owlry", "plugin", "weather", "widget"]
+categories = ["gui"]
+
+[lib]
+crate-type = ["cdylib"]  # Compile as dynamic library (.so)
+
+[dependencies]
+# Plugin API for owlry
+owlry-plugin-api = { path = "../owlry-plugin-api" }
+
+# ABI-stable types (re-exported from owlry-plugin-api, but needed for RString etc)
+abi_stable = "0.11"
+
+# HTTP client for weather API requests
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+
+# JSON parsing for API responses
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# TOML config parsing
+toml = "0.8"
+
+# XDG directories for cache persistence
+dirs = "5.0"

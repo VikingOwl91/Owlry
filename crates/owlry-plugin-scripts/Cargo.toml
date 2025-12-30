@@ -1,0 +1,23 @@
+[package]
+name = "owlry-plugin-scripts"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Scripts plugin for owlry - run user scripts from ~/.local/share/owlry/scripts/"
+keywords = ["owlry", "plugin", "scripts"]
+categories = ["os"]
+
+[lib]
+crate-type = ["cdylib"]  # Compile as dynamic library (.so)
+
+[dependencies]
+# Plugin API for owlry
+owlry-plugin-api = { path = "../owlry-plugin-api" }
+
+# ABI-stable types (re-exported from owlry-plugin-api, but needed for RString etc)
+abi_stable = "0.11"
+
+# For finding ~/.local/share/owlry/scripts
+dirs = "5.0"

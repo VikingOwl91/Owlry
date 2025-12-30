@@ -1,0 +1,22 @@
+# Hello World Plugin for Owlry
+#
+# This is a minimal example plugin demonstrating:
+# - Plugin manifest structure
+# - Static provider registration
+# - Returning items from Lua
+
+[plugin]
+id = "hello-world"
+name = "Hello World"
+version = "1.0.0"
+description = "A minimal example plugin"
+author = "Owlry Team"
+license = "GPL-3.0-or-later"
+owlry_version = ">=0.3.0"
+
+[provides]
+providers = ["greeting"]
+
+# No special permissions needed for this simple plugin
+[permissions]
+network = false

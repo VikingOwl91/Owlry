@@ -1,0 +1,23 @@
+[package]
+name = "owlry-plugin-media"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "MPRIS media player widget plugin for owlry - shows and controls currently playing media. Requires playerctl."
+keywords = ["owlry", "plugin", "media", "mpris", "widget", "playerctl"]
+categories = ["gui"]
+
+# System dependencies (for packagers):
+# - playerctl: for media control commands
+
+[lib]
+crate-type = ["cdylib"]  # Compile as dynamic library (.so)
+
+[dependencies]
+# Plugin API for owlry
+owlry-plugin-api = { path = "../owlry-plugin-api" }
+
+# ABI-stable types (re-exported from owlry-plugin-api, but needed for RString etc)
+abi_stable = "0.11"
