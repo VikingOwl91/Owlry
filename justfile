@@ -179,11 +179,18 @@ bump-meta new_version:
     done
     echo "Meta-packages bumped to {{new_version}}"
 
-# Bump all non-core crates (plugins + runtimes) to same version
+# Bump all crates (core + plugins + runtimes) to same version
 bump-all new_version:
     #!/usr/bin/env bash
     set -euo pipefail
-    # Bump plugins
+    # Bump core
+    toml="crates/owlry/Cargo.toml"
+    old=$(grep '^version' "$toml" | head -1 | sed 's/.*"\(.*\)"/\1/')
+    if [ "$old" != "{{new_version}}" ]; then
+        echo "Bumping owlry from $old to {{new_version}}"
+        sed -i 's/^version = ".*"/version = "{{new_version}}"/' "$toml"
+    fi
+    # Bump plugins (including plugin-api)
     for toml in crates/owlry-plugin-*/Cargo.toml; do
         crate=$(basename $(dirname "$toml"))
         old=$(grep '^version' "$toml" | head -1 | sed 's/.*"\(.*\)"/\1/')
@@ -204,9 +211,9 @@ bump-all new_version:
         fi
     done
     cargo check --workspace
-    git add crates/owlry-plugin-*/Cargo.toml crates/owlry-lua/Cargo.toml crates/owlry-rune/Cargo.toml Cargo.lock
-    git commit -m "chore: bump all plugins and runtimes to {{new_version}}"
-    echo "All plugins and runtimes bumped to {{new_version}}"
+    git add crates/*/Cargo.toml Cargo.lock
+    git commit -m "chore: bump all crates to {{new_version}}"
+    echo "All crates bumped to {{new_version}}"
 
 # Bump core version (usage: just bump 0.2.0)
 bump new_version:
