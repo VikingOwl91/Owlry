@@ -152,6 +152,35 @@ bump-plugins new_version:
     git commit -m "chore(plugins): bump all plugins to {{new_version}}"
     echo "All plugins bumped to {{new_version}}"
 
+# Bump all non-core crates (plugins + runtimes) to same version
+bump-all new_version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Bump plugins
+    for toml in crates/owlry-plugin-*/Cargo.toml; do
+        crate=$(basename $(dirname "$toml"))
+        old=$(grep '^version' "$toml" | head -1 | sed 's/.*"\(.*\)"/\1/')
+        if [ "$old" != "{{new_version}}" ]; then
+            echo "Bumping $crate from $old to {{new_version}}"
+            sed -i 's/^version = ".*"/version = "{{new_version}}"/' "$toml"
+        fi
+    done
+    # Bump runtimes
+    for toml in crates/owlry-lua/Cargo.toml crates/owlry-rune/Cargo.toml; do
+        if [ -f "$toml" ]; then
+            crate=$(basename $(dirname "$toml"))
+            old=$(grep '^version' "$toml" | head -1 | sed 's/.*"\(.*\)"/\1/')
+            if [ "$old" != "{{new_version}}" ]; then
+                echo "Bumping $crate from $old to {{new_version}}"
+                sed -i 's/^version = ".*"/version = "{{new_version}}"/' "$toml"
+            fi
+        fi
+    done
+    cargo check --workspace
+    git add crates/owlry-plugin-*/Cargo.toml crates/owlry-lua/Cargo.toml crates/owlry-rune/Cargo.toml Cargo.lock
+    git commit -m "chore: bump all plugins and runtimes to {{new_version}}"
+    echo "All plugins and runtimes bumped to {{new_version}}"
+
 # Bump core version (usage: just bump 0.2.0)
 bump new_version:
     #!/usr/bin/env bash
@@ -357,8 +386,63 @@ aur-status:
         fi
     done
 
-# Full release workflow (bump + tag + aur)
-release-full new_version: (bump new_version)
+# Update ALL AUR packages (core + plugins + runtimes + meta)
+aur-update-all:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "=== Updating core ==="
+    just aur-update
+    echo ""
+    echo "=== Updating plugins ==="
+    for dir in aur/owlry-plugin-*/; do
+        pkg=$(basename "$dir")
+        echo "--- $pkg ---"
+        just aur-update-pkg "$pkg"
+    done
+    echo ""
+    echo "=== Updating runtimes ==="
+    just aur-update-pkg owlry-lua
+    just aur-update-pkg owlry-rune
+    echo ""
+    echo "=== Updating meta-packages ==="
+    for pkg in owlry-essentials owlry-tools owlry-widgets owlry-full; do
+        echo "--- $pkg ---"
+        cd "aur/$pkg"
+        # Meta-packages just need version bump and .SRCINFO regen
+        makepkg --printsrcinfo > .SRCINFO
+        cd ../..
+    done
+    echo ""
+    echo "All AUR packages updated. Run 'just aur-publish-all' to publish."
+
+# Publish ALL AUR packages
+aur-publish-all:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "=== Publishing core ==="
+    just aur-publish
+    echo ""
+    echo "=== Publishing plugins ==="
+    for dir in aur/owlry-plugin-*/; do
+        pkg=$(basename "$dir")
+        echo "--- $pkg ---"
+        just aur-publish-pkg "$pkg"
+    done
+    echo ""
+    echo "=== Publishing runtimes ==="
+    just aur-publish-pkg owlry-lua
+    just aur-publish-pkg owlry-rune
+    echo ""
+    echo "=== Publishing meta-packages ==="
+    for pkg in owlry-essentials owlry-tools owlry-widgets owlry-full; do
+        echo "--- $pkg ---"
+        just aur-publish-pkg "$pkg"
+    done
+    echo ""
+    echo "All AUR packages published!"
+
+# Full release workflow for core only (bump + tag + aur)
+release-core new_version: (bump new_version)
     #!/usr/bin/env bash
     set -euo pipefail
 
@@ -376,5 +460,41 @@ release-full new_version: (bump new_version)
     just aur-update
 
     echo ""
-    echo "Release v{{new_version}} prepared!"
+    echo "Core release v{{new_version}} prepared!"
     echo "Review AUR changes, then run 'just aur-publish'"
+
+# Full release workflow for everything (core + plugins + runtimes)
+# Usage: just release-all 0.5.0 0.3.0
+# First arg is core version, second is plugins/runtimes version
+release-all core_version plugin_version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    echo "=== Bumping versions ==="
+    just bump {{core_version}}
+    just bump-all {{plugin_version}}
+
+    echo ""
+    echo "=== Pushing to origin ==="
+    git push
+
+    echo ""
+    echo "=== Creating tag ==="
+    just tag
+
+    echo "Waiting for tag to propagate..."
+    sleep 2
+
+    echo ""
+    echo "=== Updating all AUR packages ==="
+    just aur-update-all
+
+    echo ""
+    echo "=========================================="
+    echo "Release prepared!"
+    echo "  Core: v{{core_version}}"
+    echo "  Plugins/Runtimes: v{{plugin_version}}"
+    echo ""
+    echo "Review changes with 'just aur-status'"
+    echo "Then publish with 'just aur-publish-all'"
+    echo "=========================================="
