@@ -299,7 +299,7 @@ aur-update-pkg pkg:
     # Determine crate version (unified versioning: all crates share same version)
     case "{{pkg}}" in
         owlry-essentials|owlry-tools|owlry-widgets|owlry-full)
-            # Meta-packages have no crate, keep current version
+            # Meta-packages use static versioning (1.0.0), only bump pkgrel for dep changes
             crate_ver=$(grep '^pkgver=' "$aur_dir/PKGBUILD" | sed 's/pkgver=//')
             ;;
         *)
