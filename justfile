@@ -275,10 +275,13 @@ aur-update-pkg pkg:
         exit 1
     fi
 
-    # Determine crate name (strip owlry- prefix for meta-packages)
+    url="https://somegit.dev/Owlibou/owlry"
+    core_ver="{{version}}"
+
+    # Determine crate version
     case "{{pkg}}" in
         owlry-essentials|owlry-tools|owlry-widgets|owlry-full)
-            # Meta-packages have no crate, use PKGBUILD version
+            # Meta-packages have no crate, keep current version
             crate_ver=$(grep '^pkgver=' "$aur_dir/PKGBUILD" | sed 's/pkgver=//')
             ;;
         *)
@@ -293,14 +296,23 @@ aur-update-pkg pkg:
     esac
 
     cd "$aur_dir"
-    url="https://somegit.dev/Owlibou/owlry"
 
-    echo "Updating {{pkg}} PKGBUILD to version $crate_ver"
+    echo "Updating {{pkg}} PKGBUILD:"
+    echo "  pkgver=$crate_ver"
+
     sed -i "s/^pkgver=.*/pkgver=$crate_ver/" PKGBUILD
     sed -i 's/^pkgrel=.*/pkgrel=1/' PKGBUILD
 
-    # Update checksums for packages that download source
-    if grep -q "^source=" PKGBUILD; then
+    # Update _srcver for plugins/runtimes (they download from core version tag)
+    if grep -q "^_srcver=" PKGBUILD; then
+        echo "  _srcver=$core_ver"
+        sed -i "s/^_srcver=.*/_srcver=$core_ver/" PKGBUILD
+        # Update checksum using core version
+        echo "Updating checksums (from v$core_ver)..."
+        b2sum=$(curl -sL "$url/archive/v$core_ver.tar.gz" | b2sum | cut -d' ' -f1)
+        sed -i "s/^b2sums=.*/b2sums=('$b2sum')/" PKGBUILD
+    elif grep -q "^source=" PKGBUILD; then
+        # Core package uses pkgver for source
         echo "Updating checksums..."
         b2sum=$(curl -sL "$url/archive/v$crate_ver.tar.gz" | b2sum | cut -d' ' -f1)
         sed -i "s/^b2sums=.*/b2sums=('$b2sum')/" PKGBUILD
@@ -310,9 +322,9 @@ aur-update-pkg pkg:
     echo "Generating .SRCINFO..."
     makepkg --printsrcinfo > .SRCINFO
 
-    git diff
+    git diff --stat
     echo ""
-    echo "{{pkg}} updated to $crate_ver. Run 'just aur-publish-pkg {{pkg}}' to publish."
+    echo "{{pkg}} updated. Run 'just aur-publish-pkg {{pkg}}' to publish."
 
 # Publish a specific AUR package
 aur-publish-pkg pkg:
