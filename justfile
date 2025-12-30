@@ -160,7 +160,7 @@ bump-plugins new_version:
 bump-meta new_version:
     #!/usr/bin/env bash
     set -euo pipefail
-    for pkg in owlry-essentials owlry-tools owlry-widgets owlry-full; do
+    for pkg in owlry-meta-essentials owlry-meta-tools owlry-meta-widgets owlry-meta-full; do
         file="aur/$pkg/PKGBUILD"
         old=$(grep '^pkgver=' "$file" | sed 's/pkgver=//')
         if [ "$old" != "{{new_version}}" ]; then
@@ -298,7 +298,7 @@ aur-update-pkg pkg:
 
     # Determine crate version (unified versioning: all crates share same version)
     case "{{pkg}}" in
-        owlry-essentials|owlry-tools|owlry-widgets|owlry-full)
+        owlry-meta-essentials|owlry-meta-tools|owlry-meta-widgets|owlry-meta-full)
             # Meta-packages use static versioning (1.0.0), only bump pkgrel for dep changes
             crate_ver=$(grep '^pkgver=' "$aur_dir/PKGBUILD" | sed 's/pkgver=//')
             ;;
@@ -395,7 +395,7 @@ aur-publish-plugins:
 aur-publish-meta:
     #!/usr/bin/env bash
     set -euo pipefail
-    for pkg in owlry-essentials owlry-tools owlry-widgets owlry-full; do
+    for pkg in owlry-meta-essentials owlry-meta-tools owlry-meta-widgets owlry-meta-full; do
         echo "=== Publishing $pkg ==="
         just aur-publish-pkg "$pkg"
     done
@@ -437,9 +437,8 @@ aur-update-all:
     just aur-update-pkg owlry-rune
     echo ""
     echo "=== Updating meta-packages ==="
-    for pkg in owlry-essentials owlry-tools owlry-widgets owlry-full; do
+    for pkg in owlry-meta-essentials owlry-meta-tools owlry-meta-widgets owlry-meta-full; do
         echo "--- $pkg ---"
-        # Use subshell to avoid cd issues
         (cd "aur/$pkg" && makepkg --printsrcinfo > .SRCINFO)
     done
     echo ""
@@ -464,7 +463,7 @@ aur-publish-all:
     just aur-publish-pkg owlry-rune
     echo ""
     echo "=== Publishing meta-packages ==="
-    for pkg in owlry-essentials owlry-tools owlry-widgets owlry-full; do
+    for pkg in owlry-meta-essentials owlry-meta-tools owlry-meta-widgets owlry-meta-full; do
         echo "--- $pkg ---"
         just aur-publish-pkg "$pkg"
     done
