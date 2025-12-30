@@ -93,8 +93,8 @@ install-local:
 # AUR package directories (relative to project root)
 aur_core_dir := "aur/owlry"
 
-# Get current version from Cargo.toml
-version := `grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/'`
+# Get current version from core crate
+version := `grep '^version' crates/owlry/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/'`
 
 # Show current version
 show-version:
@@ -152,7 +152,7 @@ bump-plugins new_version:
     git commit -m "chore(plugins): bump all plugins to {{new_version}}"
     echo "All plugins bumped to {{new_version}}"
 
-# Bump version (usage: just bump 0.2.0)
+# Bump core version (usage: just bump 0.2.0)
 bump new_version:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -160,10 +160,10 @@ bump new_version:
         echo "Version is already {{new_version}}, skipping bump"
         exit 0
     fi
-    echo "Bumping version from {{version}} to {{new_version}}"
-    sed -i 's/^version = ".*"/version = "{{new_version}}"/' Cargo.toml
-    cargo check
-    git add Cargo.toml Cargo.lock
+    echo "Bumping core version from {{version}} to {{new_version}}"
+    sed -i 's/^version = ".*"/version = "{{new_version}}"/' crates/owlry/Cargo.toml
+    cargo check -p owlry
+    git add crates/owlry/Cargo.toml Cargo.lock
     git commit -m "chore: bump version to {{new_version}}"
     echo "Version bumped to {{new_version}}"
 
