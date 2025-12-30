@@ -51,7 +51,10 @@ install-local:
     set -euo pipefail
 
     echo "Building release..."
-    cargo build --workspace --release
+    # Build core without embedded Lua (smaller binary)
+    cargo build -p owlry --release --no-default-features
+    # Build plugins
+    cargo build --workspace --release --exclude owlry
 
     echo "Creating directories..."
     sudo mkdir -p /usr/lib/owlry/plugins
