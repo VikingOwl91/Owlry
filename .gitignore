@@ -11,3 +11,4 @@ aur/*/*.tar.gz
 aur/*/*.tar.xz
 aur/*/*.pkg.tar.*
 # Keep PKGBUILD and .SRCINFO tracked
+.SRCINFO

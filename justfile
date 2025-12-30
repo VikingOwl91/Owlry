@@ -407,10 +407,8 @@ aur-update-all:
     echo "=== Updating meta-packages ==="
     for pkg in owlry-essentials owlry-tools owlry-widgets owlry-full; do
         echo "--- $pkg ---"
-        cd "aur/$pkg"
-        # Meta-packages just need version bump and .SRCINFO regen
-        makepkg --printsrcinfo > .SRCINFO
-        cd ../..
+        # Use subshell to avoid cd issues
+        (cd "aur/$pkg" && makepkg --printsrcinfo > .SRCINFO)
     done
     echo ""
     echo "All AUR packages updated. Run 'just aur-publish-all' to publish."
