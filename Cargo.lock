@@ -2361,7 +2361,7 @@ dependencies = [
 
 [[package]]
 name = "owlry-lua"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "abi_stable",
  "chrono",
@@ -2379,7 +2379,7 @@ dependencies = [
 
 [[package]]
 name = "owlry-plugin-api"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "abi_stable",
  "serde",
@@ -2387,7 +2387,7 @@ dependencies = [
 
 [[package]]
 name = "owlry-plugin-bookmarks"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "abi_stable",
  "dirs",
@@ -2398,7 +2398,7 @@ dependencies = [
 
 [[package]]
 name = "owlry-plugin-calculator"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "abi_stable",
  "meval",
@@ -2407,7 +2407,7 @@ dependencies = [
 
 [[package]]
 name = "owlry-plugin-clipboard"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "abi_stable",
  "owlry-plugin-api",
@@ -2415,7 +2415,7 @@ dependencies = [
 
 [[package]]
 name = "owlry-plugin-emoji"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "abi_stable",
  "owlry-plugin-api",
@@ -2423,7 +2423,7 @@ dependencies = [
 
 [[package]]
 name = "owlry-plugin-filesearch"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "abi_stable",
  "dirs",
@@ -2432,7 +2432,7 @@ dependencies = [
 
 [[package]]
 name = "owlry-plugin-media"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "abi_stable",
  "owlry-plugin-api",
@@ -2440,7 +2440,7 @@ dependencies = [
 
 [[package]]
 name = "owlry-plugin-pomodoro"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "abi_stable",
  "dirs",
@@ -2452,7 +2452,7 @@ dependencies = [
 
 [[package]]
 name = "owlry-plugin-scripts"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "abi_stable",
  "dirs",
@@ -2461,7 +2461,7 @@ dependencies = [
 
 [[package]]
 name = "owlry-plugin-ssh"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "abi_stable",
  "dirs",
@@ -2470,7 +2470,7 @@ dependencies = [
 
 [[package]]
 name = "owlry-plugin-system"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "abi_stable",
  "owlry-plugin-api",
@@ -2478,7 +2478,7 @@ dependencies = [
 
 [[package]]
 name = "owlry-plugin-systemd"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "abi_stable",
  "owlry-plugin-api",
@@ -2486,7 +2486,7 @@ dependencies = [
 
 [[package]]
 name = "owlry-plugin-weather"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "abi_stable",
  "dirs",
@@ -2499,7 +2499,7 @@ dependencies = [
 
 [[package]]
 name = "owlry-plugin-websearch"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "abi_stable",
  "owlry-plugin-api",
@@ -2507,7 +2507,7 @@ dependencies = [
 
 [[package]]
 name = "owlry-rune"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "dirs",
