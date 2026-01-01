@@ -95,8 +95,10 @@ pub trait Provider: Send {
 
 /// Manages all providers and handles searching
 pub struct ProviderManager {
-    /// Static providers (apps, commands, and native static plugins)
+    /// Core static providers (apps, commands, dmenu)
     providers: Vec<Box<dyn Provider>>,
+    /// Static native plugin providers (need query() for submenu support)
+    static_native_providers: Vec<NativeProvider>,
     /// Dynamic providers from native plugins (calculator, websearch, filesearch)
     /// These are queried per-keystroke, not cached
     dynamic_providers: Vec<NativeProvider>,
@@ -118,6 +120,7 @@ impl ProviderManager {
     pub fn with_native_plugins(native_providers: Vec<NativeProvider>) -> Self {
         let mut manager = Self {
             providers: Vec::new(),
+            static_native_providers: Vec::new(),
             dynamic_providers: Vec::new(),
             widget_providers: Vec::new(),
             matcher: SkimMatcherV2::default(),
@@ -149,9 +152,9 @@ impl ProviderManager {
                     info!("Registered widget provider: {} ({})", provider.name(), type_id);
                     manager.widget_providers.push(provider);
                 } else {
-                    // Static providers with Normal position
+                    // Static native providers (keep as NativeProvider for query/submenu support)
                     info!("Registered static provider: {} ({})", provider.name(), type_id);
-                    manager.providers.push(Box::new(provider));
+                    manager.static_native_providers.push(provider);
                 }
             }
         }
@@ -170,11 +173,21 @@ impl ProviderManager {
     }
 
     pub fn refresh_all(&mut self) {
-        // Refresh static providers (fast, local operations)
+        // Refresh core providers (apps, commands)
         for provider in &mut self.providers {
             provider.refresh();
             info!(
                 "Provider '{}' loaded {} items",
+                provider.name(),
+                provider.items().len()
+            );
+        }
+
+        // Refresh static native providers (clipboard, emoji, ssh, etc.)
+        for provider in &mut self.static_native_providers {
+            provider.refresh();
+            info!(
+                "Static provider '{}' loaded {} items",
                 provider.name(),
                 provider.items().len()
             );
@@ -201,9 +214,13 @@ impl ProviderManager {
     }
 
     /// Find a native provider by type ID
-    /// Searches in widget providers and dynamic providers
+    /// Searches in all native provider lists (static, dynamic, widget)
     pub fn find_native_provider(&self, type_id: &str) -> Option<&NativeProvider> {
-        // Check widget providers first (pomodoro, weather, media)
+        // Check static native providers first (clipboard, emoji, ssh, systemd, etc.)
+        if let Some(p) = self.static_native_providers.iter().find(|p| p.type_id() == type_id) {
+            return Some(p);
+        }
+        // Check widget providers (pomodoro, weather, media)
         if let Some(p) = self.widget_providers.iter().find(|p| p.type_id() == type_id) {
             return Some(p);
         }
@@ -246,37 +263,40 @@ impl ProviderManager {
         }
     }
 
+    /// Iterate over all static provider items (core + native static plugins)
+    fn all_static_items(&self) -> impl Iterator<Item = &LaunchItem> {
+        self.providers
+            .iter()
+            .flat_map(|p| p.items().iter())
+            .chain(self.static_native_providers.iter().flat_map(|p| p.items().iter()))
+    }
+
     #[allow(dead_code)]
     pub fn search(&self, query: &str, max_results: usize) -> Vec<(LaunchItem, i64)> {
         if query.is_empty() {
             // Return recent/popular items when query is empty
-            return self.providers
-                .iter()
-                .flat_map(|p| p.items().iter().cloned())
+            return self.all_static_items()
                 .take(max_results)
-                .map(|item| (item, 0))
+                .map(|item| (item.clone(), 0))
                 .collect();
         }
 
-        let mut results: Vec<(LaunchItem, i64)> = self.providers
-            .iter()
-            .flat_map(|provider| {
-                provider.items().iter().filter_map(|item| {
-                    // Match against name and description
-                    let name_score = self.matcher.fuzzy_match(&item.name, query);
-                    let desc_score = item.description
-                        .as_ref()
-                        .and_then(|d| self.matcher.fuzzy_match(d, query));
+        let mut results: Vec<(LaunchItem, i64)> = self.all_static_items()
+            .filter_map(|item| {
+                // Match against name and description
+                let name_score = self.matcher.fuzzy_match(&item.name, query);
+                let desc_score = item.description
+                    .as_ref()
+                    .and_then(|d| self.matcher.fuzzy_match(d, query));
 
-                    let score = match (name_score, desc_score) {
-                        (Some(n), Some(d)) => Some(n.max(d)),
-                        (Some(n), None) => Some(n),
-                        (None, Some(d)) => Some(d / 2), // Lower weight for description matches
-                        (None, None) => None,
-                    };
+                let score = match (name_score, desc_score) {
+                    (Some(n), Some(d)) => Some(n.max(d)),
+                    (Some(n), None) => Some(n),
+                    (None, Some(d)) => Some(d / 2), // Lower weight for description matches
+                    (None, None) => None,
+                };
 
-                    score.map(|s| (item.clone(), s))
-                })
+                score.map(|s| (item.clone(), s))
             })
             .collect();
 
@@ -293,38 +313,45 @@ impl ProviderManager {
         max_results: usize,
         filter: &crate::filter::ProviderFilter,
     ) -> Vec<(LaunchItem, i64)> {
+        // Collect items from core providers
+        let core_items = self
+            .providers
+            .iter()
+            .filter(|p| filter.is_active(p.provider_type()))
+            .flat_map(|p| p.items().iter().cloned());
+
+        // Collect items from static native providers
+        let native_items = self
+            .static_native_providers
+            .iter()
+            .filter(|p| filter.is_active(p.provider_type()))
+            .flat_map(|p| p.items().iter().cloned());
+
         if query.is_empty() {
-            return self
-                .providers
-                .iter()
-                .filter(|p| filter.is_active(p.provider_type()))
-                .flat_map(|p| p.items().iter().cloned())
+            return core_items
+                .chain(native_items)
                 .take(max_results)
                 .map(|item| (item, 0))
                 .collect();
         }
 
-        let mut results: Vec<(LaunchItem, i64)> = self
-            .providers
-            .iter()
-            .filter(|provider| filter.is_active(provider.provider_type()))
-            .flat_map(|provider| {
-                provider.items().iter().filter_map(|item| {
-                    let name_score = self.matcher.fuzzy_match(&item.name, query);
-                    let desc_score = item
-                        .description
-                        .as_ref()
-                        .and_then(|d| self.matcher.fuzzy_match(d, query));
+        let mut results: Vec<(LaunchItem, i64)> = core_items
+            .chain(native_items)
+            .filter_map(|item| {
+                let name_score = self.matcher.fuzzy_match(&item.name, query);
+                let desc_score = item
+                    .description
+                    .as_ref()
+                    .and_then(|d| self.matcher.fuzzy_match(d, query));
 
-                    let score = match (name_score, desc_score) {
-                        (Some(n), Some(d)) => Some(n.max(d)),
-                        (Some(n), None) => Some(n),
-                        (None, Some(d)) => Some(d / 2),
-                        (None, None) => None,
-                    };
+                let score = match (name_score, desc_score) {
+                    (Some(n), Some(d)) => Some(n.max(d)),
+                    (Some(n), None) => Some(n),
+                    (None, Some(d)) => Some(d / 2),
+                    (None, None) => None,
+                };
 
-                    score.map(|s| (item.clone(), s))
-                })
+                score.map(|s| (item, s))
             })
             .collect();
 
@@ -384,11 +411,22 @@ impl ProviderManager {
 
         // Empty query (after checking special providers) - return frecency-sorted items
         if query.is_empty() {
-            let items: Vec<(LaunchItem, i64)> = self
+            // Collect items from core providers
+            let core_items = self
                 .providers
                 .iter()
                 .filter(|p| filter.is_active(p.provider_type()))
-                .flat_map(|p| p.items().iter().cloned())
+                .flat_map(|p| p.items().iter().cloned());
+
+            // Collect items from static native providers
+            let native_items = self
+                .static_native_providers
+                .iter()
+                .filter(|p| filter.is_active(p.provider_type()))
+                .flat_map(|p| p.items().iter().cloned());
+
+            let items: Vec<(LaunchItem, i64)> = core_items
+                .chain(native_items)
                 .filter(|item| {
                     // Apply tag filter if present
                     if let Some(tag) = tag_filter {
@@ -412,53 +450,70 @@ impl ProviderManager {
         }
 
         // Regular search with frecency boost and tag matching
-        let search_results: Vec<(LaunchItem, i64)> = self
-            .providers
-            .iter()
-            .filter(|provider| filter.is_active(provider.provider_type()))
-            .flat_map(|provider| {
-                provider.items().iter().filter_map(|item| {
-                    // Apply tag filter if present
-                    if let Some(tag) = tag_filter
-                        && !item.tags.iter().any(|t| t.to_lowercase().contains(tag)) {
-                            return None;
-                        }
+        // Helper closure for scoring items
+        let score_item = |item: &LaunchItem| -> Option<(LaunchItem, i64)> {
+            // Apply tag filter if present
+            if let Some(tag) = tag_filter
+                && !item.tags.iter().any(|t| t.to_lowercase().contains(tag))
+            {
+                return None;
+            }
 
-                    let name_score = self.matcher.fuzzy_match(&item.name, query);
-                    let desc_score = item
-                        .description
-                        .as_ref()
-                        .and_then(|d| self.matcher.fuzzy_match(d, query));
+            let name_score = self.matcher.fuzzy_match(&item.name, query);
+            let desc_score = item
+                .description
+                .as_ref()
+                .and_then(|d| self.matcher.fuzzy_match(d, query));
 
-                    // Also match against tags (lower weight)
-                    let tag_score = item
-                        .tags
-                        .iter()
-                        .filter_map(|t| self.matcher.fuzzy_match(t, query))
-                        .max()
-                        .map(|s| s / 3); // Lower weight for tag matches
+            // Also match against tags (lower weight)
+            let tag_score = item
+                .tags
+                .iter()
+                .filter_map(|t| self.matcher.fuzzy_match(t, query))
+                .max()
+                .map(|s| s / 3); // Lower weight for tag matches
 
-                    let base_score = match (name_score, desc_score, tag_score) {
-                        (Some(n), Some(d), Some(t)) => Some(n.max(d).max(t)),
-                        (Some(n), Some(d), None) => Some(n.max(d)),
-                        (Some(n), None, Some(t)) => Some(n.max(t)),
-                        (Some(n), None, None) => Some(n),
-                        (None, Some(d), Some(t)) => Some((d / 2).max(t)),
-                        (None, Some(d), None) => Some(d / 2),
-                        (None, None, Some(t)) => Some(t),
-                        (None, None, None) => None,
-                    };
+            let base_score = match (name_score, desc_score, tag_score) {
+                (Some(n), Some(d), Some(t)) => Some(n.max(d).max(t)),
+                (Some(n), Some(d), None) => Some(n.max(d)),
+                (Some(n), None, Some(t)) => Some(n.max(t)),
+                (Some(n), None, None) => Some(n),
+                (None, Some(d), Some(t)) => Some((d / 2).max(t)),
+                (None, Some(d), None) => Some(d / 2),
+                (None, None, Some(t)) => Some(t),
+                (None, None, None) => None,
+            };
 
-                    base_score.map(|s| {
-                        let frecency_score = frecency.get_score(&item.id);
-                        let frecency_boost = (frecency_score * frecency_weight * 10.0) as i64;
-                        (item.clone(), s + frecency_boost)
-                    })
-                })
+            base_score.map(|s| {
+                let frecency_score = frecency.get_score(&item.id);
+                let frecency_boost = (frecency_score * frecency_weight * 10.0) as i64;
+                (item.clone(), s + frecency_boost)
             })
-            .collect();
+        };
 
-        results.extend(search_results);
+        // Search core providers
+        for provider in &self.providers {
+            if !filter.is_active(provider.provider_type()) {
+                continue;
+            }
+            for item in provider.items() {
+                if let Some(scored) = score_item(item) {
+                    results.push(scored);
+                }
+            }
+        }
+
+        // Search static native providers
+        for provider in &self.static_native_providers {
+            if !filter.is_active(provider.provider_type()) {
+                continue;
+            }
+            for item in provider.items() {
+                if let Some(scored) = score_item(item) {
+                    results.push(scored);
+                }
+            }
+        }
         results.sort_by(|a, b| b.1.cmp(&a.1));
         results.truncate(max_results);
 
@@ -479,7 +534,11 @@ impl ProviderManager {
     /// Get all available provider types (for UI tabs)
     #[allow(dead_code)]
     pub fn available_providers(&self) -> Vec<ProviderType> {
-        self.providers.iter().map(|p| p.provider_type()).collect()
+        self.providers
+            .iter()
+            .map(|p| p.provider_type())
+            .chain(self.static_native_providers.iter().map(|p| p.provider_type()))
+            .collect()
     }
 
     /// Get a widget item by type_id (e.g., "pomodoro", "weather", "media")
@@ -519,6 +578,16 @@ impl ProviderManager {
             plugin_id, submenu_query
         );
 
+        // Search in static native providers (clipboard, emoji, ssh, systemd, etc.)
+        for provider in &self.static_native_providers {
+            if provider.type_id() == plugin_id {
+                let actions = provider.query(&submenu_query);
+                if !actions.is_empty() {
+                    return Some((display_name.to_string(), actions));
+                }
+            }
+        }
+
         // Search in dynamic providers
         for provider in &self.dynamic_providers {
             if provider.type_id() == plugin_id {
@@ -536,23 +605,6 @@ impl ProviderManager {
                 if !actions.is_empty() {
                     return Some((display_name.to_string(), actions));
                 }
-            }
-        }
-
-        // Search in static providers (boxed)
-        // Note: Static providers don't typically have submenu support,
-        // but we check for completeness
-        for provider in &self.providers {
-            if let ProviderType::Plugin(type_id) = provider.provider_type()
-                && type_id == plugin_id
-            {
-                // Static providers use the items() method, not query
-                // Submenu support requires dynamic query capability
-                #[cfg(feature = "dev-logging")]
-                debug!(
-                    "[Submenu] Plugin '{}' is static, cannot query for submenu",
-                    plugin_id
-                );
             }
         }
 
