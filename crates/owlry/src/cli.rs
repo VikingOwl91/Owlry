@@ -10,19 +10,55 @@ use crate::providers::ProviderType;
 #[command(
     name = "owlry",
     about = "An owl-themed application launcher for Wayland",
-    version
+    long_about = "An owl-themed application launcher for Wayland, built with GTK4 and Layer Shell.\n\n\
+                  Owlry provides fuzzy search across applications, commands, and plugins.\n\
+                  Native plugins add features like calculator, clipboard, emoji, weather, and more.",
+    version,
+    after_help = "\
+EXAMPLES:
+    owlry                           Launch with all providers
+    owlry -m app                    Applications only
+    owlry -m cmd                    PATH commands only
+    owlry -m dmenu                  dmenu-compatible mode (reads from stdin)
+    owlry -p app,cmd                Multiple providers
+    owlry -m calc                   Calculator plugin only (if installed)
+
+DMENU MODE:
+    Pipe input to owlry for interactive selection:
+
+    echo -e \"Option A\\nOption B\" | owlry -m dmenu
+    ls | owlry -m dmenu
+    git branch | owlry -m dmenu --prompt \"checkout:\"
+
+SEARCH PREFIXES:
+    :app firefox                    Search applications
+    :cmd git                        Search PATH commands
+    = 5+3                           Calculator (requires plugin)
+    ? rust docs                     Web search (requires plugin)
+    / .bashrc                       File search (requires plugin)
+
+For configuration, see ~/.config/owlry/config.toml
+For plugin management, see: owlry plugin --help"
 )]
 pub struct CliArgs {
-    /// Start in single-provider mode (app, cmd, uuctl)
-    #[arg(long, short = 'm', value_parser = parse_provider)]
+    /// Start in single-provider mode
+    ///
+    /// Core modes: app, cmd, dmenu
+    /// Plugin modes: calc, clip, emoji, ssh, sys, bm, file, web, uuctl, weather, media, pomodoro
+    #[arg(long, short = 'm', value_parser = parse_provider, value_name = "MODE")]
     pub mode: Option<ProviderType>,
 
-    /// Comma-separated list of enabled providers (app,cmd,uuctl)
-    #[arg(long, short = 'p', value_delimiter = ',', value_parser = parse_provider)]
+    /// Comma-separated list of enabled providers
+    ///
+    /// Examples: -p app,cmd or -p app,calc,emoji
+    #[arg(long, short = 'p', value_delimiter = ',', value_parser = parse_provider, value_name = "PROVIDERS")]
     pub providers: Option<Vec<ProviderType>>,
 
-    /// Custom prompt text for the search input (useful for dmenu mode)
-    #[arg(long)]
+    /// Custom prompt text for the search input
+    ///
+    /// Useful in dmenu mode to indicate what the user is selecting.
+    /// Example: --prompt "Select file:"
+    #[arg(long, value_name = "TEXT")]
     pub prompt: Option<String>,
 
     /// Subcommand to run (if any)

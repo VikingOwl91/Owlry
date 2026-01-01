@@ -99,11 +99,39 @@ sudo cp target/release/libowlry_plugin_*.so /usr/lib/owlry/plugins/
 ## Usage
 
 ```bash
-owlry                      # Launch with defaults
-owlry --mode app           # Applications only
-owlry --providers app,cmd  # Specific providers
-owlry --help               # Show all options
+owlry                      # Launch with all providers
+owlry -m app               # Applications only
+owlry -m cmd               # PATH commands only
+owlry -p app,cmd           # Multiple specific providers
+owlry -m calc              # Calculator plugin only (if installed)
+owlry --help               # Show all options with examples
 ```
+
+### dmenu Mode
+
+Owlry is dmenu-compatible. Pipe input for interactive selection:
+
+```bash
+# Basic selection
+echo -e "Option A\nOption B\nOption C" | owlry -m dmenu
+
+# Select from files
+ls ~/Documents | owlry -m dmenu
+
+# Git branch checkout
+git branch | owlry -m dmenu --prompt "checkout:" | xargs git checkout
+
+# Kill a process
+ps -eo comm | sort -u | owlry -m dmenu --prompt "kill:" | xargs pkill
+
+# Select and open a project
+find ~/projects -maxdepth 1 -type d | owlry -m dmenu | xargs code
+
+# Package manager search
+pacman -Ssq | owlry -m dmenu --prompt "install:" | xargs sudo pacman -S
+```
+
+The `--prompt` flag sets a custom label for the search input.
 
 ### Keyboard Shortcuts
 
@@ -219,6 +247,38 @@ Add plugin IDs to the disabled list in your config:
 ```toml
 [plugins]
 disabled = ["emoji", "pomodoro"]
+```
+
+### Plugin Management CLI
+
+```bash
+# List installed plugins
+owlry plugin list
+owlry plugin list --enabled        # Only enabled
+owlry plugin list --available      # Show registry plugins
+
+# Search registry
+owlry plugin search "weather"
+
+# Install/remove
+owlry plugin install <name>        # From registry
+owlry plugin install ./my-plugin   # From local path
+owlry plugin remove <name>
+
+# Enable/disable
+owlry plugin enable <name>
+owlry plugin disable <name>
+
+# Plugin info
+owlry plugin info <name>
+owlry plugin commands <name>       # List plugin CLI commands
+
+# Create new plugin
+owlry plugin create my-plugin              # Lua (default)
+owlry plugin create my-plugin -r rune      # Rune
+
+# Run plugin command
+owlry plugin run <plugin-id> <command> [args...]
 ```
 
 ### Creating Custom Plugins
