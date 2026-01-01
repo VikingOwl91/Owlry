@@ -75,6 +75,24 @@ The script runtimes make this viable without recompiling.
 
 ## Technical Debt
 
+### Split monorepo for user build efficiency
+Currently, a small core fix requires all 16 AUR packages to rebuild (same source tarball). Split into 3 repos:
+
+| Repo | Contents | Versioning |
+|------|----------|------------|
+| `owlry` | Core binary | Independent |
+| `owlry-plugin-api` | ABI interface (crates.io) | Semver, conservative |
+| `owlry-plugins` | 13 plugins + 2 runtimes | Independent per plugin |
+
+**Execution order:**
+1. Publish `owlry-plugin-api` to crates.io
+2. Update monorepo to use crates.io dependency
+3. Create `owlry-plugins` repo, move plugins + runtimes
+4. Slim current repo to core-only
+5. Update AUR PKGBUILDs with new source URLs
+
+**Benefit:** Core bugfix = 1 rebuild. Plugin fix = 1 rebuild. Third-party plugins possible via crates.io.
+
 ### Replace meval with evalexpr
 `meval` depends on `nom v1.2.4` which will be rejected by future Rust versions. Migrate calculator plugin and Lua runtime to `evalexpr` v13+.
 

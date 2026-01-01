@@ -47,6 +47,8 @@ struct LazyLoadState {
 /// Number of items to display initially and per batch
 const INITIAL_RESULTS: usize = 15;
 const LOAD_MORE_BATCH: usize = 10;
+/// Debounce delay for search input (milliseconds)
+const SEARCH_DEBOUNCE_MS: u64 = 50;
 
 pub struct MainWindow {
     window: ApplicationWindow,
@@ -69,6 +71,8 @@ pub struct MainWindow {
     custom_prompt: Option<String>,
     /// Lazy loading state
     lazy_state: Rc<RefCell<LazyLoadState>>,
+    /// Debounce source ID for cancelling pending searches
+    debounce_source: Rc<RefCell<Option<gtk4::glib::SourceId>>>,
 }
 
 impl MainWindow {
@@ -210,6 +214,7 @@ impl MainWindow {
             tab_order,
             custom_prompt,
             lazy_state,
+            debounce_source: Rc::new(RefCell::new(None)),
         };
 
         main_window.setup_signals();
@@ -554,7 +559,7 @@ impl MainWindow {
     }
 
     fn setup_signals(&self) {
-        // Search input handling with prefix detection
+        // Search input handling with prefix detection and debouncing
         let providers = self.providers.clone();
         let results_list = self.results_list.clone();
         let config = self.config.clone();
@@ -565,11 +570,12 @@ impl MainWindow {
         let search_entry_for_change = self.search_entry.clone();
         let submenu_state = self.submenu_state.clone();
         let lazy_state = self.lazy_state.clone();
+        let debounce_source = self.debounce_source.clone();
 
         self.search_entry.connect_changed(move |entry| {
             let raw_query = entry.text();
 
-            // If in submenu, filter the submenu items
+            // If in submenu, filter immediately (no debounce needed for small local lists)
             if submenu_state.borrow().active {
                 let state = submenu_state.borrow();
                 let query = raw_query.to_lowercase();
@@ -607,7 +613,7 @@ impl MainWindow {
                 return;
             }
 
-            // Normal mode: parse prefix and search
+            // Normal mode: update prefix/UI immediately for responsiveness
             let parsed = ProviderFilter::parse_query(&raw_query);
 
             {
@@ -643,53 +649,79 @@ impl MainWindow {
                     .set_placeholder_text(Some(&format!("Search {}...", prefix_name)));
             }
 
-            let cfg = config.borrow();
-            let max_results = cfg.general.max_results;
-            let frecency_weight = cfg.providers.frecency_weight;
-            let use_frecency = cfg.providers.frecency;
-            drop(cfg);
-
-            let results: Vec<LaunchItem> = if use_frecency {
-                providers
-                    .borrow_mut()
-                    .search_with_frecency(&parsed.query, max_results, &filter.borrow(), &frecency.borrow(), frecency_weight, parsed.tag_filter.as_deref())
-                    .into_iter()
-                    .map(|(item, _)| item)
-                    .collect()
-            } else {
-                providers
-                    .borrow()
-                    .search_filtered(&parsed.query, max_results, &filter.borrow())
-                    .into_iter()
-                    .map(|(item, _)| item)
-                    .collect()
-            };
-
-            // Clear existing results
-            while let Some(child) = results_list.first_child() {
-                results_list.remove(&child);
+            // Cancel any pending debounced search
+            if let Some(source_id) = debounce_source.borrow_mut().take() {
+                source_id.remove();
             }
 
-            // Lazy loading: store all results but only display initial batch
-            let initial_count = INITIAL_RESULTS.min(results.len());
-            {
-                let mut lazy = lazy_state.borrow_mut();
-                lazy.all_results = results.clone();
-                lazy.displayed_count = initial_count;
-            }
+            // Clone references for the debounced closure
+            let providers = providers.clone();
+            let results_list = results_list.clone();
+            let config = config.clone();
+            let frecency = frecency.clone();
+            let current_results = current_results.clone();
+            let filter = filter.clone();
+            let lazy_state = lazy_state.clone();
+            let debounce_source_for_closure = debounce_source.clone();
 
-            // Display only initial batch
-            for item in results.iter().take(initial_count) {
-                let row = ResultRow::new(item);
-                results_list.append(&row);
-            }
+            // Schedule debounced search
+            let source_id = gtk4::glib::timeout_add_local_once(
+                std::time::Duration::from_millis(SEARCH_DEBOUNCE_MS),
+                move || {
+                    // Clear the source ID since we're now executing
+                    *debounce_source_for_closure.borrow_mut() = None;
 
-            if let Some(first_row) = results_list.row_at_index(0) {
-                results_list.select_row(Some(&first_row));
-            }
+                    let cfg = config.borrow();
+                    let max_results = cfg.general.max_results;
+                    let frecency_weight = cfg.providers.frecency_weight;
+                    let use_frecency = cfg.providers.frecency;
+                    drop(cfg);
 
-            // current_results holds only what's displayed (for selection/activation)
-            *current_results.borrow_mut() = results.into_iter().take(initial_count).collect();
+                    let results: Vec<LaunchItem> = if use_frecency {
+                        providers
+                            .borrow_mut()
+                            .search_with_frecency(&parsed.query, max_results, &filter.borrow(), &frecency.borrow(), frecency_weight, parsed.tag_filter.as_deref())
+                            .into_iter()
+                            .map(|(item, _)| item)
+                            .collect()
+                    } else {
+                        providers
+                            .borrow()
+                            .search_filtered(&parsed.query, max_results, &filter.borrow())
+                            .into_iter()
+                            .map(|(item, _)| item)
+                            .collect()
+                    };
+
+                    // Clear existing results
+                    while let Some(child) = results_list.first_child() {
+                        results_list.remove(&child);
+                    }
+
+                    // Lazy loading: store all results but only display initial batch
+                    let initial_count = INITIAL_RESULTS.min(results.len());
+                    {
+                        let mut lazy = lazy_state.borrow_mut();
+                        lazy.all_results = results.clone();
+                        lazy.displayed_count = initial_count;
+                    }
+
+                    // Display only initial batch
+                    for item in results.iter().take(initial_count) {
+                        let row = ResultRow::new(item);
+                        results_list.append(&row);
+                    }
+
+                    if let Some(first_row) = results_list.row_at_index(0) {
+                        results_list.select_row(Some(&first_row));
+                    }
+
+                    // current_results holds only what's displayed (for selection/activation)
+                    *current_results.borrow_mut() = results.into_iter().take(initial_count).collect();
+                },
+            );
+
+            *debounce_source.borrow_mut() = Some(source_id);
         });
 
         // Entry activate signal (Enter key in search entry)
@@ -1238,6 +1270,12 @@ impl MainWindow {
     }
 
     fn launch_item(item: &LaunchItem, config: &Config, frecency: &Rc<RefCell<FrecencyStore>>) {
+        // dmenu mode: print selection to stdout instead of executing
+        if matches!(item.provider, ProviderType::Dmenu) {
+            println!("{}", item.name);
+            return;
+        }
+
         // Record this launch for frecency tracking
         if config.providers.frecency {
             frecency.borrow_mut().record_launch(&item.id);
