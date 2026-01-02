@@ -109,29 +109,34 @@ owlry --help               # Show all options with examples
 
 ### dmenu Mode
 
-Owlry is dmenu-compatible. Pipe input for interactive selection:
+Owlry is dmenu-compatible. Pipe input for interactive selection - the selected item is printed to stdout (not executed), so you pipe the output to execute it:
 
 ```bash
-# Basic selection
-echo -e "Option A\nOption B\nOption C" | owlry -m dmenu
-
-# Select from files
-ls ~/Documents | owlry -m dmenu
+# Screenshot menu (execute selected command)
+printf '%s\n' \
+  "grimblast --notify copy screen" \
+  "grimblast --notify copy area" \
+  "grimblast --notify edit screen" \
+  | owlry -m dmenu -p "Screenshot" \
+  | sh
 
 # Git branch checkout
-git branch | owlry -m dmenu --prompt "checkout:" | xargs git checkout
+git branch | owlry -m dmenu -p "checkout" | xargs git checkout
 
 # Kill a process
-ps -eo comm | sort -u | owlry -m dmenu --prompt "kill:" | xargs pkill
+ps -eo comm | sort -u | owlry -m dmenu -p "kill" | xargs pkill
 
 # Select and open a project
 find ~/projects -maxdepth 1 -type d | owlry -m dmenu | xargs code
 
 # Package manager search
-pacman -Ssq | owlry -m dmenu --prompt "install:" | xargs sudo pacman -S
+pacman -Ssq | owlry -m dmenu -p "install" | xargs sudo pacman -S
+
+# Open selected file
+ls ~/Documents | owlry -m dmenu | xargs xdg-open
 ```
 
-The `--prompt` flag sets a custom label for the search input.
+The `-p` / `--prompt` flag sets a custom label for the search input.
 
 ### Keyboard Shortcuts
 
