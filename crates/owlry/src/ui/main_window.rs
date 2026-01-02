@@ -73,6 +73,8 @@ pub struct MainWindow {
     lazy_state: Rc<RefCell<LazyLoadState>>,
     /// Debounce source ID for cancelling pending searches
     debounce_source: Rc<RefCell<Option<gtk4::glib::SourceId>>>,
+    /// Whether we're in dmenu mode (stdin pipe input)
+    is_dmenu_mode: bool,
 }
 
 impl MainWindow {
@@ -197,6 +199,9 @@ impl MainWindow {
 
         let lazy_state = Rc::new(RefCell::new(LazyLoadState::default()));
 
+        // Check if we're in dmenu mode (stdin pipe input)
+        let is_dmenu_mode = providers.borrow().is_dmenu_mode();
+
         let main_window = Self {
             window,
             search_entry,
@@ -215,6 +220,7 @@ impl MainWindow {
             custom_prompt,
             lazy_state,
             debounce_source: Rc::new(RefCell::new(None)),
+            is_dmenu_mode,
         };
 
         main_window.setup_signals();
@@ -735,12 +741,14 @@ impl MainWindow {
         let mode_label_for_activate = self.mode_label.clone();
         let hints_label_for_activate = self.hints_label.clone();
         let search_entry_for_activate = self.search_entry.clone();
+        let is_dmenu_mode_for_activate = self.is_dmenu_mode;
 
         self.search_entry.connect_activate(move |entry| {
             let selected = results_list_for_activate
                 .selected_row()
                 .or_else(|| results_list_for_activate.row_at_index(0));
 
+            // Handle the case where we have a selected item
             if let Some(row) = selected {
                 let index = row.index() as usize;
                 let results = current_results_for_activate.borrow();
@@ -787,6 +795,10 @@ impl MainWindow {
                                 &providers_for_activate,
                             );
                             if should_close {
+                                // In dmenu mode, exit with success code
+                                if is_dmenu_mode_for_activate {
+                                    std::process::exit(0);
+                                }
                                 window_for_activate.close();
                             } else {
                                 // Trigger search refresh for updated widget state
@@ -794,6 +806,16 @@ impl MainWindow {
                             }
                         }
                     }
+                    return;
+                }
+            }
+
+            // No item selected/matched - in dmenu mode, output the typed text
+            if is_dmenu_mode_for_activate {
+                let text = entry.text();
+                if !text.is_empty() {
+                    println!("{}", text);
+                    std::process::exit(0);
                 }
             }
         });
@@ -834,6 +856,7 @@ impl MainWindow {
         let hints_label = self.hints_label.clone();
         let submenu_state = self.submenu_state.clone();
         let tab_order = self.tab_order.clone();
+        let is_dmenu_mode = self.is_dmenu_mode;
 
         key_controller.connect_key_pressed(move |_, key, _, modifiers| {
             let ctrl = modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK);
@@ -856,6 +879,10 @@ impl MainWindow {
                         );
                         gtk4::glib::Propagation::Stop
                     } else {
+                        // In dmenu mode, exit with cancel code (1)
+                        if is_dmenu_mode {
+                            std::process::exit(1);
+                        }
                         window.close();
                         gtk4::glib::Propagation::Stop
                     }
@@ -873,6 +900,10 @@ impl MainWindow {
                         );
                         gtk4::glib::Propagation::Stop
                     } else {
+                        // In dmenu mode, exit with cancel code (1)
+                        if is_dmenu_mode {
+                            std::process::exit(1);
+                        }
                         window.close();
                         gtk4::glib::Propagation::Stop
                     }
