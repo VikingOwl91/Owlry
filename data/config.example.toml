@@ -18,12 +18,35 @@
 # └─────────────────────────────────────────────────────────────────────┘
 
 # ═══════════════════════════════════════════════════════════════════════
+# DMENU MODE
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Dmenu mode provides interactive selection from piped input.
+# The selected item is printed to stdout (not executed), so pipe
+# the output to execute it:
+#
+# ┌─────────────────────────────────────────────────────────────────────┐
+# │ # Screenshot menu                                                   │
+# │ printf '%s\n' \                                                     │
+# │   "grimblast --notify copy screen" \                                │
+# │   "grimblast --notify copy area" \                                  │
+# │   | owlry -m dmenu -p "Screenshot" \                                │
+# │   | sh                                                              │
+# │                                                                     │
+# │ # Git branch checkout                                               │
+# │ git branch | owlry -m dmenu -p "checkout" | xargs git checkout      │
+# │                                                                     │
+# │ # Package search                                                    │
+# │ pacman -Ssq | owlry -m dmenu -p "install" | xargs sudo pacman -S    │
+# └─────────────────────────────────────────────────────────────────────┘
+
+# ═══════════════════════════════════════════════════════════════════════
 # GENERAL
 # ═══════════════════════════════════════════════════════════════════════
 
 [general]
 show_icons = true
-max_results = 10
+max_results = 100
 
 # Terminal emulator for SSH, scripts, etc.
 # Auto-detection order: $TERMINAL → xdg-terminal-exec → DE-native → Wayland → X11 → xterm
@@ -64,22 +87,54 @@ border_radius = 12
 # text_secondary = "#565f89"
 # accent = "#7aa2f7"
 # accent_bright = "#89b4fa"
+#
+# Provider badge colors (optional)
+# badge_app = "#7aa2f7"
+# badge_cmd = "#9ece6a"
+# badge_bookmark = "#e0af68"
+# badge_calc = "#bb9af7"
+# badge_clip = "#7dcfff"
+# badge_dmenu = "#c0caf5"
+# badge_emoji = "#f7768e"
+# badge_file = "#73daca"
+# badge_script = "#ff9e64"
+# badge_ssh = "#2ac3de"
+# badge_sys = "#f7768e"
+# badge_uuctl = "#9ece6a"
+# badge_web = "#7aa2f7"
+# badge_media = "#bb9af7"
+# badge_weather = "#7dcfff"
+# badge_pomo = "#f7768e"
 
 # ═══════════════════════════════════════════════════════════════════════
 # PLUGINS
 # ═══════════════════════════════════════════════════════════════════════
 #
-# All installed plugins are loaded by default. Use 'disabled' to blacklist.
+# All installed plugins are loaded by default. Use 'disabled_plugins' to blacklist.
 # Plugin IDs: calculator, system, ssh, clipboard, emoji, scripts, bookmarks,
 #             websearch, filesearch, systemd, weather, media, pomodoro
 
 [plugins]
+enabled = true               # Master switch for all plugins
+
 # Plugins to disable (by ID)
-disabled = []
+disabled_plugins = []
 
 # Examples:
-# disabled = ["emoji", "pomodoro"]     # Disable specific plugins
-# disabled = ["weather", "media"]      # Disable widget plugins
+# disabled_plugins = ["emoji", "pomodoro"]     # Disable specific plugins
+# disabled_plugins = ["weather", "media"]      # Disable widget plugins
+
+# Custom plugin registry URL (defaults to official registry)
+# registry_url = "https://my-registry.example.com/plugins.json"
+
+# ─────────────────────────────────────────────────────────────────────────
+# Sandbox settings (for Lua/Rune script plugins)
+# ─────────────────────────────────────────────────────────────────────────
+# [plugins.sandbox]
+# allow_filesystem = false   # Allow file system access beyond plugin dir
+# allow_network = false      # Allow network requests
+# allow_commands = false     # Allow shell command execution
+# memory_limit = 67108864    # Memory limit in bytes (64 MB default)
 
 # ═══════════════════════════════════════════════════════════════════════
 # PROVIDERS
@@ -114,10 +169,26 @@ calculator = true        # Calculator (= expression)
 websearch = true         # Web search (? query)
 
 # ─────────────────────────────────────────────────────────────────────────
-# Plugin settings
+# Widget providers (displayed at top of results)
+# ─────────────────────────────────────────────────────────────────────────
+media = true                 # MPRIS media player controls
+weather = false              # Weather widget (disabled by default)
+pomodoro = false             # Pomodoro timer (disabled by default)
+
+# ─────────────────────────────────────────────────────────────────────────
+# Provider settings
 # ─────────────────────────────────────────────────────────────────────────
 
 # Web search engine
 # Options: google, duckduckgo, bing, startpage, searxng, brave, ecosia
 # Or custom URL: "https://search.example.com/?q={query}"
 search_engine = "duckduckgo"
+
+# Weather settings (when weather = true)
+# weather_provider = "wttr.in"     # Options: wttr.in, openweathermap, open-meteo
+# weather_location = "Berlin"       # City name or coordinates
+# weather_api_key = ""              # Required for openweathermap
+
+# Pomodoro settings (when pomodoro = true)
+# pomodoro_work_mins = 25           # Work session duration
+# pomodoro_break_mins = 5           # Break duration
