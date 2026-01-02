@@ -98,6 +98,15 @@ impl Provider for ApplicationProvider {
         // Empty locale list for default locale
         let locales: &[&str] = &[];
 
+        // Get current desktop environment(s) for OnlyShowIn/NotShowIn filtering
+        // XDG_CURRENT_DESKTOP can be colon-separated (e.g., "ubuntu:GNOME")
+        let current_desktops: Vec<String> = std::env::var("XDG_CURRENT_DESKTOP")
+            .unwrap_or_default()
+            .split(':')
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect();
+
         for path in Iter::new(dirs.into_iter()) {
             let content = match std::fs::read_to_string(&path) {
                 Ok(c) => c,
@@ -125,6 +134,24 @@ impl Provider for ApplicationProvider {
                 continue;
             }
 
+            // Apply OnlyShowIn/NotShowIn filters only if we know the current desktop
+            // If XDG_CURRENT_DESKTOP is not set, show all apps (don't filter)
+            if !current_desktops.is_empty() {
+                // OnlyShowIn: if set, current desktop must be in the list
+                if desktop_entry.only_show_in().is_some_and(|only| {
+                    !current_desktops.iter().any(|de| only.contains(&de.as_str()))
+                }) {
+                    continue;
+                }
+
+                // NotShowIn: if current desktop is in the list, skip
+                if desktop_entry.not_show_in().is_some_and(|not| {
+                    current_desktops.iter().any(|de| not.contains(&de.as_str()))
+                }) {
+                    continue;
+                }
+            }
+
             let name = match desktop_entry.name(locales) {
                 Some(n) => n.to_string(),
                 None => continue,
@@ -135,11 +162,16 @@ impl Provider for ApplicationProvider {
                 None => continue,
             };
 
-            // Extract categories as tags (lowercase for consistency)
-            let tags: Vec<String> = desktop_entry
+            // Extract categories and keywords as tags (lowercase for consistency)
+            let mut tags: Vec<String> = desktop_entry
                 .categories()
                 .map(|cats| cats.into_iter().map(|s| s.to_lowercase()).collect())
                 .unwrap_or_default();
+
+            // Add keywords for searchability (e.g., Nautilus has Name=Files but Keywords contains "nautilus")
+            if let Some(keywords) = desktop_entry.keywords(locales) {
+                tags.extend(keywords.into_iter().map(|s| s.to_lowercase()));
+            }
 
             let item = LaunchItem {
                 id: path.to_string_lossy().to_string(),
@@ -156,6 +188,13 @@ impl Provider for ApplicationProvider {
         }
 
         debug!("Found {} applications", self.items.len());
+
+        #[cfg(feature = "dev-logging")]
+        debug!(
+            "XDG_CURRENT_DESKTOP={:?}, scanned dirs count={}",
+            current_desktops,
+            Self::get_application_dirs().len()
+        );
 
         // Sort alphabetically by name
         self.items.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
@@ -208,6 +247,20 @@ mod tests {
         assert_eq!(
             clean_desktop_exec_field("bash -c 'echo %u'"),
             "bash -c 'echo %u'"
+        );
+    }
+
+    #[test]
+    fn test_clean_desktop_exec_preserves_env() {
+        // env VAR=value pattern should be preserved
+        assert_eq!(
+            clean_desktop_exec_field("env GDK_BACKEND=x11 UBUNTU_MENUPROXY=0 audacity %F"),
+            "env GDK_BACKEND=x11 UBUNTU_MENUPROXY=0 audacity"
+        );
+        // Multiple env vars
+        assert_eq!(
+            clean_desktop_exec_field("env FOO=bar BAZ=qux myapp %u"),
+            "env FOO=bar BAZ=qux myapp"
         );
     }
 }

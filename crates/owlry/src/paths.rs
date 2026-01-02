@@ -99,23 +99,57 @@ pub fn frecency_file() -> Option<PathBuf> {
 // =============================================================================
 
 /// System data directories for applications (XDG_DATA_DIRS)
+///
+/// Follows the XDG Base Directory Specification:
+/// - $XDG_DATA_HOME/applications (defaults to ~/.local/share/applications)
+/// - $XDG_DATA_DIRS/*/applications (defaults to /usr/local/share:/usr/share)
+/// - Additional Flatpak and Snap directories
 pub fn system_data_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
+    let mut seen = std::collections::HashSet::new();
 
-    // User data directory first
+    // Helper to add unique directories
+    let mut add_dir = |path: PathBuf| {
+        if seen.insert(path.clone()) {
+            dirs.push(path);
+        }
+    };
+
+    // 1. User data directory first (highest priority)
     if let Some(data) = data_home() {
-        dirs.push(data.join("applications"));
+        add_dir(data.join("applications"));
     }
 
-    // System directories
-    dirs.push(PathBuf::from("/usr/share/applications"));
-    dirs.push(PathBuf::from("/usr/local/share/applications"));
+    // 2. XDG_DATA_DIRS - parse the environment variable
+    // Default per spec: /usr/local/share:/usr/share
+    let xdg_data_dirs = std::env::var("XDG_DATA_DIRS")
+        .unwrap_or_else(|_| "/usr/local/share:/usr/share".to_string());
 
-    // Flatpak directories
-    if let Some(data) = data_home() {
-        dirs.push(data.join("flatpak/exports/share/applications"));
+    for dir in xdg_data_dirs.split(':') {
+        if !dir.is_empty() {
+            add_dir(PathBuf::from(dir).join("applications"));
+        }
     }
-    dirs.push(PathBuf::from("/var/lib/flatpak/exports/share/applications"));
+
+    // 3. Always include standard system directories as fallback
+    // Some environments set XDG_DATA_DIRS without including these
+    add_dir(PathBuf::from("/usr/share/applications"));
+    add_dir(PathBuf::from("/usr/local/share/applications"));
+
+    // 4. Flatpak directories (user and system)
+    if let Some(data) = data_home() {
+        add_dir(data.join("flatpak/exports/share/applications"));
+    }
+    add_dir(PathBuf::from("/var/lib/flatpak/exports/share/applications"));
+
+    // 5. Snap directories
+    add_dir(PathBuf::from("/var/lib/snapd/desktop/applications"));
+
+    // 6. Nix directories (common on NixOS)
+    if let Some(home) = dirs::home_dir() {
+        add_dir(home.join(".nix-profile/share/applications"));
+    }
+    add_dir(PathBuf::from("/run/current-system/sw/share/applications"));
 
     dirs
 }

@@ -1286,17 +1286,81 @@ impl MainWindow {
         info!("Launching: {} ({})", item.name, item.command);
 
         #[cfg(feature = "dev-logging")]
-        debug!("[UI] Launch details: terminal={}, provider={:?}", item.terminal, item.provider);
+        debug!("[UI] Launch details: terminal={}, provider={:?}, id={}", item.terminal, item.provider, item.id);
 
-        let cmd = if item.terminal {
-            let terminal = config.general.terminal_command.as_deref().unwrap_or("xterm");
-            format!("{} -e {}", terminal, item.command)
+        // Check if this is a desktop application (has .desktop file as ID)
+        let is_desktop_app = matches!(item.provider, ProviderType::Application)
+            && item.id.ends_with(".desktop");
+
+        // Desktop files should be launched via proper launchers that implement the
+        // freedesktop Desktop Entry spec (D-Bus activation, field codes, env vars, etc.)
+        // We delegate to: uwsm (if configured), gio launch, or gtk-launch as fallback.
+        //
+        // Non-desktop items (commands, plugins) use sh -c for shell execution.
+        let result = if is_desktop_app {
+            Self::launch_desktop_file(&item.id, config)
         } else {
-            item.command.clone()
+            Self::launch_command(&item.command, item.terminal, config)
         };
 
-        // Detect if this is a shell command vs an application launch
-        // Shell commands: playerctl, dbus-send, systemctl, journalctl, or anything with shell operators
+        if let Err(e) = result {
+            let msg = format!("Failed to launch '{}': {}", item.name, e);
+            log::error!("{}", msg);
+            crate::notify::notify("Launch failed", &msg);
+        }
+    }
+
+    /// Launch a .desktop file using gio (GLib's desktop entry launcher).
+    ///
+    /// gio is always available as it's part of glib2, which is a hard dependency
+    /// of GTK4. It handles D-Bus activation, field codes, Terminal flag, etc.
+    /// per the freedesktop Desktop Entry specification.
+    ///
+    /// Optionally wraps with a session manager (uwsm, hyprctl) for proper
+    /// process tracking in Wayland compositors.
+    fn launch_desktop_file(desktop_path: &str, config: &Config) -> std::io::Result<std::process::Child> {
+        use std::path::Path;
+
+        // Check if desktop file exists
+        if !Path::new(desktop_path).exists() {
+            let msg = format!("Desktop file not found: {}", desktop_path);
+            log::error!("{}", msg);
+            crate::notify::notify("Launch failed", &msg);
+            return Err(std::io::Error::new(std::io::ErrorKind::NotFound, msg));
+        }
+
+        match &config.general.launch_wrapper {
+            // With wrapper: wrapper manages the process, gio handles the .desktop file
+            Some(wrapper) if !wrapper.is_empty() => {
+                info!("Launching via {} + gio launch: {}", wrapper, desktop_path);
+                let mut parts: Vec<&str> = wrapper.split_whitespace().collect();
+                let cmd = parts.remove(0);
+                Command::new(cmd)
+                    .args(&parts)
+                    .args(["gio", "launch"])
+                    .arg(desktop_path)
+                    .spawn()
+            }
+            // No wrapper: use gio directly
+            _ => {
+                info!("Launching via gio launch: {}", desktop_path);
+                Command::new("gio")
+                    .args(["launch", desktop_path])
+                    .spawn()
+            }
+        }
+    }
+
+    /// Launch a shell command (for non-desktop items like PATH commands, plugins, etc.)
+    fn launch_command(command: &str, terminal: bool, config: &Config) -> std::io::Result<std::process::Child> {
+        let cmd = if terminal {
+            let terminal_cmd = config.general.terminal_command.as_deref().unwrap_or("xterm");
+            format!("{} -e {}", terminal_cmd, command)
+        } else {
+            command.to_string()
+        };
+
+        // Detect shell commands that shouldn't use a wrapper
         let is_shell_command = cmd.starts_with("playerctl ")
             || cmd.starts_with("dbus-send ")
             || cmd.starts_with("systemctl ")
@@ -1307,28 +1371,19 @@ impl MainWindow {
             || cmd.contains(" > ")
             || cmd.contains(" < ");
 
-        // Use launch wrapper if configured (uwsm, hyprctl, etc.)
-        // But skip wrapper for shell commands - they need sh -c
-        let result = match &config.general.launch_wrapper {
+        match &config.general.launch_wrapper {
             Some(wrapper) if !wrapper.is_empty() && !is_shell_command => {
-                info!("Using launch wrapper: {}", wrapper);
-                // Split wrapper into command and args (e.g., "uwsm app --" -> ["uwsm", "app", "--"])
-                let mut wrapper_parts: Vec<&str> = wrapper.split_whitespace().collect();
-                if wrapper_parts.is_empty() {
-                    Command::new("sh").arg("-c").arg(&cmd).spawn()
-                } else {
-                    let wrapper_cmd = wrapper_parts.remove(0);
-                    Command::new(wrapper_cmd)
-                        .args(&wrapper_parts)
-                        .arg(&cmd)
-                        .spawn()
-                }
+                info!("Launching command via {}: {}", wrapper, cmd);
+                let mut parts: Vec<&str> = wrapper.split_whitespace().collect();
+                let wrapper_cmd = parts.remove(0);
+                Command::new(wrapper_cmd)
+                    .args(&parts)
+                    .args(["sh", "-c", &cmd])
+                    .spawn()
             }
-            _ => Command::new("sh").arg("-c").arg(&cmd).spawn(),
-        };
-
-        if let Err(e) = result {
-            log::error!("Failed to launch '{}': {}", item.name, e);
+            _ => {
+                Command::new("sh").arg("-c").arg(&cmd).spawn()
+            }
         }
     }
 }
