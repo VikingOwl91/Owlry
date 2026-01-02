@@ -208,8 +208,8 @@ cp /usr/share/doc/owlry/config.example.toml ~/.config/owlry/config.toml
 show_icons = true
 max_results = 10
 tabs = ["app", "cmd", "uuctl"]
-# terminal_command = "kitty"    # Auto-detected
-# launch_wrapper = "uwsm app --" # Auto-detected
+# terminal_command = "kitty"  # Auto-detected
+# use_uwsm = false            # Enable for systemd session integration
 
 [appearance]
 width = 850

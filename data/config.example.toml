@@ -30,9 +30,11 @@ max_results = 10
 # Uncomment to override:
 # terminal_command = "kitty"
 
-# Launch wrapper for app execution (auto-detected for uwsm/Hyprland)
-# Examples: "uwsm app --", "hyprctl dispatch exec --", ""
-# launch_wrapper = "uwsm app --"
+# Enable uwsm (Universal Wayland Session Manager) for launching apps.
+# When enabled, apps are launched via "uwsm app --" which starts them
+# in a proper systemd user session for better process management.
+# Requires: uwsm to be installed
+# use_uwsm = true
 
 # Header tabs - providers shown as toggle buttons (Ctrl+1, Ctrl+2, etc.)
 # Values: app, cmd, uuctl, bookmark, calc, clip, dmenu, emoji, file, script, ssh, sys, web

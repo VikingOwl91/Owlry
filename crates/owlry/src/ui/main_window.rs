@@ -1341,14 +1341,13 @@ impl MainWindow {
         }
     }
 
-    /// Launch a .desktop file using gio (GLib's desktop entry launcher).
+    /// Launch a .desktop file.
     ///
-    /// gio is always available as it's part of glib2, which is a hard dependency
-    /// of GTK4. It handles D-Bus activation, field codes, Terminal flag, etc.
-    /// per the freedesktop Desktop Entry specification.
+    /// When `use_uwsm` is enabled in config, launches via `uwsm app -- <file>`
+    /// which starts the app in a proper systemd user session.
     ///
-    /// Optionally wraps with a session manager (uwsm, hyprctl) for proper
-    /// process tracking in Wayland compositors.
+    /// Otherwise, uses `gio launch` which is always available (part of glib2/GTK4)
+    /// and handles D-Bus activation, field codes, Terminal flag, etc.
     fn launch_desktop_file(desktop_path: &str, config: &Config) -> std::io::Result<std::process::Child> {
         use std::path::Path;
 
@@ -1360,25 +1359,32 @@ impl MainWindow {
             return Err(std::io::Error::new(std::io::ErrorKind::NotFound, msg));
         }
 
-        match &config.general.launch_wrapper {
-            // With wrapper: wrapper manages the process, gio handles the .desktop file
-            Some(wrapper) if !wrapper.is_empty() => {
-                info!("Launching via {} + gio launch: {}", wrapper, desktop_path);
-                let mut parts: Vec<&str> = wrapper.split_whitespace().collect();
-                let cmd = parts.remove(0);
-                Command::new(cmd)
-                    .args(&parts)
-                    .args(["gio", "launch"])
-                    .arg(desktop_path)
-                    .spawn()
+        if config.general.use_uwsm {
+            // Check if uwsm is available
+            let uwsm_available = Command::new("which")
+                .arg("uwsm")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+
+            if !uwsm_available {
+                let msg = "uwsm is enabled in config but not installed";
+                log::error!("{}", msg);
+                crate::notify::notify("Launch failed", msg);
+                return Err(std::io::Error::new(std::io::ErrorKind::NotFound, msg));
             }
-            // No wrapper: use gio directly
-            _ => {
-                info!("Launching via gio launch: {}", desktop_path);
-                Command::new("gio")
-                    .args(["launch", desktop_path])
-                    .spawn()
-            }
+
+            info!("Launching via uwsm: {}", desktop_path);
+            Command::new("uwsm")
+                .args(["app", "--", desktop_path])
+                .spawn()
+        } else {
+            info!("Launching via gio: {}", desktop_path);
+            Command::new("gio")
+                .args(["launch", desktop_path])
+                .spawn()
         }
     }
 
@@ -1391,8 +1397,9 @@ impl MainWindow {
             command.to_string()
         };
 
-        // Detect shell commands that shouldn't use a wrapper
-        let is_shell_command = cmd.starts_with("playerctl ")
+        // Shell/system commands run directly without uwsm wrapper
+        // (they're typically short-lived or system utilities)
+        let is_system_command = cmd.starts_with("playerctl ")
             || cmd.starts_with("dbus-send ")
             || cmd.starts_with("systemctl ")
             || cmd.starts_with("journalctl ")
@@ -1402,19 +1409,14 @@ impl MainWindow {
             || cmd.contains(" > ")
             || cmd.contains(" < ");
 
-        match &config.general.launch_wrapper {
-            Some(wrapper) if !wrapper.is_empty() && !is_shell_command => {
-                info!("Launching command via {}: {}", wrapper, cmd);
-                let mut parts: Vec<&str> = wrapper.split_whitespace().collect();
-                let wrapper_cmd = parts.remove(0);
-                Command::new(wrapper_cmd)
-                    .args(&parts)
-                    .args(["sh", "-c", &cmd])
-                    .spawn()
-            }
-            _ => {
-                Command::new("sh").arg("-c").arg(&cmd).spawn()
-            }
+        // Use uwsm for regular commands if enabled (and not a system command)
+        if config.general.use_uwsm && !is_system_command {
+            info!("Launching command via uwsm: {}", cmd);
+            Command::new("uwsm")
+                .args(["app", "--", "sh", "-c", &cmd])
+                .spawn()
+        } else {
+            Command::new("sh").arg("-c").arg(&cmd).spawn()
         }
     }
 }

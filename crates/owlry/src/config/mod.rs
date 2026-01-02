@@ -27,11 +27,12 @@ pub struct GeneralConfig {
     /// Terminal command (auto-detected if not specified)
     #[serde(default)]
     pub terminal_command: Option<String>,
-    /// Launch wrapper command for app execution.
-    /// Examples: "uwsm app --", "hyprctl dispatch exec --", "systemd-run --user --"
-    /// If None or empty, launches directly via sh -c
+    /// Enable uwsm (Universal Wayland Session Manager) for launching apps.
+    /// When enabled, desktop files are launched via `uwsm app -- <file>`
+    /// which starts apps in a proper systemd user session.
+    /// When disabled (default), apps are launched via `gio launch`.
     #[serde(default)]
-    pub launch_wrapper: Option<String>,
+    pub use_uwsm: bool,
     /// Provider tabs shown in the header bar.
     /// Valid values: app, cmd, uuctl, bookmark, calc, clip, dmenu, emoji, file, script, ssh, sys, web
     #[serde(default = "default_tabs")]
@@ -44,7 +45,7 @@ impl Default for GeneralConfig {
             show_icons: true,
             max_results: 100,
             terminal_command: None,
-            launch_wrapper: None,
+            use_uwsm: false,
             tabs: default_tabs(),
         }
     }
@@ -396,28 +397,6 @@ fn default_pomodoro_break() -> u32 {
     5
 }
 
-/// Detect the best launch wrapper for the current session
-/// Checks for uwsm (Universal Wayland Session Manager) and hyprland
-fn detect_launch_wrapper() -> Option<String> {
-    // Check if running under uwsm (has UWSM_FINALIZE_VARNAMES or similar uwsm env vars)
-    if (std::env::var("UWSM_FINALIZE_VARNAMES").is_ok()
-        || std::env::var("__UWSM_SELECT_TAG").is_ok())
-        && command_exists("uwsm") {
-            debug!("Detected uwsm session, using 'uwsm app --' wrapper");
-            return Some("uwsm app --".to_string());
-        }
-
-    // Check if running under Hyprland
-    if std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok()
-        && command_exists("hyprctl") {
-            debug!("Detected Hyprland session, using 'hyprctl dispatch exec --' wrapper");
-            return Some("hyprctl dispatch exec --".to_string());
-        }
-
-    // No wrapper needed for other environments
-    debug!("No launch wrapper detected, using direct execution");
-    None
-}
 
 /// Detect the best available terminal emulator
 /// Fallback chain:
@@ -576,11 +555,6 @@ impl Config {
             Some(term) => {
                 debug!("Using configured terminal: {}", term);
             }
-        }
-
-        // Auto-detect launch wrapper if not configured
-        if config.general.launch_wrapper.is_none() {
-            config.general.launch_wrapper = detect_launch_wrapper();
         }
 
         Ok(config)
