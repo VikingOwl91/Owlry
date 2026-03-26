@@ -166,6 +166,23 @@ just bump 0.5.1
 # Create and push release tag
 git push && just tag
 
+# Tagging convention: every crate gets its own tag
+# Format: {crate-name}-v{version}
+# Examples:
+#   owlry-v1.0.1
+#   owlry-core-v1.1.0
+#   owlry-lua-v1.1.0
+#   owlry-rune-v1.1.0
+#   plugin-api-v1.0.1
+#
+# The plugins repo uses the same convention:
+#   owlry-plugin-bookmarks-v1.0.1
+#   owlry-plugin-calculator-v1.0.1
+#   etc.
+#
+# IMPORTANT: After bumping versions, tag EVERY changed crate individually.
+# The plugin-api tag is referenced by owlry-plugins Cargo.toml as a git dependency.
+
 # AUR package management
 just aur-update           # Update core UI PKGBUILD
 just aur-update-pkg NAME  # Update specific package (owlry-core, owlry-lua, etc.)
