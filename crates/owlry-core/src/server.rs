@@ -4,6 +4,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+/// Maximum allowed size for a single IPC request line (1 MiB).
+const MAX_REQUEST_SIZE: usize = 1_048_576;
+
 use log::{error, info, warn};
 
 use crate::config::Config;
@@ -94,11 +97,28 @@ impl Server {
         frecency: Arc<Mutex<FrecencyStore>>,
         config: Arc<Config>,
     ) -> io::Result<()> {
-        let reader = BufReader::new(stream.try_clone()?);
+        let mut reader = BufReader::new(stream.try_clone()?);
         let mut writer = stream;
 
-        for line in reader.lines() {
-            let line = line?;
+        loop {
+            let mut line = String::new();
+            let bytes_read = reader.read_line(&mut line)?;
+            if bytes_read == 0 {
+                break;
+            }
+
+            if line.len() > MAX_REQUEST_SIZE {
+                let resp = Response::Error {
+                    message: format!(
+                        "request too large ({} bytes, max {})",
+                        line.len(),
+                        MAX_REQUEST_SIZE
+                    ),
+                };
+                write_response(&mut writer, &resp)?;
+                break;
+            }
+
             let trimmed = line.trim();
             if trimmed.is_empty() {
                 continue;
@@ -139,8 +159,8 @@ impl Server {
                 let max = config.general.max_results;
                 let weight = config.providers.frecency_weight;
 
-                let pm_guard = pm.lock().unwrap();
-                let frecency_guard = frecency.lock().unwrap();
+                let pm_guard = pm.lock().unwrap_or_else(|e| e.into_inner());
+                let frecency_guard = frecency.lock().unwrap_or_else(|e| e.into_inner());
                 let results = pm_guard.search_with_frecency(
                     text,
                     max,
@@ -162,13 +182,13 @@ impl Server {
                 item_id,
                 provider: _,
             } => {
-                let mut frecency_guard = frecency.lock().unwrap();
+                let mut frecency_guard = frecency.lock().unwrap_or_else(|e| e.into_inner());
                 frecency_guard.record_launch(item_id);
                 Response::Ack
             }
 
             Request::Providers => {
-                let pm_guard = pm.lock().unwrap();
+                let pm_guard = pm.lock().unwrap_or_else(|e| e.into_inner());
                 let descs = pm_guard.available_providers();
                 Response::Providers {
                     list: descs.into_iter().map(descriptor_to_desc).collect(),
@@ -176,7 +196,7 @@ impl Server {
             }
 
             Request::Refresh { provider } => {
-                let mut pm_guard = pm.lock().unwrap();
+                let mut pm_guard = pm.lock().unwrap_or_else(|e| e.into_inner());
                 pm_guard.refresh_provider(provider);
                 Response::Ack
             }
@@ -187,7 +207,7 @@ impl Server {
             }
 
             Request::Submenu { plugin_id, data } => {
-                let pm_guard = pm.lock().unwrap();
+                let pm_guard = pm.lock().unwrap_or_else(|e| e.into_inner());
                 match pm_guard.query_submenu_actions(plugin_id, data, plugin_id) {
                     Some((_name, actions)) => Response::SubmenuItems {
                         items: actions
@@ -202,7 +222,7 @@ impl Server {
             }
 
             Request::PluginAction { command } => {
-                let pm_guard = pm.lock().unwrap();
+                let pm_guard = pm.lock().unwrap_or_else(|e| e.into_inner());
                 if pm_guard.execute_plugin_action(command) {
                     Response::Ack
                 } else {

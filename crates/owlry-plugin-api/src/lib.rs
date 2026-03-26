@@ -297,26 +297,24 @@ pub struct HostAPI {
     pub log_error: extern "C" fn(message: RStr<'_>),
 }
 
+use std::sync::OnceLock;
+
 // Global host API pointer - set by the host when loading plugins
-static mut HOST_API: Option<&'static HostAPI> = None;
+static HOST_API: OnceLock<&'static HostAPI> = OnceLock::new();
 
 /// Initialize the host API (called by the host)
 ///
 /// # Safety
 /// Must only be called once by the host before any plugins use the API
 pub unsafe fn init_host_api(api: &'static HostAPI) {
-    // SAFETY: Caller guarantees this is called once before any plugins use the API
-    unsafe {
-        HOST_API = Some(api);
-    }
+    let _ = HOST_API.set(api);
 }
 
 /// Get the host API
 ///
 /// Returns None if the host hasn't initialized the API yet
 pub fn host_api() -> Option<&'static HostAPI> {
-    // SAFETY: We only read the pointer, and it's set once at startup
-    unsafe { HOST_API }
+    HOST_API.get().copied()
 }
 
 // ============================================================================
