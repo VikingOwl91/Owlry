@@ -7,11 +7,11 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use crate::cli::{PluginCommand as CliPluginCommand, PluginRuntime};
-use crate::config::Config;
-use crate::paths;
-use crate::plugins::manifest::{discover_plugins, PluginManifest};
-use crate::plugins::registry::{self, RegistryClient};
-use crate::plugins::runtime_loader::{lua_runtime_available, rune_runtime_available};
+use owlry_core::config::Config;
+use owlry_core::paths;
+use owlry_core::plugins::manifest::{discover_plugins, PluginManifest};
+use owlry_core::plugins::registry::{self, RegistryClient};
+use owlry_core::plugins::runtime_loader::{lua_runtime_available, rune_runtime_available};
 
 /// Result type for plugin commands
 pub type CommandResult = Result<(), String>;
@@ -932,7 +932,7 @@ fn cmd_validate(path: Option<&str>) -> CommandResult {
 
 /// Show available script runtimes
 fn cmd_runtimes() -> CommandResult {
-    use crate::plugins::runtime_loader::SYSTEM_RUNTIMES_DIR;
+    use owlry_core::plugins::runtime_loader::SYSTEM_RUNTIMES_DIR;
 
     println!("Script Runtimes:\n");
 
@@ -1024,7 +1024,7 @@ fn execute_plugin_command(
     command: &str,
     args: &[String],
 ) -> CommandResult {
-    use crate::plugins::runtime_loader::{LoadedRuntime, SYSTEM_RUNTIMES_DIR};
+    use owlry_core::plugins::runtime_loader::{LoadedRuntime, SYSTEM_RUNTIMES_DIR};
 
     let runtime = detect_runtime(manifest);
 

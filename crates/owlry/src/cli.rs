@@ -4,7 +4,7 @@
 
 use clap::{Parser, Subcommand};
 
-use crate::providers::ProviderType;
+use owlry_core::providers::ProviderType;
 
 #[derive(Parser, Debug, Clone)]
 #[command(

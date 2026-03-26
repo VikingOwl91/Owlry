@@ -1,16 +1,17 @@
 use crate::cli::CliArgs;
-use crate::config::Config;
-use crate::data::FrecencyStore;
-use crate::filter::ProviderFilter;
-use crate::paths;
-use crate::plugins::native_loader::NativePluginLoader;
-#[cfg(feature = "lua")]
-use crate::plugins::PluginManager;
-use crate::providers::native_provider::NativeProvider;
-use crate::providers::Provider;  // For name() method
-use crate::providers::ProviderManager;
+use crate::providers::DmenuProvider;
 use crate::theme;
 use crate::ui::MainWindow;
+use owlry_core::config::Config;
+use owlry_core::data::FrecencyStore;
+use owlry_core::filter::ProviderFilter;
+use owlry_core::paths;
+use owlry_core::plugins::native_loader::NativePluginLoader;
+#[cfg(feature = "lua")]
+use owlry_core::plugins::PluginManager;
+use owlry_core::providers::native_provider::NativeProvider;
+use owlry_core::providers::Provider;  // For name() method
+use owlry_core::providers::{ApplicationProvider, CommandProvider, ProviderManager};
 use gtk4::prelude::*;
 use gtk4::{gio, Application, CssProvider};
 use gtk4_layer_shell::{Edge, Layer, LayerShell};
@@ -55,11 +56,25 @@ impl OwlryApp {
         // Load native plugins from /usr/lib/owlry/plugins/
         let native_providers = Self::load_native_plugins(&config.borrow());
 
-        // Create provider manager with native plugins
+        // Build core providers based on mode
+        let dmenu_mode = DmenuProvider::has_stdin_data();
+        let core_providers: Vec<Box<dyn Provider>> = if dmenu_mode {
+            let mut dmenu = DmenuProvider::new();
+            dmenu.enable();
+            vec![Box::new(dmenu)]
+        } else {
+            vec![
+                Box::new(ApplicationProvider::new()),
+                Box::new(CommandProvider::new()),
+            ]
+        };
+
+        // Create provider manager with core providers and native plugins
+        let native_for_manager = if dmenu_mode { Vec::new() } else { native_providers };
         #[cfg(feature = "lua")]
-        let mut provider_manager = ProviderManager::with_native_plugins(native_providers);
+        let mut provider_manager = ProviderManager::new(core_providers, native_for_manager);
         #[cfg(not(feature = "lua"))]
-        let provider_manager = ProviderManager::with_native_plugins(native_providers);
+        let provider_manager = ProviderManager::new(core_providers, native_for_manager);
 
         // Load Lua plugins if enabled (requires lua feature)
         #[cfg(feature = "lua")]
@@ -117,7 +132,7 @@ impl OwlryApp {
             Ok(count) => {
                 if count == 0 {
                     debug!("No native plugins found in {}",
-                           crate::plugins::native_loader::SYSTEM_PLUGINS_DIR);
+                           owlry_core::plugins::native_loader::SYSTEM_PLUGINS_DIR);
                     return Vec::new();
                 }
                 info!("Discovered {} native plugin(s)", count);
@@ -129,7 +144,7 @@ impl OwlryApp {
         }
 
         // Get all plugins and create providers
-        let plugins: Vec<Arc<crate::plugins::native_loader::NativePlugin>> =
+        let plugins: Vec<Arc<owlry_core::plugins::native_loader::NativePlugin>> =
             loader.into_plugins();
 
         // Create NativeProvider instances from loaded plugins

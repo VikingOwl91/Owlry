@@ -1,11 +1,6 @@
 mod app;
 mod cli;
-mod config;
-mod data;
-mod filter;
-mod notify;
-mod paths;
-mod plugins;
+mod plugin_commands;
 mod providers;
 mod theme;
 mod ui;
@@ -25,7 +20,7 @@ fn main() {
         // CLI commands don't need full logging
         match command {
             Command::Plugin(plugin_cmd) => {
-                if let Err(e) = plugins::commands::execute(plugin_cmd.clone()) {
+                if let Err(e) = plugin_commands::execute(plugin_cmd.clone()) {
                     eprintln!("Error: {}", e);
                     std::process::exit(1);
                 }

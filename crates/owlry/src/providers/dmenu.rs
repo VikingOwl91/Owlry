@@ -1,4 +1,4 @@
-use super::{LaunchItem, Provider, ProviderType};
+use owlry_core::providers::{LaunchItem, Provider, ProviderType};
 use log::debug;
 use std::io::{self, BufRead};
 

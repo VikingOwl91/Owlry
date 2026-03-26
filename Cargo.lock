@@ -2439,12 +2439,27 @@ dependencies = [
  "clap",
  "dirs",
  "env_logger",
- "freedesktop-desktop-entry",
- "fuzzy-matcher",
  "glib-build-tools",
  "gtk4",
  "gtk4-layer-shell",
  "libc",
+ "log",
+ "owlry-core",
+ "semver",
+ "serde",
+ "serde_json",
+ "toml 0.8.23",
+]
+
+[[package]]
+name = "owlry-core"
+version = "0.5.0"
+dependencies = [
+ "chrono",
+ "dirs",
+ "env_logger",
+ "freedesktop-desktop-entry",
+ "fuzzy-matcher",
  "libloading 0.8.9",
  "log",
  "meval",

@@ -1,4 +1,4 @@
-use crate::config::AppearanceConfig;
+use owlry_core::config::AppearanceConfig;
 
 /// Generate CSS with :root variables from config settings
 pub fn generate_variables_css(config: &AppearanceConfig) -> String {

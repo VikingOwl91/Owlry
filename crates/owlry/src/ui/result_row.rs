@@ -1,4 +1,4 @@
-use crate::providers::LaunchItem;
+use owlry_core::providers::LaunchItem;
 use gtk4::prelude::*;
 use gtk4::{Box as GtkBox, Image, Label, ListBoxRow, Orientation, Widget};
 
@@ -81,11 +81,11 @@ impl ResultRow {
         } else {
             // Default icon based on provider type (only core types, plugins should provide icons)
             let default_icon = match &item.provider {
-                crate::providers::ProviderType::Application => "application-x-executable-symbolic",
-                crate::providers::ProviderType::Command => "utilities-terminal-symbolic",
-                crate::providers::ProviderType::Dmenu => "view-list-symbolic",
+                owlry_core::providers::ProviderType::Application => "application-x-executable-symbolic",
+                owlry_core::providers::ProviderType::Command => "utilities-terminal-symbolic",
+                owlry_core::providers::ProviderType::Dmenu => "view-list-symbolic",
                 // Plugins should provide their own icon; fallback to generic addon icon
-                crate::providers::ProviderType::Plugin(_) => "application-x-addon-symbolic",
+                owlry_core::providers::ProviderType::Plugin(_) => "application-x-addon-symbolic",
             };
             let img = Image::from_icon_name(default_icon);
             img.set_pixel_size(32);

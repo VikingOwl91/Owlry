@@ -29,6 +29,9 @@ toml = "0.8"
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "5"
 
+# Error handling
+thiserror = "2"
+
 # Logging & notifications
 log = "0.4"
 env_logger = "0.11"
@@ -38,6 +41,9 @@ notify-rust = "4"
 mlua = { version = "0.11", features = ["lua54", "vendored", "send", "serialize"], optional = true }
 meval = { version = "0.2", optional = true }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "blocking"], optional = true }
+
+[dev-dependencies]
+tempfile = "3"
 
 [features]
 default = []

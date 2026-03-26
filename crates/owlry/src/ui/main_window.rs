@@ -1,7 +1,7 @@
-use crate::config::Config;
-use crate::data::FrecencyStore;
-use crate::filter::ProviderFilter;
-use crate::providers::{LaunchItem, ProviderManager, ProviderType};
+use owlry_core::config::Config;
+use owlry_core::data::FrecencyStore;
+use owlry_core::filter::ProviderFilter;
+use owlry_core::providers::{LaunchItem, ProviderManager, ProviderType};
 use crate::ui::submenu;
 use crate::ui::ResultRow;
 use gtk4::gdk::Key;
@@ -408,7 +408,7 @@ impl MainWindow {
     }
 
     /// Build dynamic hints based on enabled providers
-    fn build_hints(config: &crate::config::ProvidersConfig) -> String {
+    fn build_hints(config: &owlry_core::config::ProvidersConfig) -> String {
         let mut parts: Vec<String> = vec![
             "Tab: cycle".to_string(),
             "↑↓: nav".to_string(),
@@ -1337,7 +1337,7 @@ impl MainWindow {
         if let Err(e) = result {
             let msg = format!("Failed to launch '{}': {}", item.name, e);
             log::error!("{}", msg);
-            crate::notify::notify("Launch failed", &msg);
+            owlry_core::notify::notify("Launch failed", &msg);
         }
     }
 
@@ -1355,7 +1355,7 @@ impl MainWindow {
         if !Path::new(desktop_path).exists() {
             let msg = format!("Desktop file not found: {}", desktop_path);
             log::error!("{}", msg);
-            crate::notify::notify("Launch failed", &msg);
+            owlry_core::notify::notify("Launch failed", &msg);
             return Err(std::io::Error::new(std::io::ErrorKind::NotFound, msg));
         }
 
@@ -1372,7 +1372,7 @@ impl MainWindow {
             if !uwsm_available {
                 let msg = "uwsm is enabled in config but not installed";
                 log::error!("{}", msg);
-                crate::notify::notify("Launch failed", msg);
+                owlry_core::notify::notify("Launch failed", msg);
                 return Err(std::io::Error::new(std::io::ErrorKind::NotFound, msg));
             }
 
