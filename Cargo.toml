@@ -18,6 +18,7 @@ members = [
     "crates/owlry-plugin-systemd",
     "crates/owlry-lua",
     "crates/owlry-rune",
+    "crates/owlry-core",
 ]
 
 # Shared workspace settings

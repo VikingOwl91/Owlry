@@ -1,0 +1,45 @@
+[package]
+name = "owlry-core"
+version = "0.5.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Core daemon for the Owlry application launcher"
+
+[lib]
+name = "owlry_core"
+path = "src/lib.rs"
+
+[dependencies]
+owlry-plugin-api = { path = "../owlry-plugin-api" }
+
+# Provider system
+fuzzy-matcher = "0.3"
+freedesktop-desktop-entry = "0.8"
+
+# Plugin loading
+libloading = "0.8"
+semver = "1"
+
+# Data & config
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "5"
+
+# Logging & notifications
+log = "0.4"
+env_logger = "0.11"
+notify-rust = "4"
+
+# Optional: embedded Lua runtime
+mlua = { version = "0.11", features = ["lua54", "vendored", "send", "serialize"], optional = true }
+meval = { version = "0.2", optional = true }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "blocking"], optional = true }
+
+[features]
+default = []
+lua = ["dep:mlua", "dep:meval", "dep:reqwest"]
+dev-logging = []
