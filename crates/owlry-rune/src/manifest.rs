@@ -25,7 +25,7 @@ pub struct PluginInfo {
     pub author: String,
     #[serde(default = "default_owlry_version")]
     pub owlry_version: String,
-    #[serde(default = "default_entry")]
+    #[serde(default = "default_entry", alias = "entry_point")]
     pub entry: String,
 }
 
@@ -34,7 +34,7 @@ fn default_owlry_version() -> String {
 }
 
 fn default_entry() -> String {
-    "init.rn".to_string()
+    "main.rn".to_string()
 }
 
 /// What the plugin provides
@@ -128,7 +128,7 @@ version = "1.0.0"
 "#;
         let manifest: PluginManifest = toml::from_str(toml_str).unwrap();
         assert_eq!(manifest.plugin.id, "test-plugin");
-        assert_eq!(manifest.plugin.entry, "init.rn");
+        assert_eq!(manifest.plugin.entry, "main.rn");
     }
 
     #[test]

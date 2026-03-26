@@ -200,7 +200,7 @@ version = "1.0.0"
             id, id
         );
         fs::write(plugin_dir.join("plugin.toml"), manifest).unwrap();
-        fs::write(plugin_dir.join("init.lua"), "-- empty plugin").unwrap();
+        fs::write(plugin_dir.join("main.lua"), "-- empty plugin").unwrap();
     }
 
     #[test]

@@ -41,7 +41,7 @@ pub struct PluginInfo {
     #[serde(default = "default_owlry_version")]
     pub owlry_version: String,
     /// Entry point file (relative to plugin directory)
-    #[serde(default = "default_entry")]
+    #[serde(default = "default_entry", alias = "entry_point")]
     pub entry: String,
 }
 
@@ -50,7 +50,7 @@ fn default_owlry_version() -> String {
 }
 
 fn default_entry() -> String {
-    "init.lua".to_string()
+    "main.lua".to_string()
 }
 
 /// What the plugin provides
@@ -160,7 +160,7 @@ version = "1.0.0"
         assert_eq!(manifest.plugin.id, "test-plugin");
         assert_eq!(manifest.plugin.name, "Test Plugin");
         assert_eq!(manifest.plugin.version, "1.0.0");
-        assert_eq!(manifest.plugin.entry, "init.lua");
+        assert_eq!(manifest.plugin.entry, "main.lua");
     }
 
     #[test]
