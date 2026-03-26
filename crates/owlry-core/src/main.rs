@@ -1,4 +1,4 @@
-use log::info;
+use log::{info, warn};
 
 use owlry_core::paths;
 use owlry_core::server::Server;
@@ -25,11 +25,12 @@ fn main() {
 
     // Graceful shutdown on SIGTERM/SIGINT
     let sock_cleanup = sock.clone();
-    ctrlc::set_handler(move || {
+    if let Err(e) = ctrlc::set_handler(move || {
         let _ = std::fs::remove_file(&sock_cleanup);
         std::process::exit(0);
-    })
-    .ok();
+    }) {
+        warn!("Failed to set signal handler: {}", e);
+    }
 
     if let Err(e) = server.run() {
         eprintln!("Server error: {e}");

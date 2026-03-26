@@ -1,7 +1,9 @@
 use std::io::{self, BufRead, BufReader, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use std::thread;
 
 /// Maximum allowed size for a single IPC request line (1 MiB).
@@ -37,6 +39,7 @@ impl Server {
         }
 
         let listener = UnixListener::bind(socket_path)?;
+        std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o600))?;
         info!("IPC server listening on {:?}", socket_path);
 
         let config = Config::load_or_default();
@@ -97,6 +100,7 @@ impl Server {
         frecency: Arc<Mutex<FrecencyStore>>,
         config: Arc<Config>,
     ) -> io::Result<()> {
+        stream.set_read_timeout(Some(Duration::from_secs(30)))?;
         let mut reader = BufReader::new(stream.try_clone()?);
         let mut writer = stream;
 
