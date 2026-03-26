@@ -299,10 +299,18 @@ CoreClient ──── IPC ────→   ProviderManager         ProviderFi
 
 All other providers are native plugins in the separate `owlry-plugins` repo (`somegit.dev/Owlibou/owlry-plugins`).
 
+**User plugins** (script-based, in `~/.config/owlry/plugins/`):
+- **Lua plugins**: Loaded by `owlry-lua` runtime from `/usr/lib/owlry/runtimes/liblua.so`
+- **Rune plugins**: Loaded by `owlry-rune` runtime from `/usr/lib/owlry/runtimes/librune.so`
+- User plugins are **hot-reloaded** automatically when files change (no daemon restart needed)
+- Custom prefixes (e.g., `:hs`) are resolved dynamically for user plugins
+
 `ProviderManager` (in `owlry-core`) orchestrates providers and handles:
 - Fuzzy matching via `SkimMatcherV2`
 - Frecency score boosting
 - Native plugin loading from `/usr/lib/owlry/plugins/`
+- Script runtime loading from `/usr/lib/owlry/runtimes/` for user plugins
+- Filesystem watching for automatic user plugin hot-reload
 
 **Submenu System**: Plugins can return items with `SUBMENU:plugin_id:data` commands. When selected, the plugin is queried with `?SUBMENU:data` to get action items (e.g., systemd service actions).
 
@@ -340,6 +348,7 @@ Plugins are compiled as `.so` (cdylib) and loaded by the daemon at startup.
 - Profile-based mode selection (`--profile dev`)
 - Provider toggling (Ctrl+1/2/3)
 - Prefix parsing (`:app`, `:cmd`, `:sys`, etc.)
+- Dynamic prefix fallback for user plugins (any `:word` prefix maps to `Plugin(word)`)
 
 Query parsing extracts prefix and forwards clean query to providers.
 
@@ -395,6 +404,8 @@ Plugins live in a separate repository: `somegit.dev/Owlibou/owlry-plugins`
 - **Rc<RefCell<T>>** used throughout for GTK signal handlers needing mutable state
 - **Feature flag `dev-logging`**: Wraps debug!() calls in `#[cfg(feature = "dev-logging")]`
 - **Feature flag `lua`**: Enables built-in Lua runtime (off by default); enable to embed Lua in core binary
+- **Script runtimes**: External `.so` runtimes loaded from `/usr/lib/owlry/runtimes/` — Lua and Rune user plugins loaded from `~/.config/owlry/plugins/`
+- **Hot-reload**: Filesystem watcher (`notify` crate) monitors user plugins dir and reloads runtimes on file changes
 - **dmenu mode**: Runs locally without daemon. Use `-m dmenu` with piped stdin
 - **Frecency**: Time-decayed frequency scoring stored in `~/.local/share/owlry/frecency.json`
 - **ABI stability**: Plugin interface uses `abi_stable` crate for safe Rust dynamic linking
