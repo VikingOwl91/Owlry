@@ -1,4 +1,4 @@
-use crate::config::AppearanceConfig;
+use owlry_core::config::AppearanceConfig;
 
 /// Generate CSS with :root variables from config settings
 pub fn generate_variables_css(config: &AppearanceConfig) -> String {
@@ -6,7 +6,10 @@ pub fn generate_variables_css(config: &AppearanceConfig) -> String {
 
     // Always inject layout config values
     css.push_str(&format!("    --owlry-font-size: {}px;\n", config.font_size));
-    css.push_str(&format!("    --owlry-border-radius: {}px;\n", config.border_radius));
+    css.push_str(&format!(
+        "    --owlry-border-radius: {}px;\n",
+        config.border_radius
+    ));
 
     // Only inject colors if user specified them
     if let Some(ref bg) = config.colors.background {
@@ -22,7 +25,10 @@ pub fn generate_variables_css(config: &AppearanceConfig) -> String {
         css.push_str(&format!("    --owlry-text: {};\n", text));
     }
     if let Some(ref text_secondary) = config.colors.text_secondary {
-        css.push_str(&format!("    --owlry-text-secondary: {};\n", text_secondary));
+        css.push_str(&format!(
+            "    --owlry-text-secondary: {};\n",
+            text_secondary
+        ));
     }
     if let Some(ref accent) = config.colors.accent {
         css.push_str(&format!("    --owlry-accent: {};\n", accent));
@@ -36,7 +42,10 @@ pub fn generate_variables_css(config: &AppearanceConfig) -> String {
         css.push_str(&format!("    --owlry-badge-app: {};\n", badge_app));
     }
     if let Some(ref badge_bookmark) = config.colors.badge_bookmark {
-        css.push_str(&format!("    --owlry-badge-bookmark: {};\n", badge_bookmark));
+        css.push_str(&format!(
+            "    --owlry-badge-bookmark: {};\n",
+            badge_bookmark
+        ));
     }
     if let Some(ref badge_calc) = config.colors.badge_calc {
         css.push_str(&format!("    --owlry-badge-calc: {};\n", badge_calc));

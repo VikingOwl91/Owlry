@@ -1,6 +1,6 @@
 [package]
 name = "owlry-rune"
-version = "0.4.10"
+version = "1.0.0"
 edition = "2024"
 rust-version = "1.90"
 description = "Rune scripting runtime for owlry plugins"
@@ -22,7 +22,7 @@ log = "0.4"
 env_logger = "0.11"
 
 # HTTP client for network API
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "blocking"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

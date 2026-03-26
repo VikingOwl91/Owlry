@@ -24,11 +24,14 @@ pub fn register_provider_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
 /// Implementation of owlry.provider.register()
 fn register_provider(_lua: &Lua, config: Table) -> LuaResult<()> {
     let name: String = config.get("name")?;
-    let display_name: String = config.get::<Option<String>>("display_name")?
+    let display_name: String = config
+        .get::<Option<String>>("display_name")?
         .unwrap_or_else(|| name.clone());
-    let type_id: String = config.get::<Option<String>>("type_id")?
+    let type_id: String = config
+        .get::<Option<String>>("type_id")?
         .unwrap_or_else(|| name.replace('-', "_"));
-    let default_icon: String = config.get::<Option<String>>("default_icon")?
+    let default_icon: String = config
+        .get::<Option<String>>("default_icon")?
         .unwrap_or_else(|| "application-x-addon".to_string());
     let prefix: Option<String> = config.get("prefix")?;
 
@@ -116,13 +119,14 @@ fn call_provider_function(
     // First check if there's a _providers table
     if let Ok(Value::Table(providers)) = globals.get::<Value>("_owlry_providers")
         && let Ok(Value::Table(config)) = providers.get::<Value>(provider_name)
-            && let Ok(Value::Function(func)) = config.get::<Value>(function_name) {
-                let result: Value = match query {
-                    Some(q) => func.call(q)?,
-                    None => func.call(())?,
-                };
-                return parse_items_result(result);
-            }
+        && let Ok(Value::Function(func)) = config.get::<Value>(function_name)
+    {
+        let result: Value = match query {
+            Some(q) => func.call(q)?,
+            None => func.call(())?,
+        };
+        return parse_items_result(result);
+    }
 
     // Fall back: search through globals for functions
     // This is less reliable but handles simple cases
@@ -153,7 +157,9 @@ fn parse_item(table: &Table) -> LuaResult<PluginItem> {
     let description: Option<String> = table.get("description")?;
     let icon: Option<String> = table.get("icon")?;
     let terminal: bool = table.get::<Option<bool>>("terminal")?.unwrap_or(false);
-    let tags: Vec<String> = table.get::<Option<Vec<String>>>("tags")?.unwrap_or_default();
+    let tags: Vec<String> = table
+        .get::<Option<Vec<String>>>("tags")?
+        .unwrap_or_default();
 
     let mut item = PluginItem::new(id, name, command);
 
@@ -176,7 +182,7 @@ fn parse_item(table: &Table) -> LuaResult<PluginItem> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::{create_lua_runtime, SandboxConfig};
+    use crate::runtime::{SandboxConfig, create_lua_runtime};
 
     #[test]
     fn test_register_static_provider() {

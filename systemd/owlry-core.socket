@@ -1,0 +1,9 @@
+[Unit]
+Description=Owlry launcher socket
+
+[Socket]
+ListenStream=%t/owlry/owlry.sock
+DirectoryMode=0700
+
+[Install]
+WantedBy=sockets.target

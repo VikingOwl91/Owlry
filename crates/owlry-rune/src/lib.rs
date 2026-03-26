@@ -75,7 +75,11 @@ pub struct RuneRuntimeVTable {
     pub init: extern "C" fn(plugins_dir: RStr<'_>) -> RuntimeHandle,
     pub providers: extern "C" fn(handle: RuntimeHandle) -> RVec<RuneProviderInfo>,
     pub refresh: extern "C" fn(handle: RuntimeHandle, provider_id: RStr<'_>) -> RVec<PluginItem>,
-    pub query: extern "C" fn(handle: RuntimeHandle, provider_id: RStr<'_>, query: RStr<'_>) -> RVec<PluginItem>,
+    pub query: extern "C" fn(
+        handle: RuntimeHandle,
+        provider_id: RStr<'_>,
+        query: RStr<'_>,
+    ) -> RVec<PluginItem>,
     pub drop: extern "C" fn(handle: RuntimeHandle),
 }
 
@@ -94,7 +98,10 @@ extern "C" fn runtime_init(plugins_dir: RStr<'_>) -> RuntimeHandle {
     let _ = env_logger::try_init();
 
     let plugins_dir = PathBuf::from(plugins_dir.as_str());
-    log::info!("Initializing Rune runtime with plugins from: {}", plugins_dir.display());
+    log::info!(
+        "Initializing Rune runtime with plugins from: {}",
+        plugins_dir.display()
+    );
 
     let mut state = RuntimeState {
         plugins: HashMap::new(),
@@ -113,15 +120,20 @@ extern "C" fn runtime_init(plugins_dir: RStr<'_>) -> RuntimeHandle {
                         type_id: RString::from(reg.type_id.as_str()),
                         default_icon: RString::from(reg.default_icon.as_str()),
                         is_static: reg.is_static,
-                        prefix: reg.prefix.as_ref()
+                        prefix: reg
+                            .prefix
+                            .as_ref()
                             .map(|p| RString::from(p.as_str()))
                             .into(),
                     });
                 }
                 state.plugins.insert(id, plugin);
             }
-            log::info!("Loaded {} Rune plugin(s) with {} provider(s)",
-                      state.plugins.len(), state.providers.len());
+            log::info!(
+                "Loaded {} Rune plugin(s) with {} provider(s)",
+                state.plugins.len(),
+                state.providers.len()
+            );
         }
         Err(e) => {
             log::error!("Failed to discover Rune plugins: {}", e);

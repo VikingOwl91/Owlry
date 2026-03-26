@@ -1,5 +1,5 @@
-use super::{LaunchItem, Provider, ProviderType};
 use log::debug;
+use owlry_core::providers::{LaunchItem, Provider, ProviderType};
 use std::io::{self, BufRead};
 
 /// Provider for dmenu-style input from stdin

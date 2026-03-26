@@ -1,6 +1,6 @@
 [package]
 name = "owlry"
-version = "0.4.10"
+version = "1.0.0"
 edition = "2024"
 rust-version = "1.90"
 description = "A lightweight, owl-themed application launcher for Wayland"
@@ -11,8 +11,8 @@ keywords = ["launcher", "wayland", "gtk4", "linux"]
 categories = ["gui"]
 
 [dependencies]
-# Shared plugin API
-owlry-plugin-api = { path = "../owlry-plugin-api" }
+# Core backend library
+owlry-core = { path = "../owlry-core" }
 
 # GTK4 for the UI
 gtk4 = { version = "0.10", features = ["v4_12"] }
@@ -20,59 +20,31 @@ gtk4 = { version = "0.10", features = ["v4_12"] }
 # Layer shell support for Wayland overlay behavior
 gtk4-layer-shell = "0.7"
 
-# Fuzzy matching for search
-fuzzy-matcher = "0.3"
-
-# XDG desktop entry parsing
-freedesktop-desktop-entry = "0.7"
-
-# Directory utilities
-dirs = "5"
-
-# Low-level syscalls for stdin detection
+# Low-level syscalls for stdin detection (dmenu mode)
 libc = "0.2"
 
 # Logging
 log = "0.4"
 env_logger = "0.11"
 
-# Error handling
-thiserror = "2"
-
-# Configuration
+# Configuration (needed for config types used in app.rs/theme.rs)
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 
 # CLI argument parsing
 clap = { version = "4", features = ["derive"] }
 
-# Math expression evaluation (for Lua plugins)
-meval = { version = "0.2", optional = true }
-
-# JSON serialization for data persistence
+# JSON serialization (needed by plugin commands in CLI)
 serde_json = "1"
 
-# Date/time for frecency calculations
+# Date/time (needed by plugin commands in CLI)
 chrono = { version = "0.4", features = ["serde"] }
 
-# HTTP client (for Lua plugins)
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking"], optional = true }
+# Directory utilities (needed by plugin commands)
+dirs = "5"
 
-# Lua runtime for plugin system (optional - can be loaded dynamically via owlry-lua)
-mlua = { version = "0.10", features = ["lua54", "vendored", "send", "serialize"], optional = true }
-
-# Semantic versioning for plugin compatibility
+# Semantic versioning (needed by plugin commands)
 semver = "1"
-
-# Dynamic library loading for native plugins
-libloading = "0.8"
-
-# Desktop notifications (freedesktop notification spec)
-notify-rust = "4"
-
-[dev-dependencies]
-# Temporary directories for tests
-tempfile = "3"
 
 [build-dependencies]
 # GResource compilation for bundled icons
@@ -81,7 +53,6 @@ glib-build-tools = "0.20"
 [features]
 default = []
 # Enable verbose debug logging (for development/testing builds)
-dev-logging = []
+dev-logging = ["owlry-core/dev-logging"]
 # Enable built-in Lua runtime (disable to use external owlry-lua package)
-# Includes: mlua, meval (math), reqwest (http)
-lua = ["dep:mlua", "dep:meval", "dep:reqwest"]
+lua = ["owlry-core/lua"]

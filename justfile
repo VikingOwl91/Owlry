@@ -8,9 +8,21 @@ default:
 build:
     cargo build --workspace
 
-# Build core binary only
-build-core:
+# Build UI binary only
+build-ui:
     cargo build -p owlry
+
+# Build core daemon only
+build-daemon:
+    cargo build -p owlry-core
+
+# Build core daemon release
+release-daemon:
+    cargo build -p owlry-core --release
+
+# Run core daemon
+run-daemon *ARGS:
+    cargo run -p owlry-core -- {{ARGS}}
 
 # Build release
 release:
@@ -37,52 +49,26 @@ fmt:
 clean:
     cargo clean
 
-# Build a specific plugin (when plugins exist)
-plugin name:
-    cargo build -p owlry-plugin-{{name}} --release
-
-# Build all plugins
-plugins:
-    cargo build --workspace --release --exclude owlry
-
-# Install locally (core + plugins + runtimes)
+# Install locally (core + runtimes)
 install-local:
     #!/usr/bin/env bash
     set -euo pipefail
 
     echo "Building release..."
-    # Build core without embedded Lua (smaller binary)
+    # Build UI without embedded Lua (smaller binary)
     cargo build -p owlry --release --no-default-features
-    # Build plugins
-    cargo build --workspace --release --exclude owlry
+    # Build core daemon
+    cargo build -p owlry-core --release
+    # Build runtimes
+    cargo build -p owlry-lua -p owlry-rune --release
 
     echo "Creating directories..."
     sudo mkdir -p /usr/lib/owlry/plugins
     sudo mkdir -p /usr/lib/owlry/runtimes
 
-    echo "Cleaning up stale files..."
-    # Remove runtime files that may have ended up in plugins dir (from old installs)
-    sudo rm -f /usr/lib/owlry/plugins/libowlry_lua.so /usr/lib/owlry/plugins/libowlry_rune.so
-    # Remove old short-named plugin files (from old AUR packages before naming standardization)
-    sudo rm -f /usr/lib/owlry/plugins/libbookmarks.so /usr/lib/owlry/plugins/libcalculator.so \
-        /usr/lib/owlry/plugins/libclipboard.so /usr/lib/owlry/plugins/libemoji.so \
-        /usr/lib/owlry/plugins/libfilesearch.so /usr/lib/owlry/plugins/libmedia.so \
-        /usr/lib/owlry/plugins/libpomodoro.so /usr/lib/owlry/plugins/libscripts.so \
-        /usr/lib/owlry/plugins/libssh.so /usr/lib/owlry/plugins/libsystem.so \
-        /usr/lib/owlry/plugins/libsystemd.so /usr/lib/owlry/plugins/libweather.so \
-        /usr/lib/owlry/plugins/libwebsearch.so
-
-    echo "Installing core binary..."
+    echo "Installing binaries..."
     sudo install -Dm755 target/release/owlry /usr/bin/owlry
-
-    echo "Installing plugins..."
-    for plugin in target/release/libowlry_plugin_*.so; do
-        if [ -f "$plugin" ]; then
-            name=$(basename "$plugin")
-            sudo install -Dm755 "$plugin" "/usr/lib/owlry/plugins/$name"
-            echo "  → $name"
-        fi
-    done
+    sudo install -Dm755 target/release/owlry-core /usr/bin/owlry-core
 
     echo "Installing runtimes..."
     if [ -f "target/release/libowlry_lua.so" ]; then
@@ -94,11 +80,28 @@ install-local:
         echo "  → librune.so"
     fi
 
+    echo "Installing systemd service files..."
+    if [ -f "systemd/owlry-core.service" ]; then
+        sudo install -Dm644 systemd/owlry-core.service /usr/lib/systemd/user/owlry-core.service
+        echo "  → owlry-core.service"
+    fi
+    if [ -f "systemd/owlry-core.socket" ]; then
+        sudo install -Dm644 systemd/owlry-core.socket /usr/lib/systemd/user/owlry-core.socket
+        echo "  → owlry-core.socket"
+    fi
+
     echo ""
     echo "Installation complete!"
-    echo "  - /usr/bin/owlry"
-    echo "  - $(ls /usr/lib/owlry/plugins/*.so 2>/dev/null | wc -l) plugins"
+    echo "  - /usr/bin/owlry (UI)"
+    echo "  - /usr/bin/owlry-core (daemon)"
     echo "  - $(ls /usr/lib/owlry/runtimes/*.so 2>/dev/null | wc -l) runtimes"
+    echo "  - systemd: owlry-core.service, owlry-core.socket"
+    echo ""
+    echo "To start the daemon:"
+    echo "  systemctl --user enable --now owlry-core.service"
+    echo "  OR add 'exec-once = owlry-core' to your compositor config"
+    echo ""
+    echo "Note: Install plugins separately from the owlry-plugins repo."
 
 # === Release Management ===
 
@@ -126,7 +129,7 @@ show-versions:
 crate-version crate:
     @grep '^version' crates/{{crate}}/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/'
 
-# Bump a specific crate version (usage: just bump-crate owlry-plugin-calculator 0.2.0)
+# Bump a specific crate version (usage: just bump-crate owlry-core 0.2.0)
 bump-crate crate new_version:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -147,23 +150,6 @@ bump-crate crate new_version:
     git commit -m "chore({{crate}}): bump version to {{new_version}}"
     echo "{{crate}} bumped to {{new_version}}"
 
-# Bump all plugins to same version (usage: just bump-plugins 0.2.0)
-bump-plugins new_version:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    for toml in crates/owlry-plugin-*/Cargo.toml; do
-        crate=$(basename $(dirname "$toml"))
-        old=$(grep '^version' "$toml" | head -1 | sed 's/.*"\(.*\)"/\1/')
-        if [ "$old" != "{{new_version}}" ]; then
-            echo "Bumping $crate from $old to {{new_version}}"
-            sed -i 's/^version = ".*"/version = "{{new_version}}"/' "$toml"
-        fi
-    done
-    cargo check --workspace
-    git add crates/owlry-plugin-*/Cargo.toml Cargo.lock
-    git commit -m "chore(plugins): bump all plugins to {{new_version}}"
-    echo "All plugins bumped to {{new_version}}"
-
 # Bump meta-packages (no crate, just AUR version)
 bump-meta new_version:
     #!/usr/bin/env bash
@@ -179,35 +165,16 @@ bump-meta new_version:
     done
     echo "Meta-packages bumped to {{new_version}}"
 
-# Bump all crates (core + plugins + runtimes) to same version
+# Bump all crates (core UI + daemon + plugin-api + runtimes) to same version
 bump-all new_version:
     #!/usr/bin/env bash
     set -euo pipefail
-    # Bump core
-    toml="crates/owlry/Cargo.toml"
-    old=$(grep '^version' "$toml" | head -1 | sed 's/.*"\(.*\)"/\1/')
-    if [ "$old" != "{{new_version}}" ]; then
-        echo "Bumping owlry from $old to {{new_version}}"
-        sed -i 's/^version = ".*"/version = "{{new_version}}"/' "$toml"
-    fi
-    # Bump plugins (including plugin-api)
-    for toml in crates/owlry-plugin-*/Cargo.toml; do
+    for toml in crates/*/Cargo.toml; do
         crate=$(basename $(dirname "$toml"))
         old=$(grep '^version' "$toml" | head -1 | sed 's/.*"\(.*\)"/\1/')
         if [ "$old" != "{{new_version}}" ]; then
             echo "Bumping $crate from $old to {{new_version}}"
             sed -i 's/^version = ".*"/version = "{{new_version}}"/' "$toml"
-        fi
-    done
-    # Bump runtimes
-    for toml in crates/owlry-lua/Cargo.toml crates/owlry-rune/Cargo.toml; do
-        if [ -f "$toml" ]; then
-            crate=$(basename $(dirname "$toml"))
-            old=$(grep '^version' "$toml" | head -1 | sed 's/.*"\(.*\)"/\1/')
-            if [ "$old" != "{{new_version}}" ]; then
-                echo "Bumping $crate from $old to {{new_version}}"
-                sed -i 's/^version = ".*"/version = "{{new_version}}"/' "$toml"
-            fi
         fi
     done
     cargo check --workspace
@@ -243,7 +210,7 @@ tag:
     git push origin "v{{version}}"
     echo "Tag v{{version}} pushed"
 
-# Update AUR package (core)
+# Update AUR package (core UI)
 aur-update:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -271,7 +238,7 @@ aur-update:
     echo "AUR package updated. Review changes above."
     echo "Run 'just aur-publish' to commit and push."
 
-# Publish AUR package (core)
+# Publish AUR package (core UI)
 aur-publish:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -283,7 +250,7 @@ aur-publish:
 
     echo "AUR package v{{version}} published!"
 
-# Test AUR package build locally (core)
+# Test AUR package build locally (core UI)
 aur-test:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -298,7 +265,7 @@ aur-test:
 
 # === AUR Package Management (individual packages) ===
 
-# Update a specific AUR package (usage: just aur-update-pkg owlry-plugin-calculator)
+# Update a specific AUR package (usage: just aur-update-pkg owlry-core)
 aur-update-pkg pkg:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -311,7 +278,7 @@ aur-update-pkg pkg:
 
     url="https://somegit.dev/Owlibou/owlry"
 
-    # Determine crate version (unified versioning: all crates share same version)
+    # Determine crate version
     case "{{pkg}}" in
         owlry-meta-essentials|owlry-meta-tools|owlry-meta-widgets|owlry-meta-full)
             # Meta-packages use static versioning (1.0.0), only bump pkgrel for dep changes
@@ -336,7 +303,7 @@ aur-update-pkg pkg:
     sed -i "s/^pkgver=.*/pkgver=$crate_ver/" PKGBUILD
     sed -i 's/^pkgrel=.*/pkgrel=1/' PKGBUILD
 
-    # Update checksums (unified versioning: all packages use same version)
+    # Update checksums
     if grep -q "^source=" PKGBUILD; then
         echo "Updating checksums..."
         b2sum=$(curl -sL "$url/archive/v$crate_ver.tar.gz" | b2sum | cut -d' ' -f1)
@@ -384,38 +351,6 @@ aur-test-pkg pkg:
     echo "Package built successfully!"
     ls -lh *.pkg.tar.zst
 
-# Update all plugin AUR packages
-aur-update-plugins:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    for dir in aur/owlry-plugin-*/; do
-        pkg=$(basename "$dir")
-        echo "=== Updating $pkg ==="
-        just aur-update-pkg "$pkg"
-        echo ""
-    done
-
-# Publish all plugin AUR packages
-aur-publish-plugins:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    for dir in aur/owlry-plugin-*/; do
-        pkg=$(basename "$dir")
-        echo "=== Publishing $pkg ==="
-        just aur-publish-pkg "$pkg"
-        echo ""
-    done
-
-# Publish all meta-packages
-aur-publish-meta:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    for pkg in owlry-meta-essentials owlry-meta-tools owlry-meta-widgets owlry-meta-full; do
-        echo "=== Publishing $pkg ==="
-        just aur-publish-pkg "$pkg"
-    done
-    echo "All meta-packages published!"
-
 # List all AUR packages with their versions
 aur-status:
     #!/usr/bin/env bash
@@ -433,19 +368,15 @@ aur-status:
         fi
     done
 
-# Update ALL AUR packages (core + plugins + runtimes + meta)
+# Update ALL AUR packages (core + daemon + runtimes + meta)
 aur-update-all:
     #!/usr/bin/env bash
     set -euo pipefail
-    echo "=== Updating core ==="
+    echo "=== Updating core UI ==="
     just aur-update
     echo ""
-    echo "=== Updating plugins ==="
-    for dir in aur/owlry-plugin-*/; do
-        pkg=$(basename "$dir")
-        echo "--- $pkg ---"
-        just aur-update-pkg "$pkg"
-    done
+    echo "=== Updating core daemon ==="
+    just aur-update-pkg owlry-core
     echo ""
     echo "=== Updating runtimes ==="
     just aur-update-pkg owlry-lua
@@ -463,15 +394,11 @@ aur-update-all:
 aur-publish-all:
     #!/usr/bin/env bash
     set -euo pipefail
-    echo "=== Publishing core ==="
+    echo "=== Publishing core UI ==="
     just aur-publish
     echo ""
-    echo "=== Publishing plugins ==="
-    for dir in aur/owlry-plugin-*/; do
-        pkg=$(basename "$dir")
-        echo "--- $pkg ---"
-        just aur-publish-pkg "$pkg"
-    done
+    echo "=== Publishing core daemon ==="
+    just aur-publish-pkg owlry-core
     echo ""
     echo "=== Publishing runtimes ==="
     just aur-publish-pkg owlry-lua
@@ -506,39 +433,3 @@ release-core new_version: (bump new_version)
     echo ""
     echo "Core release v{{new_version}} prepared!"
     echo "Review AUR changes, then run 'just aur-publish'"
-
-# Full release workflow for everything (core + plugins + runtimes)
-# Usage: just release-all 0.5.0 0.3.0
-# First arg is core version, second is plugins/runtimes version
-release-all core_version plugin_version:
-    #!/usr/bin/env bash
-    set -euo pipefail
-
-    echo "=== Bumping versions ==="
-    just bump {{core_version}}
-    just bump-all {{plugin_version}}
-
-    echo ""
-    echo "=== Pushing to origin ==="
-    git push
-
-    echo ""
-    echo "=== Creating tag ==="
-    just tag
-
-    echo "Waiting for tag to propagate..."
-    sleep 2
-
-    echo ""
-    echo "=== Updating all AUR packages ==="
-    just aur-update-all
-
-    echo ""
-    echo "=========================================="
-    echo "Release prepared!"
-    echo "  Core: v{{core_version}}"
-    echo "  Plugins/Runtimes: v{{plugin_version}}"
-    echo ""
-    echo "Review changes with 'just aur-status'"
-    echo "Then publish with 'just aur-publish-all'"
-    echo "=========================================="

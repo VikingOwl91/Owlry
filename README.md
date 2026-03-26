@@ -10,12 +10,15 @@ A lightweight, owl-themed application launcher for Wayland, built with GTK4 and 
 
 ## Features
 
+- **Client/daemon architecture** — Instant window appearance, providers stay loaded in memory
 - **Modular plugin architecture** — Install only what you need
 - **Fuzzy search with tags** — Fast matching across names, descriptions, and category tags
 - **13 native plugins** — Calculator, clipboard, emoji, weather, media, and more
 - **Widget providers** — Weather, media controls, and pomodoro timer at the top of results
+- **Config profiles** — Named mode presets for different workflows
 - **Filter prefixes** — Scope searches with `:app`, `:cmd`, `:tag:development`, etc.
 - **Frecency ranking** — Frequently/recently used items rank higher
+- **Toggle behavior** — Bind one key to open/close the launcher
 - **GTK4 theming** — System theme by default, with 9 built-in themes
 - **Wayland native** — Uses Layer Shell for proper overlay behavior
 - **Extensible** — Create custom plugins in Lua or Rune
@@ -46,7 +49,7 @@ yay -S owlry-rune  # Rune runtime
 
 | Package | Description |
 |---------|-------------|
-| `owlry` | Core binary with applications and commands |
+| `owlry` | Core: UI client (`owlry`) and daemon (`owlry-core`) |
 | `owlry-plugin-calculator` | Math expressions (`= 5+3`) |
 | `owlry-plugin-system` | Shutdown, reboot, suspend, lock |
 | `owlry-plugin-ssh` | SSH hosts from `~/.ssh/config` |
@@ -80,8 +83,8 @@ sudo dnf install gtk4-devel gtk4-layer-shell-devel
 git clone https://somegit.dev/Owlibou/owlry.git
 cd owlry
 
-# Build core only
-cargo build --release -p owlry
+# Build core only (daemon + UI)
+cargo build --release -p owlry -p owlry-core
 
 # Build specific plugin
 cargo build --release -p owlry-plugin-calculator
@@ -90,11 +93,62 @@ cargo build --release -p owlry-plugin-calculator
 cargo build --release --workspace
 ```
 
-**Install plugins manually:**
+**Install locally:**
 ```bash
-sudo mkdir -p /usr/lib/owlry/plugins
-sudo cp target/release/libowlry_plugin_*.so /usr/lib/owlry/plugins/
+just install-local
 ```
+
+This installs both binaries, all plugins, runtimes, and the systemd service files.
+
+## Getting Started
+
+Owlry uses a client/daemon architecture. The daemon (`owlry-core`) loads providers and plugins into memory. The UI client (`owlry`) connects to the daemon over a Unix socket for instant results.
+
+### Starting the Daemon
+
+Choose one of three methods:
+
+**1. Compositor autostart (recommended for most users)**
+
+Add to your compositor config:
+
+```bash
+# Hyprland (~/.config/hypr/hyprland.conf)
+exec-once = owlry-core
+
+# Sway (~/.config/sway/config)
+exec owlry-core
+```
+
+**2. Systemd user service**
+
+```bash
+systemctl --user enable --now owlry-core.service
+```
+
+**3. Socket activation (auto-start on first use)**
+
+```bash
+systemctl --user enable owlry-core.socket
+```
+
+The daemon starts automatically when the UI client first connects. No manual startup needed.
+
+### Launching the UI
+
+Bind `owlry` to a key in your compositor:
+
+```bash
+# Hyprland
+bind = SUPER, Space, exec, owlry
+
+# Sway
+bindsym $mod+space exec owlry
+```
+
+Running `owlry` a second time while it is already open sends a toggle command — the window closes. This means a single keybind acts as open/close.
+
+If the daemon is not running when the UI launches, it will attempt to start it via systemd automatically.
 
 ## Usage
 
@@ -102,14 +156,46 @@ sudo cp target/release/libowlry_plugin_*.so /usr/lib/owlry/plugins/
 owlry                      # Launch with all providers
 owlry -m app               # Applications only
 owlry -m cmd               # PATH commands only
-owlry -p app,cmd           # Multiple specific providers
 owlry -m calc              # Calculator plugin only (if installed)
+owlry --profile dev        # Use a named profile from config
 owlry --help               # Show all options with examples
+```
+
+### Profiles
+
+Profiles are named sets of modes defined in your config:
+
+```toml
+[profiles.dev]
+modes = ["app", "cmd", "ssh"]
+
+[profiles.media]
+modes = ["media", "emoji"]
+
+[profiles.minimal]
+modes = ["app"]
+```
+
+Launch with a profile:
+
+```bash
+owlry --profile dev
+```
+
+You can bind different profiles to different keys:
+
+```bash
+# Hyprland
+bind = SUPER, Space, exec, owlry
+bind = SUPER, D, exec, owlry --profile dev
+bind = SUPER, M, exec, owlry --profile media
 ```
 
 ### dmenu Mode
 
-Owlry is dmenu-compatible. Pipe input for interactive selection - the selected item is printed to stdout (not executed), so you pipe the output to execute it:
+Owlry is dmenu-compatible. Pipe input for interactive selection — the selected item is printed to stdout (not executed), so you pipe the output to execute it.
+
+dmenu mode is self-contained: it does not use the daemon and works without `owlry-core` running.
 
 ```bash
 # Screenshot menu (execute selected command)
@@ -234,13 +320,20 @@ frecency_weight = 0.3  # 0.0-1.0
 
 # Web search engine: google, duckduckgo, bing, startpage, brave, ecosia
 search_engine = "duckduckgo"
+
+# Profiles: named sets of modes
+[profiles.dev]
+modes = ["app", "cmd", "ssh"]
+
+[profiles.media]
+modes = ["media", "emoji"]
 ```
 
 See `/usr/share/doc/owlry/config.example.toml` for all options with documentation.
 
 ## Plugin System
 
-Owlry uses a modular plugin architecture. Plugins are loaded from:
+Owlry uses a modular plugin architecture. Plugins are loaded by the daemon (`owlry-core`) from:
 
 - `/usr/lib/owlry/plugins/*.so` — System plugins (AUR packages)
 - `~/.config/owlry/plugins/` — User plugins (requires `owlry-lua` or `owlry-rune`)
@@ -345,16 +438,24 @@ Create `~/.config/owlry/themes/mytheme.css`:
 
 ## Architecture
 
+Owlry uses a client/daemon split:
+
 ```
-owlry (core)
-├── Applications provider (XDG .desktop files)
-├── Commands provider (PATH executables)
-├── Dmenu provider (pipe compatibility)
-└── Plugin loader
-    ├── /usr/lib/owlry/plugins/*.so  (native plugins)
-    ├── /usr/lib/owlry/runtimes/     (Lua/Rune runtimes)
-    └── ~/.config/owlry/plugins/     (user plugins)
+owlry-core (daemon)                    owlry (GTK4 UI client)
+├── Loads config + plugins             ├── Connects to daemon via Unix socket
+├── Applications provider              ├── Renders results in GTK4 window
+├── Commands provider                  ├── Handles keyboard input
+├── Plugin loader                      ├── Toggle: second launch closes window
+│   ├── /usr/lib/owlry/plugins/*.so    └── dmenu mode (self-contained, no daemon)
+│   ├── /usr/lib/owlry/runtimes/
+│   └── ~/.config/owlry/plugins/
+├── Frecency tracking
+└── IPC server (Unix socket)
+         │
+         └── $XDG_RUNTIME_DIR/owlry/owlry.sock
 ```
+
+The daemon keeps providers and plugins loaded in memory, so the UI appears instantly when launched. The UI client is a thin GTK4 layer that sends queries and receives results over the socket.
 
 For detailed architecture information, see [CLAUDE.md](CLAUDE.md).
 

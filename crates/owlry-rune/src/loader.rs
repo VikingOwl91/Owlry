@@ -8,7 +8,7 @@ use rune::{Context, Unit};
 
 use crate::api::{self, ProviderRegistration};
 use crate::manifest::PluginManifest;
-use crate::runtime::{compile_source, create_context, create_vm, SandboxConfig};
+use crate::runtime::{SandboxConfig, compile_source, create_context, create_vm};
 
 use owlry_plugin_api::PluginItem;
 
@@ -29,8 +29,8 @@ impl LoadedPlugin {
     /// Create and initialize a new plugin
     pub fn new(manifest: PluginManifest, path: PathBuf) -> Result<Self, String> {
         let sandbox = SandboxConfig::from_permissions(&manifest.permissions);
-        let context = create_context(&sandbox)
-            .map_err(|e| format!("Failed to create context: {}", e))?;
+        let context =
+            create_context(&sandbox).map_err(|e| format!("Failed to create context: {}", e))?;
 
         let entry_path = path.join(&manifest.plugin.entry);
         if !entry_path.exists() {
@@ -45,15 +45,14 @@ impl LoadedPlugin {
             .map_err(|e| format!("Failed to compile: {}", e))?;
 
         // Run the entry point to register providers
-        let mut vm = create_vm(&context, unit.clone())
-            .map_err(|e| format!("Failed to create VM: {}", e))?;
+        let mut vm =
+            create_vm(&context, unit.clone()).map_err(|e| format!("Failed to create VM: {}", e))?;
 
         // Execute the main function if it exists
         match vm.call(rune::Hash::type_hash(["main"]), ()) {
             Ok(result) => {
                 // Try to complete the execution
-                let _: () = rune::from_value(result)
-                    .unwrap_or(());
+                let _: () = rune::from_value(result).unwrap_or(());
             }
             Err(_) => {
                 // No main function is okay
@@ -111,7 +110,10 @@ pub fn discover_rune_plugins(plugins_dir: &Path) -> Result<HashMap<String, Loade
     let mut plugins = HashMap::new();
 
     if !plugins_dir.exists() {
-        log::debug!("Plugins directory does not exist: {}", plugins_dir.display());
+        log::debug!(
+            "Plugins directory does not exist: {}",
+            plugins_dir.display()
+        );
         return Ok(plugins);
     }
 
@@ -135,7 +137,11 @@ pub fn discover_rune_plugins(plugins_dir: &Path) -> Result<HashMap<String, Loade
         let manifest = match PluginManifest::load(&manifest_path) {
             Ok(m) => m,
             Err(e) => {
-                log::warn!("Failed to load manifest at {}: {}", manifest_path.display(), e);
+                log::warn!(
+                    "Failed to load manifest at {}: {}",
+                    manifest_path.display(),
+                    e
+                );
                 continue;
             }
         };

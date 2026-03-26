@@ -1,23 +1,20 @@
+use crate::backend::SearchBackend;
 use crate::cli::CliArgs;
-use crate::config::Config;
-use crate::data::FrecencyStore;
-use crate::filter::ProviderFilter;
-use crate::paths;
-use crate::plugins::native_loader::NativePluginLoader;
-#[cfg(feature = "lua")]
-use crate::plugins::PluginManager;
-use crate::providers::native_provider::NativeProvider;
-use crate::providers::Provider;  // For name() method
-use crate::providers::ProviderManager;
+use crate::client::CoreClient;
+use crate::providers::DmenuProvider;
 use crate::theme;
 use crate::ui::MainWindow;
 use gtk4::prelude::*;
-use gtk4::{gio, Application, CssProvider};
+use gtk4::{Application, CssProvider, gio};
 use gtk4_layer_shell::{Edge, Layer, LayerShell};
 use log::{debug, info, warn};
+use owlry_core::config::Config;
+use owlry_core::data::FrecencyStore;
+use owlry_core::filter::ProviderFilter;
+use owlry_core::paths;
+use owlry_core::providers::{Provider, ProviderManager, ProviderType};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 
 const APP_ID: &str = "org.owlry.launcher";
 
@@ -39,7 +36,7 @@ impl OwlryApp {
 
     pub fn run(&self) -> i32 {
         // Use empty args since clap already parsed our CLI arguments.
-        // This prevents GTK from trying to parse --mode, --providers, etc.
+        // This prevents GTK from trying to parse --mode, --profile, etc.
         self.app.run_with_args(&[] as &[&str]).into()
     }
 
@@ -52,33 +49,69 @@ impl OwlryApp {
 
         let config = Rc::new(RefCell::new(Config::load_or_default()));
 
-        // Load native plugins from /usr/lib/owlry/plugins/
-        let native_providers = Self::load_native_plugins(&config.borrow());
+        // Build backend based on mode
+        let dmenu_mode = DmenuProvider::has_stdin_data();
 
-        // Create provider manager with native plugins
-        #[cfg(feature = "lua")]
-        let mut provider_manager = ProviderManager::with_native_plugins(native_providers);
-        #[cfg(not(feature = "lua"))]
-        let provider_manager = ProviderManager::with_native_plugins(native_providers);
+        let backend = if dmenu_mode {
+            // dmenu mode: local ProviderManager, no daemon
+            let mut dmenu = DmenuProvider::new();
+            dmenu.enable();
+            let core_providers: Vec<Box<dyn Provider>> = vec![Box::new(dmenu)];
+            let provider_manager = ProviderManager::new(core_providers, Vec::new());
+            let frecency = FrecencyStore::load_or_default();
 
-        // Load Lua plugins if enabled (requires lua feature)
-        #[cfg(feature = "lua")]
-        if config.borrow().plugins.enabled {
-            Self::load_lua_plugins(&mut provider_manager, &config.borrow());
-        }
+            SearchBackend::Local {
+                providers: Box::new(provider_manager),
+                frecency,
+            }
+        } else {
+            // Normal mode: connect to daemon via IPC
+            match CoreClient::connect_or_start() {
+                Ok(client) => {
+                    info!("Connected to owlry-core daemon");
+                    SearchBackend::Daemon(client)
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to connect to daemon ({}), falling back to local providers",
+                        e
+                    );
+                    Self::create_local_backend(&config.borrow())
+                }
+            }
+        };
 
-        let providers = Rc::new(RefCell::new(provider_manager));
-        let frecency = Rc::new(RefCell::new(FrecencyStore::load_or_default()));
+        let backend = Rc::new(RefCell::new(backend));
 
-        // Create filter from CLI args and config
-        let filter = ProviderFilter::new(
-            args.mode.clone(),
-            args.providers.clone(),
-            &config.borrow().providers,
-        );
+        // Create filter from CLI args, profile, and config
+        let resolved_modes = resolve_modes(args, &config.borrow());
+        let filter = if let Some(modes) = resolved_modes {
+            // CLI --mode or --profile specified explicit modes
+            let provider_types: Vec<ProviderType> = modes
+                .iter()
+                .map(|s| ProviderFilter::mode_string_to_provider_type(s))
+                .collect();
+            if provider_types.len() == 1 {
+                ProviderFilter::new(
+                    Some(provider_types[0].clone()),
+                    None,
+                    &config.borrow().providers,
+                )
+            } else {
+                ProviderFilter::new(None, Some(provider_types), &config.borrow().providers)
+            }
+        } else {
+            ProviderFilter::new(None, None, &config.borrow().providers)
+        };
         let filter = Rc::new(RefCell::new(filter));
 
-        let window = MainWindow::new(app, config.clone(), providers.clone(), frecency.clone(), filter.clone(), args.prompt.clone());
+        let window = MainWindow::new(
+            app,
+            config.clone(),
+            backend.clone(),
+            filter.clone(),
+            args.prompt.clone(),
+        );
 
         // Set up layer shell for Wayland overlay behavior
         window.init_layer_shell();
@@ -104,97 +137,47 @@ impl OwlryApp {
         window.present();
     }
 
-    /// Load native (.so) plugins from the system plugins directory
-    /// Returns NativeProvider instances that can be passed to ProviderManager
-    fn load_native_plugins(config: &Config) -> Vec<NativeProvider> {
-        let mut loader = NativePluginLoader::new();
+    /// Create a local backend as fallback when daemon is unavailable.
+    /// Loads native plugins and creates providers locally.
+    fn create_local_backend(config: &Config) -> SearchBackend {
+        use owlry_core::plugins::native_loader::NativePluginLoader;
+        use owlry_core::providers::native_provider::NativeProvider;
+        use owlry_core::providers::{ApplicationProvider, CommandProvider};
+        use std::sync::Arc;
 
-        // Set disabled plugins from config
+        // Load native plugins
+        let mut loader = NativePluginLoader::new();
         loader.set_disabled(config.plugins.disabled_plugins.clone());
 
-        // Discover and load plugins
-        match loader.discover() {
-            Ok(count) => {
-                if count == 0 {
-                    debug!("No native plugins found in {}",
-                           crate::plugins::native_loader::SYSTEM_PLUGINS_DIR);
-                    return Vec::new();
+        let native_providers: Vec<NativeProvider> = match loader.discover() {
+            Ok(count) if count > 0 => {
+                info!("Discovered {} native plugin(s) for local fallback", count);
+                let plugins: Vec<Arc<owlry_core::plugins::native_loader::NativePlugin>> =
+                    loader.into_plugins();
+                let mut providers = Vec::new();
+                for plugin in plugins {
+                    for provider_info in &plugin.providers {
+                        let provider =
+                            NativeProvider::new(Arc::clone(&plugin), provider_info.clone());
+                        providers.push(provider);
+                    }
                 }
-                info!("Discovered {} native plugin(s)", count);
+                providers
             }
-            Err(e) => {
-                warn!("Failed to discover native plugins: {}", e);
-                return Vec::new();
-            }
-        }
-
-        // Get all plugins and create providers
-        let plugins: Vec<Arc<crate::plugins::native_loader::NativePlugin>> =
-            loader.into_plugins();
-
-        // Create NativeProvider instances from loaded plugins
-        let mut providers = Vec::new();
-        for plugin in plugins {
-            for provider_info in &plugin.providers {
-                let provider = NativeProvider::new(Arc::clone(&plugin), provider_info.clone());
-                info!("Created native provider: {} ({})", provider.name(), provider.type_id());
-                providers.push(provider);
-            }
-        }
-
-        info!("Loaded {} provider(s) from native plugins", providers.len());
-        providers
-    }
-
-    /// Load Lua plugins from the user plugins directory (requires lua feature)
-    #[cfg(feature = "lua")]
-    fn load_lua_plugins(provider_manager: &mut ProviderManager, config: &Config) {
-        let plugins_dir = match paths::plugins_dir() {
-            Some(dir) => dir,
-            None => {
-                warn!("Could not determine plugins directory");
-                return;
-            }
+            _ => Vec::new(),
         };
 
-        // Get owlry version from Cargo.toml at compile time
-        let owlry_version = env!("CARGO_PKG_VERSION");
+        let core_providers: Vec<Box<dyn Provider>> = vec![
+            Box::new(ApplicationProvider::new()),
+            Box::new(CommandProvider::new()),
+        ];
 
-        let mut plugin_manager = PluginManager::new(plugins_dir, owlry_version);
+        let provider_manager = ProviderManager::new(core_providers, native_providers);
+        let frecency = FrecencyStore::load_or_default();
 
-        // Set disabled plugins from config
-        plugin_manager.set_disabled(config.plugins.disabled_plugins.clone());
-
-        // Discover plugins
-        match plugin_manager.discover() {
-            Ok(count) => {
-                if count == 0 {
-                    debug!("No Lua plugins found");
-                    return;
-                }
-                info!("Discovered {} Lua plugin(s)", count);
-            }
-            Err(e) => {
-                warn!("Failed to discover Lua plugins: {}", e);
-                return;
-            }
-        }
-
-        // Initialize all plugins (load Lua code)
-        let init_errors = plugin_manager.initialize_all();
-        for error in &init_errors {
-            warn!("Plugin initialization error: {}", error);
-        }
-
-        // Create providers from initialized plugins
-        let plugin_providers = plugin_manager.create_providers();
-        let provider_count = plugin_providers.len();
-
-        // Add plugin providers to the main provider manager
-        provider_manager.add_providers(plugin_providers);
-
-        if provider_count > 0 {
-            info!("Loaded {} provider(s) from Lua plugins", provider_count);
+        SearchBackend::Local {
+            providers: Box::new(provider_manager),
+            frecency,
         }
     }
 
@@ -254,16 +237,17 @@ impl OwlryApp {
 
         // 3. Load user's custom stylesheet if exists
         if let Some(custom_path) = paths::custom_style_file()
-            && custom_path.exists() {
-                let custom_provider = CssProvider::new();
-                custom_provider.load_from_path(&custom_path);
-                gtk4::style_context_add_provider_for_display(
-                    &display,
-                    &custom_provider,
-                    gtk4::STYLE_PROVIDER_PRIORITY_USER,
-                );
-                debug!("Loaded custom CSS from {:?}", custom_path);
-            }
+            && custom_path.exists()
+        {
+            let custom_provider = CssProvider::new();
+            custom_provider.load_from_path(&custom_path);
+            gtk4::style_context_add_provider_for_display(
+                &display,
+                &custom_provider,
+                gtk4::STYLE_PROVIDER_PRIORITY_USER,
+            );
+            debug!("Loaded custom CSS from {:?}", custom_path);
+        }
 
         // 4. Inject config variables (highest priority for overrides)
         let vars_css = theme::generate_variables_css(&config.appearance);
@@ -276,4 +260,22 @@ impl OwlryApp {
         );
         debug!("Injected config CSS variables");
     }
+}
+
+/// Resolve which modes to enable based on CLI args and config profiles.
+///
+/// Priority: `--mode` > `--profile` > default (all providers from config).
+/// Returns `None` when no explicit mode selection was made.
+fn resolve_modes(args: &CliArgs, config: &Config) -> Option<Vec<String>> {
+    if let Some(ref mode) = args.mode {
+        return Some(vec![mode.to_string()]);
+    }
+    if let Some(ref profile_name) = args.profile {
+        if let Some(profile) = config.profiles.get(profile_name) {
+            return Some(profile.modes.clone());
+        }
+        eprintln!("Unknown profile: {}", profile_name);
+        std::process::exit(1);
+    }
+    None
 }

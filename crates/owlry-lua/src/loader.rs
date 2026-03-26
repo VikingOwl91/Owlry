@@ -8,7 +8,7 @@ use owlry_plugin_api::PluginItem;
 
 use crate::api;
 use crate::manifest::PluginManifest;
-use crate::runtime::{create_lua_runtime, load_file, SandboxConfig};
+use crate::runtime::{SandboxConfig, create_lua_runtime, load_file};
 
 /// Provider registration info from Lua
 #[derive(Debug, Clone)]
@@ -77,11 +77,13 @@ impl LoadedPlugin {
         // Load the entry point file
         let entry_path = self.path.join(&self.manifest.plugin.entry);
         if !entry_path.exists() {
-            return Err(format!("Entry point '{}' not found", self.manifest.plugin.entry));
+            return Err(format!(
+                "Entry point '{}' not found",
+                self.manifest.plugin.entry
+            ));
         }
 
-        load_file(&lua, &entry_path)
-            .map_err(|e| format!("Failed to load entry point: {}", e))?;
+        load_file(&lua, &entry_path).map_err(|e| format!("Failed to load entry point: {}", e))?;
 
         self.lua = Some(lua);
         Ok(())
@@ -89,7 +91,9 @@ impl LoadedPlugin {
 
     /// Get provider registrations from this plugin
     pub fn get_provider_registrations(&self) -> Result<Vec<ProviderRegistration>, String> {
-        let lua = self.lua.as_ref()
+        let lua = self
+            .lua
+            .as_ref()
             .ok_or_else(|| "Plugin not initialized".to_string())?;
 
         api::get_provider_registrations(lua)
@@ -98,25 +102,33 @@ impl LoadedPlugin {
 
     /// Call a provider's refresh function
     pub fn call_provider_refresh(&self, provider_name: &str) -> Result<Vec<PluginItem>, String> {
-        let lua = self.lua.as_ref()
+        let lua = self
+            .lua
+            .as_ref()
             .ok_or_else(|| "Plugin not initialized".to_string())?;
 
-        api::call_refresh(lua, provider_name)
-            .map_err(|e| format!("Refresh failed: {}", e))
+        api::call_refresh(lua, provider_name).map_err(|e| format!("Refresh failed: {}", e))
     }
 
     /// Call a provider's query function
-    pub fn call_provider_query(&self, provider_name: &str, query: &str) -> Result<Vec<PluginItem>, String> {
-        let lua = self.lua.as_ref()
+    pub fn call_provider_query(
+        &self,
+        provider_name: &str,
+        query: &str,
+    ) -> Result<Vec<PluginItem>, String> {
+        let lua = self
+            .lua
+            .as_ref()
             .ok_or_else(|| "Plugin not initialized".to_string())?;
 
-        api::call_query(lua, provider_name, query)
-            .map_err(|e| format!("Query failed: {}", e))
+        api::call_query(lua, provider_name, query).map_err(|e| format!("Query failed: {}", e))
     }
 }
 
 /// Discover plugins in a directory
-pub fn discover_plugins(plugins_dir: &Path) -> Result<HashMap<String, (PluginManifest, PathBuf)>, String> {
+pub fn discover_plugins(
+    plugins_dir: &Path,
+) -> Result<HashMap<String, (PluginManifest, PathBuf)>, String> {
     let mut plugins = HashMap::new();
 
     if !plugins_dir.exists() {
@@ -146,13 +158,21 @@ pub fn discover_plugins(plugins_dir: &Path) -> Result<HashMap<String, (PluginMan
             Ok(manifest) => {
                 let id = manifest.plugin.id.clone();
                 if plugins.contains_key(&id) {
-                    eprintln!("owlry-lua: Duplicate plugin ID '{}', skipping {}", id, path.display());
+                    eprintln!(
+                        "owlry-lua: Duplicate plugin ID '{}', skipping {}",
+                        id,
+                        path.display()
+                    );
                     continue;
                 }
                 plugins.insert(id, (manifest, path));
             }
             Err(e) => {
-                eprintln!("owlry-lua: Failed to load plugin at {}: {}", path.display(), e);
+                eprintln!(
+                    "owlry-lua: Failed to load plugin at {}: {}",
+                    path.display(),
+                    e
+                );
             }
         }
     }

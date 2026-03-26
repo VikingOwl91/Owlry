@@ -1,9 +1,6 @@
-use crate::config::Config;
-use crate::data::FrecencyStore;
-use crate::filter::ProviderFilter;
-use crate::providers::{LaunchItem, ProviderManager, ProviderType};
-use crate::ui::submenu;
+use crate::backend::SearchBackend;
 use crate::ui::ResultRow;
+use crate::ui::submenu;
 use gtk4::gdk::Key;
 use gtk4::prelude::*;
 use gtk4::{
@@ -11,6 +8,9 @@ use gtk4::{
     ListBoxRow, Orientation, ScrolledWindow, SelectionMode, ToggleButton,
 };
 use log::info;
+use owlry_core::config::Config;
+use owlry_core::filter::ProviderFilter;
+use owlry_core::providers::{LaunchItem, ProviderType};
 
 #[cfg(feature = "dev-logging")]
 use log::debug;
@@ -56,8 +56,7 @@ pub struct MainWindow {
     results_list: ListBox,
     scrolled: ScrolledWindow,
     config: Rc<RefCell<Config>>,
-    providers: Rc<RefCell<ProviderManager>>,
-    frecency: Rc<RefCell<FrecencyStore>>,
+    backend: Rc<RefCell<SearchBackend>>,
     current_results: Rc<RefCell<Vec<LaunchItem>>>,
     filter: Rc<RefCell<ProviderFilter>>,
     mode_label: Label,
@@ -81,8 +80,7 @@ impl MainWindow {
     pub fn new(
         app: &Application,
         config: Rc<RefCell<Config>>,
-        providers: Rc<RefCell<ProviderManager>>,
-        frecency: Rc<RefCell<FrecencyStore>>,
+        backend: Rc<RefCell<SearchBackend>>,
         filter: Rc<RefCell<ProviderFilter>>,
         custom_prompt: Option<String>,
     ) -> Self {
@@ -150,7 +148,9 @@ impl MainWindow {
         header_box.append(&filter_tabs);
 
         // Search entry with dynamic placeholder (or custom prompt if provided)
-        let placeholder = custom_prompt.clone().unwrap_or_else(|| Self::build_placeholder(&filter.borrow()));
+        let placeholder = custom_prompt
+            .clone()
+            .unwrap_or_else(|| Self::build_placeholder(&filter.borrow()));
         let search_entry = Entry::builder()
             .placeholder_text(&placeholder)
             .hexpand(true)
@@ -199,8 +199,8 @@ impl MainWindow {
 
         let lazy_state = Rc::new(RefCell::new(LazyLoadState::default()));
 
-        // Check if we're in dmenu mode (stdin pipe input)
-        let is_dmenu_mode = providers.borrow().is_dmenu_mode();
+        // Check if we're in dmenu mode
+        let is_dmenu_mode = backend.borrow().is_dmenu_mode();
 
         let main_window = Self {
             window,
@@ -208,8 +208,7 @@ impl MainWindow {
             results_list,
             scrolled,
             config,
-            providers,
-            frecency,
+            backend,
             current_results: Rc::new(RefCell::new(Vec::new())),
             filter,
             mode_label,
@@ -230,46 +229,43 @@ impl MainWindow {
         // Ensure search entry has focus when window is shown
         main_window.search_entry.grab_focus();
 
-        // Schedule widget refresh after window is shown
+        // Schedule widget refresh after window is shown (only for local backend)
         // Widget providers (weather, media, pomodoro) may make network/dbus calls
         // We defer this to avoid blocking startup, then re-render results
-        let providers_for_refresh = main_window.providers.clone();
+        let backend_for_refresh = main_window.backend.clone();
         let search_entry_for_refresh = main_window.search_entry.clone();
         gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(50), move || {
-            providers_for_refresh.borrow_mut().refresh_widgets();
+            backend_for_refresh.borrow_mut().refresh_widgets();
             // Trigger UI update by emitting changed signal on search entry
             search_entry_for_refresh.emit_by_name::<()>("changed", &[]);
         });
 
-        // Set up periodic widget auto-refresh (every 5 seconds)
-        // Always refresh widgets (for pomodoro timer/notifications), but only update UI when visible
-        let providers_for_auto = main_window.providers.clone();
+        // Set up periodic widget auto-refresh (every 5 seconds) — local backend only
+        // In daemon mode, the daemon handles widget refresh and results come via IPC
+        if main_window.is_dmenu_mode {
+            // dmenu typically has no widgets, but this is harmless
+        }
+        let backend_for_auto = main_window.backend.clone();
         let current_results_for_auto = main_window.current_results.clone();
         let submenu_state_for_auto = main_window.submenu_state.clone();
+        let search_entry_for_auto = main_window.search_entry.clone();
         gtk4::glib::timeout_add_local(std::time::Duration::from_secs(5), move || {
-            // Skip UI updates if in submenu, but still refresh providers for notifications
             let in_submenu = submenu_state_for_auto.borrow().active;
 
-            // Always refresh widget providers (pomodoro needs this for timer/notifications)
-            providers_for_auto.borrow_mut().refresh_widgets();
+            // For local backend: refresh widgets (daemon handles this itself)
+            backend_for_auto.borrow_mut().refresh_widgets();
 
-            // Only update UI if not in submenu and widgets are visible
+            // For daemon backend: re-query to get updated widget data
             if !in_submenu {
-                // Collect widget type_ids first to avoid borrow conflicts
-                let widget_ids: Vec<String> = providers_for_auto
-                    .borrow()
-                    .widget_type_ids()
-                    .map(|s| s.to_string())
-                    .collect();
-
-                let mut results = current_results_for_auto.borrow_mut();
-                for type_id in &widget_ids {
-                    if let Some(new_item) = providers_for_auto.borrow().get_widget_item(type_id)
-                        && let Some(existing) = results.iter_mut().find(|i| i.id == new_item.id)
-                    {
-                        existing.name = new_item.name;
-                        existing.description = new_item.description;
-                    }
+                if let SearchBackend::Daemon(_) = &*backend_for_auto.borrow() {
+                    // Trigger a re-search to pick up updated widget items from daemon
+                    search_entry_for_auto.emit_by_name::<()>("changed", &[]);
+                } else {
+                    // Local backend: update widget items in-place (legacy behavior)
+                    // This path is only hit in dmenu mode which doesn't have widgets,
+                    // but keep it for completeness.
+                    let _results = current_results_for_auto.borrow();
+                    // No-op for local mode without widget access
                 }
             }
             gtk4::glib::ControlFlow::Continue
@@ -299,8 +295,16 @@ impl MainWindow {
             // Show number hint in the label for first 9 tabs (using superscript)
             let label = if idx < 9 {
                 let superscript = match idx + 1 {
-                    1 => "¹", 2 => "²", 3 => "³", 4 => "⁴", 5 => "⁵",
-                    6 => "⁶", 7 => "⁷", 8 => "⁸", 9 => "⁹", _ => "",
+                    1 => "¹",
+                    2 => "²",
+                    3 => "³",
+                    4 => "⁴",
+                    5 => "⁵",
+                    6 => "⁶",
+                    7 => "⁷",
+                    8 => "⁸",
+                    9 => "⁹",
+                    _ => "",
                 };
                 format!("{}{}", base_label, superscript)
             } else {
@@ -408,7 +412,7 @@ impl MainWindow {
     }
 
     /// Build dynamic hints based on enabled providers
-    fn build_hints(config: &crate::config::ProvidersConfig) -> String {
+    fn build_hints(config: &owlry_core::config::ProvidersConfig) -> String {
         let mut parts: Vec<String> = vec![
             "Tab: cycle".to_string(),
             "↑↓: nav".to_string(),
@@ -500,7 +504,11 @@ impl MainWindow {
         actions: Vec<LaunchItem>,
     ) {
         #[cfg(feature = "dev-logging")]
-        debug!("[UI] Entering submenu: {} ({} actions)", display_name, actions.len());
+        debug!(
+            "[UI] Entering submenu: {} ({} actions)",
+            display_name,
+            actions.len()
+        );
 
         // Save current state
         {
@@ -566,10 +574,9 @@ impl MainWindow {
 
     fn setup_signals(&self) {
         // Search input handling with prefix detection and debouncing
-        let providers = self.providers.clone();
+        let backend = self.backend.clone();
         let results_list = self.results_list.clone();
         let config = self.config.clone();
-        let frecency = self.frecency.clone();
         let current_results = self.current_results.clone();
         let filter = self.filter.clone();
         let mode_label = self.mode_label.clone();
@@ -661,10 +668,9 @@ impl MainWindow {
             }
 
             // Clone references for the debounced closure
-            let providers = providers.clone();
+            let backend = backend.clone();
             let results_list = results_list.clone();
             let config = config.clone();
-            let frecency = frecency.clone();
             let current_results = current_results.clone();
             let filter = filter.clone();
             let lazy_state = lazy_state.clone();
@@ -679,25 +685,15 @@ impl MainWindow {
 
                     let cfg = config.borrow();
                     let max_results = cfg.general.max_results;
-                    let frecency_weight = cfg.providers.frecency_weight;
-                    let use_frecency = cfg.providers.frecency;
                     drop(cfg);
 
-                    let results: Vec<LaunchItem> = if use_frecency {
-                        providers
-                            .borrow_mut()
-                            .search_with_frecency(&parsed.query, max_results, &filter.borrow(), &frecency.borrow(), frecency_weight, parsed.tag_filter.as_deref())
-                            .into_iter()
-                            .map(|(item, _)| item)
-                            .collect()
-                    } else {
-                        providers
-                            .borrow()
-                            .search_filtered(&parsed.query, max_results, &filter.borrow())
-                            .into_iter()
-                            .map(|(item, _)| item)
-                            .collect()
-                    };
+                    let results = backend.borrow_mut().search_with_tag(
+                        &parsed.query,
+                        max_results,
+                        &filter.borrow(),
+                        &config.borrow(),
+                        parsed.tag_filter.as_deref(),
+                    );
 
                     // Clear existing results
                     while let Some(child) = results_list.first_child() {
@@ -723,7 +719,8 @@ impl MainWindow {
                     }
 
                     // current_results holds only what's displayed (for selection/activation)
-                    *current_results.borrow_mut() = results.into_iter().take(initial_count).collect();
+                    *current_results.borrow_mut() =
+                        results.into_iter().take(initial_count).collect();
                 },
             );
 
@@ -734,8 +731,7 @@ impl MainWindow {
         let results_list_for_activate = self.results_list.clone();
         let current_results_for_activate = self.current_results.clone();
         let config_for_activate = self.config.clone();
-        let frecency_for_activate = self.frecency.clone();
-        let providers_for_activate = self.providers.clone();
+        let backend_for_activate = self.backend.clone();
         let window_for_activate = self.window.clone();
         let submenu_state_for_activate = self.submenu_state.clone();
         let mode_label_for_activate = self.mode_label.clone();
@@ -755,15 +751,19 @@ impl MainWindow {
                 if let Some(item) = results.get(index) {
                     // Check if this is a submenu item and query the plugin for actions
                     let submenu_result = if submenu::is_submenu_item(item) {
-                        if let Some((plugin_id, data)) = submenu::parse_submenu_command(&item.command) {
+                        if let Some((plugin_id, data)) =
+                            submenu::parse_submenu_command(&item.command)
+                        {
                             // Clone values before dropping borrow
                             let plugin_id = plugin_id.to_string();
                             let data = data.to_string();
                             let display_name = item.name.clone();
                             drop(results); // Release borrow before querying
-                            providers_for_activate
-                                .borrow()
-                                .query_submenu_actions(&plugin_id, &data, &display_name)
+                            backend_for_activate.borrow_mut().query_submenu_actions(
+                                &plugin_id,
+                                &data,
+                                &display_name,
+                            )
                         } else {
                             drop(results);
                             None
@@ -791,8 +791,7 @@ impl MainWindow {
                             let should_close = Self::handle_item_action(
                                 &item,
                                 &config_for_activate.borrow(),
-                                &frecency_for_activate,
-                                &providers_for_activate,
+                                &backend_for_activate,
                             );
                             if should_close {
                                 // In dmenu mode, exit with success code
@@ -863,7 +862,10 @@ impl MainWindow {
             let shift = modifiers.contains(gtk4::gdk::ModifierType::SHIFT_MASK);
 
             #[cfg(feature = "dev-logging")]
-            debug!("[UI] Key pressed: {:?} (ctrl={}, shift={})", key, ctrl, shift);
+            debug!(
+                "[UI] Key pressed: {:?} (ctrl={}, shift={})",
+                key, ctrl, shift
+            );
 
             match key {
                 Key::Escape => {
@@ -926,10 +928,11 @@ impl MainWindow {
                     if let Some(selected) = results_list.selected_row() {
                         let prev_index = selected.index() - 1;
                         if prev_index >= 0
-                            && let Some(prev_row) = results_list.row_at_index(prev_index) {
-                                results_list.select_row(Some(&prev_row));
-                                Self::scroll_to_row(&scrolled, &results_list, &prev_row);
-                            }
+                            && let Some(prev_row) = results_list.row_at_index(prev_index)
+                        {
+                            results_list.select_row(Some(&prev_row));
+                            Self::scroll_to_row(&scrolled, &results_list, &prev_row);
+                        }
                     }
                     gtk4::glib::Propagation::Stop
                 }
@@ -961,8 +964,17 @@ impl MainWindow {
                     gtk4::glib::Propagation::Stop
                 }
                 // Ctrl+1-9 toggle specific providers based on tab order (only when not in submenu)
-                Key::_1 | Key::_2 | Key::_3 | Key::_4 | Key::_5 |
-                Key::_6 | Key::_7 | Key::_8 | Key::_9 if ctrl => {
+                Key::_1
+                | Key::_2
+                | Key::_3
+                | Key::_4
+                | Key::_5
+                | Key::_6
+                | Key::_7
+                | Key::_8
+                | Key::_9
+                    if ctrl =>
+                {
                     info!("[UI] Ctrl+number detected: {:?}", key);
                     if !submenu_state.borrow().active {
                         let idx = match key {
@@ -988,7 +1000,11 @@ impl MainWindow {
                                 &mode_label,
                             );
                         } else {
-                            info!("[UI] No provider at index {}, tab_order len={}", idx, tab_order.len());
+                            info!(
+                                "[UI] No provider at index {}, tab_order len={}",
+                                idx,
+                                tab_order.len()
+                            );
                         }
                     }
                     gtk4::glib::Propagation::Stop
@@ -1002,8 +1018,7 @@ impl MainWindow {
         // Double-click to launch
         let current_results = self.current_results.clone();
         let config = self.config.clone();
-        let frecency = self.frecency.clone();
-        let providers = self.providers.clone();
+        let backend = self.backend.clone();
         let window = self.window.clone();
         let submenu_state = self.submenu_state.clone();
         let results_list_for_click = self.results_list.clone();
@@ -1023,8 +1038,8 @@ impl MainWindow {
                         let data = data.to_string();
                         let display_name = item.name.clone();
                         drop(results);
-                        providers
-                            .borrow()
+                        backend
+                            .borrow_mut()
                             .query_submenu_actions(&plugin_id, &data, &display_name)
                     } else {
                         drop(results);
@@ -1050,7 +1065,8 @@ impl MainWindow {
                     let results = current_results.borrow();
                     if let Some(item) = results.get(index).cloned() {
                         drop(results);
-                        let should_close = Self::handle_item_action(&item, &config.borrow(), &frecency, &providers);
+                        let should_close =
+                            Self::handle_item_action(&item, &config.borrow(), &backend);
                         if should_close {
                             window.close();
                         } else {
@@ -1097,7 +1113,11 @@ impl MainWindow {
             }
         } else if current.len() == 1 {
             let idx = tab_order.iter().position(|p| p == &current[0]).unwrap_or(0);
-            let at_boundary = if forward { idx == tab_order.len() - 1 } else { idx == 0 };
+            let at_boundary = if forward {
+                idx == tab_order.len() - 1
+            } else {
+                idx == 0
+            };
 
             if at_boundary {
                 // At boundary, go back to "All" mode
@@ -1166,26 +1186,14 @@ impl MainWindow {
     fn update_results(&self, query: &str) {
         let cfg = self.config.borrow();
         let max_results = cfg.general.max_results;
-        let frecency_weight = cfg.providers.frecency_weight;
-        let use_frecency = cfg.providers.frecency;
         drop(cfg);
 
-        // Fetch all matching results (up to max_results)
-        let results: Vec<LaunchItem> = if use_frecency {
-            self.providers
-                .borrow_mut()
-                .search_with_frecency(query, max_results, &self.filter.borrow(), &self.frecency.borrow(), frecency_weight, None)
-                .into_iter()
-                .map(|(item, _)| item)
-                .collect()
-        } else {
-            self.providers
-                .borrow()
-                .search_filtered(query, max_results, &self.filter.borrow())
-                .into_iter()
-                .map(|(item, _)| item)
-                .collect()
-        };
+        let results = self.backend.borrow_mut().search(
+            query,
+            max_results,
+            &self.filter.borrow(),
+            &self.config.borrow(),
+        );
 
         // Clear existing results
         while let Some(child) = self.results_list.first_child() {
@@ -1284,32 +1292,32 @@ impl MainWindow {
     fn handle_item_action(
         item: &LaunchItem,
         config: &Config,
-        frecency: &Rc<RefCell<FrecencyStore>>,
-        providers: &Rc<RefCell<ProviderManager>>,
+        backend: &Rc<RefCell<SearchBackend>>,
     ) -> bool {
         // Check for plugin internal commands (format: PLUGIN_ID:action)
         // These are handled by the plugin itself, not launched as shell commands
-        if providers.borrow().execute_plugin_action(&item.command) {
+        if backend.borrow_mut().execute_plugin_action(&item.command) {
             // Plugin handled the action - don't close window
             // User might want to see updated state (e.g., pomodoro timer)
             return false;
         }
 
         // Regular item launch
-        Self::launch_item(item, config, frecency);
+        Self::launch_item(item, config, backend);
         true
     }
 
-    fn launch_item(item: &LaunchItem, config: &Config, frecency: &Rc<RefCell<FrecencyStore>>) {
+    fn launch_item(item: &LaunchItem, config: &Config, backend: &Rc<RefCell<SearchBackend>>) {
         // dmenu mode: print selection to stdout instead of executing
         if matches!(item.provider, ProviderType::Dmenu) {
             println!("{}", item.name);
             return;
         }
 
-        // Record this launch for frecency tracking
+        // Record this launch for frecency tracking (via backend)
         if config.providers.frecency {
-            frecency.borrow_mut().record_launch(&item.id);
+            let provider_str = item.provider.to_string();
+            backend.borrow_mut().record_launch(&item.id, &provider_str);
             #[cfg(feature = "dev-logging")]
             debug!("[UI] Recorded frecency launch for: {}", item.id);
         }
@@ -1317,11 +1325,14 @@ impl MainWindow {
         info!("Launching: {} ({})", item.name, item.command);
 
         #[cfg(feature = "dev-logging")]
-        debug!("[UI] Launch details: terminal={}, provider={:?}, id={}", item.terminal, item.provider, item.id);
+        debug!(
+            "[UI] Launch details: terminal={}, provider={:?}, id={}",
+            item.terminal, item.provider, item.id
+        );
 
         // Check if this is a desktop application (has .desktop file as ID)
-        let is_desktop_app = matches!(item.provider, ProviderType::Application)
-            && item.id.ends_with(".desktop");
+        let is_desktop_app =
+            matches!(item.provider, ProviderType::Application) && item.id.ends_with(".desktop");
 
         // Desktop files should be launched via proper launchers that implement the
         // freedesktop Desktop Entry spec (D-Bus activation, field codes, env vars, etc.)
@@ -1337,7 +1348,7 @@ impl MainWindow {
         if let Err(e) = result {
             let msg = format!("Failed to launch '{}': {}", item.name, e);
             log::error!("{}", msg);
-            crate::notify::notify("Launch failed", &msg);
+            owlry_core::notify::notify("Launch failed", &msg);
         }
     }
 
@@ -1348,14 +1359,17 @@ impl MainWindow {
     ///
     /// Otherwise, uses `gio launch` which is always available (part of glib2/GTK4)
     /// and handles D-Bus activation, field codes, Terminal flag, etc.
-    fn launch_desktop_file(desktop_path: &str, config: &Config) -> std::io::Result<std::process::Child> {
+    fn launch_desktop_file(
+        desktop_path: &str,
+        config: &Config,
+    ) -> std::io::Result<std::process::Child> {
         use std::path::Path;
 
         // Check if desktop file exists
         if !Path::new(desktop_path).exists() {
             let msg = format!("Desktop file not found: {}", desktop_path);
             log::error!("{}", msg);
-            crate::notify::notify("Launch failed", &msg);
+            owlry_core::notify::notify("Launch failed", &msg);
             return Err(std::io::Error::new(std::io::ErrorKind::NotFound, msg));
         }
 
@@ -1372,7 +1386,7 @@ impl MainWindow {
             if !uwsm_available {
                 let msg = "uwsm is enabled in config but not installed";
                 log::error!("{}", msg);
-                crate::notify::notify("Launch failed", msg);
+                owlry_core::notify::notify("Launch failed", msg);
                 return Err(std::io::Error::new(std::io::ErrorKind::NotFound, msg));
             }
 
@@ -1382,16 +1396,22 @@ impl MainWindow {
                 .spawn()
         } else {
             info!("Launching via gio: {}", desktop_path);
-            Command::new("gio")
-                .args(["launch", desktop_path])
-                .spawn()
+            Command::new("gio").args(["launch", desktop_path]).spawn()
         }
     }
 
     /// Launch a shell command (for non-desktop items like PATH commands, plugins, etc.)
-    fn launch_command(command: &str, terminal: bool, config: &Config) -> std::io::Result<std::process::Child> {
+    fn launch_command(
+        command: &str,
+        terminal: bool,
+        config: &Config,
+    ) -> std::io::Result<std::process::Child> {
         let cmd = if terminal {
-            let terminal_cmd = config.general.terminal_command.as_deref().unwrap_or("xterm");
+            let terminal_cmd = config
+                .general
+                .terminal_command
+                .as_deref()
+                .unwrap_or("xterm");
             format!("{} -e {}", terminal_cmd, command)
         } else {
             command.to_string()
