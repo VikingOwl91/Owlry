@@ -8,9 +8,21 @@ default:
 build:
     cargo build --workspace
 
-# Build core binary only
-build-core:
+# Build UI binary only
+build-ui:
     cargo build -p owlry
+
+# Build core daemon only
+build-daemon:
+    cargo build -p owlry-core
+
+# Build core daemon release
+release-daemon:
+    cargo build -p owlry-core --release
+
+# Run core daemon
+run-daemon *ARGS:
+    cargo run -p owlry-core -- {{ARGS}}
 
 # Build release
 release:
@@ -43,7 +55,7 @@ plugin name:
 
 # Build all plugins
 plugins:
-    cargo build --workspace --release --exclude owlry
+    cargo build --workspace --release --exclude owlry --exclude owlry-core
 
 # Install locally (core + plugins + runtimes)
 install-local:
@@ -51,10 +63,12 @@ install-local:
     set -euo pipefail
 
     echo "Building release..."
-    # Build core without embedded Lua (smaller binary)
+    # Build UI without embedded Lua (smaller binary)
     cargo build -p owlry --release --no-default-features
+    # Build core daemon
+    cargo build -p owlry-core --release
     # Build plugins
-    cargo build --workspace --release --exclude owlry
+    cargo build --workspace --release --exclude owlry --exclude owlry-core
 
     echo "Creating directories..."
     sudo mkdir -p /usr/lib/owlry/plugins
@@ -72,8 +86,9 @@ install-local:
         /usr/lib/owlry/plugins/libsystemd.so /usr/lib/owlry/plugins/libweather.so \
         /usr/lib/owlry/plugins/libwebsearch.so
 
-    echo "Installing core binary..."
+    echo "Installing binaries..."
     sudo install -Dm755 target/release/owlry /usr/bin/owlry
+    sudo install -Dm755 target/release/owlry-core /usr/bin/owlry-core
 
     echo "Installing plugins..."
     for plugin in target/release/libowlry_plugin_*.so; do
@@ -96,7 +111,8 @@ install-local:
 
     echo ""
     echo "Installation complete!"
-    echo "  - /usr/bin/owlry"
+    echo "  - /usr/bin/owlry (UI)"
+    echo "  - /usr/bin/owlry-core (daemon)"
     echo "  - $(ls /usr/lib/owlry/plugins/*.so 2>/dev/null | wc -l) plugins"
     echo "  - $(ls /usr/lib/owlry/runtimes/*.so 2>/dev/null | wc -l) runtimes"
 
@@ -183,12 +199,21 @@ bump-meta new_version:
 bump-all new_version:
     #!/usr/bin/env bash
     set -euo pipefail
-    # Bump core
+    # Bump core (UI)
     toml="crates/owlry/Cargo.toml"
     old=$(grep '^version' "$toml" | head -1 | sed 's/.*"\(.*\)"/\1/')
     if [ "$old" != "{{new_version}}" ]; then
         echo "Bumping owlry from $old to {{new_version}}"
         sed -i 's/^version = ".*"/version = "{{new_version}}"/' "$toml"
+    fi
+    # Bump core daemon
+    toml="crates/owlry-core/Cargo.toml"
+    if [ -f "$toml" ]; then
+        old=$(grep '^version' "$toml" | head -1 | sed 's/.*"\(.*\)"/\1/')
+        if [ "$old" != "{{new_version}}" ]; then
+            echo "Bumping owlry-core from $old to {{new_version}}"
+            sed -i 's/^version = ".*"/version = "{{new_version}}"/' "$toml"
+        fi
     fi
     # Bump plugins (including plugin-api)
     for toml in crates/owlry-plugin-*/Cargo.toml; do
