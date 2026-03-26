@@ -1,4 +1,5 @@
 mod app;
+pub mod client;
 mod cli;
 mod plugin_commands;
 mod providers;
