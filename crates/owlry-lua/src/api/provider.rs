@@ -22,7 +22,7 @@ pub fn register_provider_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
 }
 
 /// Implementation of owlry.provider.register()
-fn register_provider(_lua: &Lua, config: Table) -> LuaResult<()> {
+fn register_provider(lua: &Lua, config: Table) -> LuaResult<()> {
     let name: String = config.get("name")?;
     let display_name: String = config
         .get::<Option<String>>("display_name")?
@@ -46,6 +46,21 @@ fn register_provider(_lua: &Lua, config: Table) -> LuaResult<()> {
     }
 
     let is_dynamic = has_query;
+
+    // Store the config table in owlry.provider._registrations[name]
+    // so call_refresh/call_query can find the callback functions later
+    let globals = lua.globals();
+    let owlry: Table = globals.get("owlry")?;
+    let provider: Table = owlry.get("provider")?;
+    let registrations: Table = match provider.get::<Value>("_registrations")? {
+        Value::Table(t) => t,
+        _ => {
+            let t = lua.create_table()?;
+            provider.set("_registrations", t.clone())?;
+            t
+        }
+    };
+    registrations.set(name.as_str(), config)?;
 
     REGISTRATIONS.with(|regs| {
         regs.borrow_mut().push(ProviderRegistration {

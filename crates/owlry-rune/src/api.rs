@@ -94,7 +94,9 @@ pub fn module() -> Result<Module, ContextError> {
     // Register Item type with constructor and builder methods
     module.ty::<Item>()?;
     module
-        .function("Item::new", Item::rune_new)
+        .function("Item::new", |id: String, name: String, command: String| -> Item {
+            Item::rune_new(&id, &name, &command)
+        })
         .build()?;
     module
         .associated_function("description", Item::rune_description)?;
