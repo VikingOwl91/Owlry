@@ -41,20 +41,14 @@ impl CoreClient {
             .args(["--user", "start", "owlry-core"])
             .status()
             .map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("failed to start owlry-core via systemd: {e}"),
-                )
+                io::Error::other(format!("failed to start owlry-core via systemd: {e}"))
             })?;
 
         if !status.success() {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!(
-                    "systemctl --user start owlry-core exited with status {}",
-                    status
-                ),
-            ));
+            return Err(io::Error::other(format!(
+                "systemctl --user start owlry-core exited with status {}",
+                status
+            )));
         }
 
         // Retry with exponential backoff.
@@ -66,9 +60,7 @@ impl CoreClient {
                 Err(e) if i == delays.len() - 1 => {
                     return Err(io::Error::new(
                         io::ErrorKind::ConnectionRefused,
-                        format!(
-                            "daemon started but socket not available after retries: {e}"
-                        ),
+                        format!("daemon started but socket not available after retries: {e}"),
                     ));
                 }
                 Err(_) => continue,
@@ -87,11 +79,7 @@ impl CoreClient {
     }
 
     /// Send a search query and return matching results.
-    pub fn query(
-        &mut self,
-        text: &str,
-        modes: Option<Vec<String>>,
-    ) -> io::Result<Vec<ResultItem>> {
+    pub fn query(&mut self, text: &str, modes: Option<Vec<String>>) -> io::Result<Vec<ResultItem>> {
         self.send(&Request::Query {
             text: text.to_string(),
             modes,
@@ -99,9 +87,7 @@ impl CoreClient {
 
         match self.receive()? {
             Response::Results { items } => Ok(items),
-            Response::Error { message } => {
-                Err(io::Error::new(io::ErrorKind::Other, message))
-            }
+            Response::Error { message } => Err(io::Error::other(message)),
             other => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("unexpected response to Query: {other:?}"),
@@ -118,9 +104,7 @@ impl CoreClient {
 
         match self.receive()? {
             Response::Ack => Ok(()),
-            Response::Error { message } => {
-                Err(io::Error::new(io::ErrorKind::Other, message))
-            }
+            Response::Error { message } => Err(io::Error::other(message)),
             other => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("unexpected response to Launch: {other:?}"),
@@ -134,9 +118,7 @@ impl CoreClient {
 
         match self.receive()? {
             Response::Providers { list } => Ok(list),
-            Response::Error { message } => {
-                Err(io::Error::new(io::ErrorKind::Other, message))
-            }
+            Response::Error { message } => Err(io::Error::other(message)),
             other => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("unexpected response to Providers: {other:?}"),
@@ -150,9 +132,7 @@ impl CoreClient {
 
         match self.receive()? {
             Response::Ack => Ok(()),
-            Response::Error { message } => {
-                Err(io::Error::new(io::ErrorKind::Other, message))
-            }
+            Response::Error { message } => Err(io::Error::other(message)),
             other => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("unexpected response to Toggle: {other:?}"),
@@ -178,11 +158,7 @@ impl CoreClient {
     }
 
     /// Query a plugin's submenu actions.
-    pub fn submenu(
-        &mut self,
-        plugin_id: &str,
-        data: &str,
-    ) -> io::Result<Vec<ResultItem>> {
+    pub fn submenu(&mut self, plugin_id: &str, data: &str) -> io::Result<Vec<ResultItem>> {
         self.send(&Request::Submenu {
             plugin_id: plugin_id.to_string(),
             data: data.to_string(),
@@ -190,9 +166,7 @@ impl CoreClient {
 
         match self.receive()? {
             Response::SubmenuItems { items } => Ok(items),
-            Response::Error { message } => {
-                Err(io::Error::new(io::ErrorKind::Other, message))
-            }
+            Response::Error { message } => Err(io::Error::other(message)),
             other => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("unexpected response to Submenu: {other:?}"),
@@ -220,8 +194,7 @@ impl CoreClient {
                 "daemon closed the connection",
             ));
         }
-        serde_json::from_str(line.trim())
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+        serde_json::from_str(line.trim()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
 }
 
@@ -239,11 +212,7 @@ mod tests {
     /// socket path to avoid collisions when tests run in parallel.
     fn mock_server(response: Response) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!(
-            "owlry-test-{}-{}",
-            std::process::id(),
-            n
-        ));
+        let dir = std::env::temp_dir().join(format!("owlry-test-{}-{}", std::process::id(), n));
         let _ = std::fs::create_dir_all(&dir);
         let sock = dir.join("test.sock");
         let _ = std::fs::remove_file(&sock);

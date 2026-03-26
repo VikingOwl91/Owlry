@@ -189,9 +189,10 @@ pub fn register_fs_api(lua: &Lua, owlry: &Table, plugin_dir: &Path) -> LuaResult
             // Ensure parent directory exists
             if let Some(parent) = full_path.parent()
                 && !parent.exists()
-                    && let Err(e) = std::fs::create_dir_all(parent) {
-                        return Ok((false, Value::String(lua.create_string(e.to_string())?)));
-                    }
+                && let Err(e) = std::fs::create_dir_all(parent)
+            {
+                return Ok((false, Value::String(lua.create_string(e.to_string())?)));
+            }
 
             match std::fs::write(&full_path, content) {
                 Ok(()) => Ok((true, Value::Nil)),
@@ -295,7 +296,8 @@ pub fn register_fs_api(lua: &Lua, owlry: &Table, plugin_dir: &Path) -> LuaResult
             use std::os::unix::fs::PermissionsExt;
             let plugin_dir: String = lua.named_registry_value("plugin_dir")?;
             let full_path = resolve_plugin_path(&plugin_dir, &path);
-            let is_exec = full_path.metadata()
+            let is_exec = full_path
+                .metadata()
                 .map(|m| m.permissions().mode() & 0o111 != 0)
                 .unwrap_or(false);
             Ok(is_exec)
@@ -335,28 +337,24 @@ pub fn register_json_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
     // owlry.json.encode(value) -> string or nil, error
     json_table.set(
         "encode",
-        lua.create_function(|lua, value: Value| {
-            match lua_to_json(&value) {
-                Ok(json) => match serde_json::to_string(&json) {
-                    Ok(s) => Ok((Some(s), Value::Nil)),
-                    Err(e) => Ok((None, Value::String(lua.create_string(e.to_string())?))),
-                },
-                Err(e) => Ok((None, Value::String(lua.create_string(&e)?))),
-            }
+        lua.create_function(|lua, value: Value| match lua_to_json(&value) {
+            Ok(json) => match serde_json::to_string(&json) {
+                Ok(s) => Ok((Some(s), Value::Nil)),
+                Err(e) => Ok((None, Value::String(lua.create_string(e.to_string())?))),
+            },
+            Err(e) => Ok((None, Value::String(lua.create_string(&e)?))),
         })?,
     )?;
 
     // owlry.json.encode_pretty(value) -> string or nil, error
     json_table.set(
         "encode_pretty",
-        lua.create_function(|lua, value: Value| {
-            match lua_to_json(&value) {
-                Ok(json) => match serde_json::to_string_pretty(&json) {
-                    Ok(s) => Ok((Some(s), Value::Nil)),
-                    Err(e) => Ok((None, Value::String(lua.create_string(e.to_string())?))),
-                },
-                Err(e) => Ok((None, Value::String(lua.create_string(&e)?))),
-            }
+        lua.create_function(|lua, value: Value| match lua_to_json(&value) {
+            Ok(json) => match serde_json::to_string_pretty(&json) {
+                Ok(s) => Ok((Some(s), Value::Nil)),
+                Err(e) => Ok((None, Value::String(lua.create_string(e.to_string())?))),
+            },
+            Err(e) => Ok((None, Value::String(lua.create_string(&e)?))),
         })?,
     )?;
 
@@ -388,13 +386,16 @@ fn lua_to_json(value: &Value) -> Result<serde_json::Value, String> {
             .map(serde_json::Value::Number)
             .ok_or_else(|| "Invalid number".to_string()),
         Value::String(s) => Ok(serde_json::Value::String(
-            s.to_str().map_err(|e| e.to_string())?.to_string()
+            s.to_str().map_err(|e| e.to_string())?.to_string(),
         )),
         Value::Table(t) => {
             // Check if it's an array (sequential integer keys starting from 1)
             let len = t.raw_len();
             let is_array = len > 0
-                && (1..=len).all(|i| t.raw_get::<Value>(i).is_ok_and(|v| !matches!(v, Value::Nil)));
+                && (1..=len).all(|i| {
+                    t.raw_get::<Value>(i)
+                        .is_ok_and(|v| !matches!(v, Value::Nil))
+                });
 
             if is_array {
                 let arr: Result<Vec<serde_json::Value>, String> = (1..=len)
@@ -475,9 +476,13 @@ mod tests {
     fn test_log_api() {
         let (lua, _temp) = create_test_lua();
         // Just verify it doesn't panic - using call instead of the e-word
-        lua.load("owlry.log.info('test message')").call::<()>(()).unwrap();
+        lua.load("owlry.log.info('test message')")
+            .call::<()>(())
+            .unwrap();
         lua.load("owlry.log.debug('debug')").call::<()>(()).unwrap();
-        lua.load("owlry.log.warn('warning')").call::<()>(()).unwrap();
+        lua.load("owlry.log.warn('warning')")
+            .call::<()>(())
+            .unwrap();
         lua.load("owlry.log.error('error')").call::<()>(()).unwrap();
     }
 
@@ -485,10 +490,7 @@ mod tests {
     fn test_path_api() {
         let (lua, _temp) = create_test_lua();
 
-        let home: String = lua
-            .load("return owlry.path.home()")
-            .call(())
-            .unwrap();
+        let home: String = lua.load("return owlry.path.home()").call(()).unwrap();
         assert!(!home.is_empty());
 
         let joined: String = lua

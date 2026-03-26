@@ -4,13 +4,14 @@ use std::collections::HashSet;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
+#[derive(Default)]
 pub struct CommandProvider {
     items: Vec<LaunchItem>,
 }
 
 impl CommandProvider {
     pub fn new() -> Self {
-        Self { items: Vec::new() }
+        Self::default()
     }
 
     fn get_path_dirs() -> Vec<PathBuf> {
@@ -97,7 +98,8 @@ impl Provider for CommandProvider {
         debug!("Found {} commands in PATH", self.items.len());
 
         // Sort alphabetically
-        self.items.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        self.items
+            .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     }
 
     fn items(&self) -> &[LaunchItem] {

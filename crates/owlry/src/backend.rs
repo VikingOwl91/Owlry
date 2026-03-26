@@ -4,12 +4,12 @@
 //! In dmenu mode, the UI uses a local ProviderManager directly (no daemon).
 
 use crate::client::CoreClient;
+use log::warn;
+use owlry_core::config::Config;
+use owlry_core::data::FrecencyStore;
 use owlry_core::filter::ProviderFilter;
 use owlry_core::ipc::ResultItem;
 use owlry_core::providers::{LaunchItem, ProviderManager, ProviderType};
-use owlry_core::data::FrecencyStore;
-use owlry_core::config::Config;
-use log::warn;
 
 /// Backend for search operations. Wraps either an IPC client (daemon mode)
 /// or a local ProviderManager (dmenu mode).
@@ -18,7 +18,7 @@ pub enum SearchBackend {
     Daemon(CoreClient),
     /// Direct local provider manager (dmenu mode only)
     Local {
-        providers: ProviderManager,
+        providers: Box<ProviderManager>,
         frecency: FrecencyStore,
     },
 }
@@ -64,7 +64,14 @@ impl SearchBackend {
 
                 if use_frecency {
                     providers
-                        .search_with_frecency(query, max_results, filter, frecency, frecency_weight, None)
+                        .search_with_frecency(
+                            query,
+                            max_results,
+                            filter,
+                            frecency,
+                            frecency_weight,
+                            None,
+                        )
                         .into_iter()
                         .map(|(item, _)| item)
                         .collect()
@@ -123,7 +130,14 @@ impl SearchBackend {
 
                 if use_frecency {
                     providers
-                        .search_with_frecency(query, max_results, filter, frecency, frecency_weight, tag_filter)
+                        .search_with_frecency(
+                            query,
+                            max_results,
+                            filter,
+                            frecency,
+                            frecency_weight,
+                            tag_filter,
+                        )
                         .into_iter()
                         .map(|(item, _)| item)
                         .collect()
@@ -141,18 +155,14 @@ impl SearchBackend {
     /// Execute a plugin action command. Returns true if handled.
     pub fn execute_plugin_action(&mut self, command: &str) -> bool {
         match self {
-            SearchBackend::Daemon(client) => {
-                match client.plugin_action(command) {
-                    Ok(handled) => handled,
-                    Err(e) => {
-                        warn!("IPC plugin_action failed: {}", e);
-                        false
-                    }
+            SearchBackend::Daemon(client) => match client.plugin_action(command) {
+                Ok(handled) => handled,
+                Err(e) => {
+                    warn!("IPC plugin_action failed: {}", e);
+                    false
                 }
-            }
-            SearchBackend::Local { providers, .. } => {
-                providers.execute_plugin_action(command)
-            }
+            },
+            SearchBackend::Local { providers, .. } => providers.execute_plugin_action(command),
         }
     }
 
@@ -165,20 +175,18 @@ impl SearchBackend {
         display_name: &str,
     ) -> Option<(String, Vec<LaunchItem>)> {
         match self {
-            SearchBackend::Daemon(client) => {
-                match client.submenu(plugin_id, data) {
-                    Ok(items) if !items.is_empty() => {
-                        let actions: Vec<LaunchItem> =
-                            items.into_iter().map(result_to_launch_item).collect();
-                        Some((display_name.to_string(), actions))
-                    }
-                    Ok(_) => None,
-                    Err(e) => {
-                        warn!("IPC submenu query failed: {}", e);
-                        None
-                    }
+            SearchBackend::Daemon(client) => match client.submenu(plugin_id, data) {
+                Ok(items) if !items.is_empty() => {
+                    let actions: Vec<LaunchItem> =
+                        items.into_iter().map(result_to_launch_item).collect();
+                    Some((display_name.to_string(), actions))
                 }
-            }
+                Ok(_) => None,
+                Err(e) => {
+                    warn!("IPC submenu query failed: {}", e);
+                    None
+                }
+            },
             SearchBackend::Local { providers, .. } => {
                 providers.query_submenu_actions(plugin_id, data, display_name)
             }
@@ -218,22 +226,18 @@ impl SearchBackend {
     #[allow(dead_code)]
     pub fn available_provider_ids(&mut self) -> Vec<String> {
         match self {
-            SearchBackend::Daemon(client) => {
-                match client.providers() {
-                    Ok(descs) => descs.into_iter().map(|d| d.id).collect(),
-                    Err(e) => {
-                        warn!("IPC providers query failed: {}", e);
-                        Vec::new()
-                    }
+            SearchBackend::Daemon(client) => match client.providers() {
+                Ok(descs) => descs.into_iter().map(|d| d.id).collect(),
+                Err(e) => {
+                    warn!("IPC providers query failed: {}", e);
+                    Vec::new()
                 }
-            }
-            SearchBackend::Local { providers, .. } => {
-                providers
-                    .available_providers()
-                    .into_iter()
-                    .map(|d| d.id)
-                    .collect()
-            }
+            },
+            SearchBackend::Local { providers, .. } => providers
+                .available_providers()
+                .into_iter()
+                .map(|d| d.id)
+                .collect(),
         }
     }
 }

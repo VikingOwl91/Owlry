@@ -73,11 +73,7 @@ fn default_max_results() -> usize {
 }
 
 fn default_tabs() -> Vec<String> {
-    vec![
-        "app".to_string(),
-        "cmd".to_string(),
-        "uuctl".to_string(),
-    ]
+    vec!["app".to_string(), "cmd".to_string(), "uuctl".to_string()]
 }
 
 /// User-customizable theme colors
@@ -143,10 +139,18 @@ impl Default for AppearanceConfig {
     }
 }
 
-fn default_width() -> i32 { 850 }
-fn default_height() -> i32 { 650 }
-fn default_font_size() -> u32 { 14 }
-fn default_border_radius() -> u32 { 12 }
+fn default_width() -> i32 {
+    850
+}
+fn default_height() -> i32 {
+    650
+}
+fn default_font_size() -> u32 {
+    14
+}
+fn default_border_radius() -> u32 {
+    12
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProvidersConfig {
@@ -196,7 +200,6 @@ pub struct ProvidersConfig {
     pub files: bool,
 
     // ─── Widget Providers ───────────────────────────────────────────────
-
     /// Enable MPRIS media player widget
     #[serde(default = "default_true")]
     pub media: bool,
@@ -350,28 +353,19 @@ impl PluginsConfig {
     /// Get a string value from a plugin's config
     #[allow(dead_code)]
     pub fn get_plugin_string(&self, plugin_name: &str, key: &str) -> Option<&str> {
-        self.plugin_configs
-            .get(plugin_name)?
-            .get(key)?
-            .as_str()
+        self.plugin_configs.get(plugin_name)?.get(key)?.as_str()
     }
 
     /// Get an integer value from a plugin's config
     #[allow(dead_code)]
     pub fn get_plugin_int(&self, plugin_name: &str, key: &str) -> Option<i64> {
-        self.plugin_configs
-            .get(plugin_name)?
-            .get(key)?
-            .as_integer()
+        self.plugin_configs.get(plugin_name)?.get(key)?.as_integer()
     }
 
     /// Get a boolean value from a plugin's config
     #[allow(dead_code)]
     pub fn get_plugin_bool(&self, plugin_name: &str, key: &str) -> Option<bool> {
-        self.plugin_configs
-            .get(plugin_name)?
-            .get(key)?
-            .as_bool()
+        self.plugin_configs.get(plugin_name)?.get(key)?.as_bool()
     }
 }
 
@@ -414,7 +408,6 @@ fn default_pomodoro_break() -> u32 {
     5
 }
 
-
 /// Detect the best available terminal emulator
 /// Fallback chain:
 /// 1. $TERMINAL env var (user's explicit preference)
@@ -427,10 +420,12 @@ fn default_pomodoro_break() -> u32 {
 fn detect_terminal() -> String {
     // 1. Check $TERMINAL env var first (user's explicit preference)
     if let Ok(term) = std::env::var("TERMINAL")
-        && !term.is_empty() && command_exists(&term) {
-            debug!("Using $TERMINAL: {}", term);
-            return term;
-        }
+        && !term.is_empty()
+        && command_exists(&term)
+    {
+        debug!("Using $TERMINAL: {}", term);
+        return term;
+    }
 
     // 2. Try xdg-terminal-exec (freedesktop standard)
     if command_exists("xdg-terminal-exec") {
@@ -454,7 +449,14 @@ fn detect_terminal() -> String {
     }
 
     // 5. Common X11/legacy terminals
-    let legacy_terminals = ["gnome-terminal", "konsole", "xfce4-terminal", "mate-terminal", "tilix", "terminator"];
+    let legacy_terminals = [
+        "gnome-terminal",
+        "konsole",
+        "xfce4-terminal",
+        "mate-terminal",
+        "tilix",
+        "terminator",
+    ];
     for term in legacy_terminals {
         if command_exists(term) {
             debug!("Found legacy terminal: {}", term);

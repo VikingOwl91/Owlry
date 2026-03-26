@@ -329,13 +329,15 @@ mod tests {
         clear_all_hooks();
         let lua = setup_lua("test-plugin");
 
-        let chunk = lua.load(r#"
+        let chunk = lua.load(
+            r#"
             local called = false
             owlry.hook.on("init", function()
                 called = true
             end)
             return true
-        "#);
+        "#,
+        );
         let result: bool = chunk.call(()).unwrap();
         assert!(result);
 
@@ -349,11 +351,13 @@ mod tests {
         clear_all_hooks();
         let lua = setup_lua("test-plugin");
 
-        let chunk = lua.load(r#"
+        let chunk = lua.load(
+            r#"
             owlry.hook.on("query", function(q) return q .. "1" end, 10)
             owlry.hook.on("query", function(q) return q .. "2" end, 20)
             return true
-        "#);
+        "#,
+        );
         chunk.call::<()>(()).unwrap();
 
         // Call hooks - higher priority (20) should run first
@@ -367,11 +371,13 @@ mod tests {
         clear_all_hooks();
         let lua = setup_lua("test-plugin");
 
-        let chunk = lua.load(r#"
+        let chunk = lua.load(
+            r#"
             owlry.hook.on("select", function() end)
             owlry.hook.off("select")
             return true
-        "#);
+        "#,
+        );
         chunk.call::<()>(()).unwrap();
 
         let plugins = get_registered_plugins(HookEvent::Select);
@@ -383,14 +389,16 @@ mod tests {
         clear_all_hooks();
         let lua = setup_lua("test-plugin");
 
-        let chunk = lua.load(r#"
+        let chunk = lua.load(
+            r#"
             owlry.hook.on("pre_launch", function(item)
                 if item.name == "blocked" then
                     return false -- cancel launch
                 end
                 return true
             end)
-        "#);
+        "#,
+        );
         chunk.call::<()>(()).unwrap();
 
         // Create a test item table

@@ -66,13 +66,14 @@ fn clean_desktop_exec_field(cmd: &str) -> String {
     cleaned
 }
 
+#[derive(Default)]
 pub struct ApplicationProvider {
     items: Vec<LaunchItem>,
 }
 
 impl ApplicationProvider {
     pub fn new() -> Self {
-        Self { items: Vec::new() }
+        Self::default()
     }
 
     fn get_application_dirs() -> Vec<std::path::PathBuf> {
@@ -139,15 +140,18 @@ impl Provider for ApplicationProvider {
             if !current_desktops.is_empty() {
                 // OnlyShowIn: if set, current desktop must be in the list
                 if desktop_entry.only_show_in().is_some_and(|only| {
-                    !current_desktops.iter().any(|de| only.contains(&de.as_str()))
+                    !current_desktops
+                        .iter()
+                        .any(|de| only.contains(&de.as_str()))
                 }) {
                     continue;
                 }
 
                 // NotShowIn: if current desktop is in the list, skip
-                if desktop_entry.not_show_in().is_some_and(|not| {
-                    current_desktops.iter().any(|de| not.contains(&de.as_str()))
-                }) {
+                if desktop_entry
+                    .not_show_in()
+                    .is_some_and(|not| current_desktops.iter().any(|de| not.contains(&de.as_str())))
+                {
                     continue;
                 }
             }
@@ -197,7 +201,8 @@ impl Provider for ApplicationProvider {
         );
 
         // Sort alphabetically by name
-        self.items.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        self.items
+            .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     }
 
     fn items(&self) -> &[LaunchItem] {
@@ -219,7 +224,10 @@ mod tests {
     #[test]
     fn test_clean_desktop_exec_multiple_placeholders() {
         assert_eq!(clean_desktop_exec_field("app %f %u %U"), "app");
-        assert_eq!(clean_desktop_exec_field("app --flag %u --other"), "app --flag --other");
+        assert_eq!(
+            clean_desktop_exec_field("app --flag %u --other"),
+            "app --flag --other"
+        );
     }
 
     #[test]

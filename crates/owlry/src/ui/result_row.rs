@@ -1,6 +1,6 @@
-use owlry_core::providers::LaunchItem;
 use gtk4::prelude::*;
 use gtk4::{Box as GtkBox, Image, Label, ListBoxRow, Orientation, Widget};
+use owlry_core::providers::LaunchItem;
 
 #[allow(dead_code)]
 pub struct ResultRow {
@@ -81,7 +81,9 @@ impl ResultRow {
         } else {
             // Default icon based on provider type (only core types, plugins should provide icons)
             let default_icon = match &item.provider {
-                owlry_core::providers::ProviderType::Application => "application-x-executable-symbolic",
+                owlry_core::providers::ProviderType::Application => {
+                    "application-x-executable-symbolic"
+                }
                 owlry_core::providers::ProviderType::Command => "utilities-terminal-symbolic",
                 owlry_core::providers::ProviderType::Dmenu => "view-list-symbolic",
                 // Plugins should provide their own icon; fallback to generic addon icon
@@ -134,9 +136,7 @@ impl ResultRow {
                 .build();
 
             for tag in item.tags.iter().take(3) {
-                let tag_label = Label::builder()
-                    .label(tag)
-                    .build();
+                let tag_label = Label::builder().label(tag).build();
                 tag_label.add_css_class("owlry-tag-badge");
                 tags_box.append(&tag_label);
             }

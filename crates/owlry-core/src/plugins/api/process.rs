@@ -27,8 +27,14 @@ pub fn register_process_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
                 .map_err(|e| mlua::Error::external(format!("Failed to run command: {}", e)))?;
 
             let result = lua.create_table()?;
-            result.set("stdout", String::from_utf8_lossy(&output.stdout).to_string())?;
-            result.set("stderr", String::from_utf8_lossy(&output.stderr).to_string())?;
+            result.set(
+                "stdout",
+                String::from_utf8_lossy(&output.stdout).to_string(),
+            )?;
+            result.set(
+                "stderr",
+                String::from_utf8_lossy(&output.stderr).to_string(),
+            )?;
             result.set("exit_code", output.status.code().unwrap_or(-1))?;
             result.set("success", output.status.success())?;
 
@@ -95,9 +101,7 @@ pub fn register_env_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
     // owlry.env.get(name) -> string or nil
     env_table.set(
         "get",
-        lua.create_function(|_lua, name: String| {
-            Ok(std::env::var(&name).ok())
-        })?,
+        lua.create_function(|_lua, name: String| Ok(std::env::var(&name).ok()))?,
     )?;
 
     // owlry.env.get_or(name, default) -> string
@@ -166,7 +170,8 @@ mod tests {
         assert!(exists);
 
         // Made-up command should not exist
-        let chunk = lua.load(r#"return owlry.process.exists("this_command_definitely_does_not_exist_12345")"#);
+        let chunk = lua
+            .load(r#"return owlry.process.exists("this_command_definitely_does_not_exist_12345")"#);
         let not_exists: bool = chunk.call(()).unwrap();
         assert!(!not_exists);
     }
@@ -190,7 +195,8 @@ mod tests {
     fn test_env_get_or() {
         let lua = setup_lua();
 
-        let chunk = lua.load(r#"return owlry.env.get_or("THIS_VAR_DOES_NOT_EXIST_12345", "default_value")"#);
+        let chunk = lua
+            .load(r#"return owlry.env.get_or("THIS_VAR_DOES_NOT_EXIST_12345", "default_value")"#);
         let result: String = chunk.call(()).unwrap();
         assert_eq!(result, "default_value");
     }

@@ -21,7 +21,12 @@ pub struct ThemeRegistration {
 }
 
 /// Register theme APIs
-pub fn register_theme_api(lua: &Lua, owlry: &Table, plugin_id: &str, plugin_dir: &Path) -> LuaResult<()> {
+pub fn register_theme_api(
+    lua: &Lua,
+    owlry: &Table,
+    plugin_id: &str,
+    plugin_dir: &Path,
+) -> LuaResult<()> {
     let theme_table = lua.create_table()?;
     let plugin_id_owned = plugin_id.to_string();
     let plugin_dir_owned = plugin_dir.to_path_buf();
@@ -50,9 +55,7 @@ pub fn register_theme_api(lua: &Lua, owlry: &Table, plugin_id: &str, plugin_dir:
                 .get("name")
                 .map_err(|_| mlua::Error::external("theme.register: 'name' is required"))?;
 
-            let display_name: String = config
-                .get("display_name")
-                .unwrap_or_else(|_| name.clone());
+            let display_name: String = config.get("display_name").unwrap_or_else(|_| name.clone());
 
             // Get CSS either directly or from file
             let css: String = if let Ok(css_str) = config.get::<String>("css") {
@@ -197,13 +200,15 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let lua = setup_lua("test-plugin", temp.path());
 
-        let chunk = lua.load(r#"
+        let chunk = lua.load(
+            r#"
             return owlry.theme.register({
                 name = "my-theme",
                 display_name = "My Theme",
                 css = ".owlry-window { background: #333; }"
             })
-        "#);
+        "#,
+        );
         let name: String = chunk.call(()).unwrap();
         assert_eq!(name, "my-theme");
 
@@ -221,12 +226,14 @@ mod tests {
 
         let lua = setup_lua("test-plugin", temp.path());
 
-        let chunk = lua.load(r#"
+        let chunk = lua.load(
+            r#"
             return owlry.theme.register({
                 name = "file-theme",
                 css_file = "theme.css"
             })
-        "#);
+        "#,
+        );
         let name: String = chunk.call(()).unwrap();
         assert_eq!(name, "file-theme");
 
@@ -240,11 +247,13 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let lua = setup_lua("test-plugin", temp.path());
 
-        let chunk = lua.load(r#"
+        let chunk = lua.load(
+            r#"
             owlry.theme.register({ name = "theme1", css = "a{}" })
             owlry.theme.register({ name = "theme2", css = "b{}" })
             return owlry.theme.list()
-        "#);
+        "#,
+        );
         let list: Table = chunk.call(()).unwrap();
 
         let mut names: Vec<String> = Vec::new();
@@ -262,10 +271,12 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let lua = setup_lua("test-plugin", temp.path());
 
-        let chunk = lua.load(r#"
+        let chunk = lua.load(
+            r#"
             owlry.theme.register({ name = "temp-theme", css = "c{}" })
             return owlry.theme.unregister("temp-theme")
-        "#);
+        "#,
+        );
         let unregistered: bool = chunk.call(()).unwrap();
         assert!(unregistered);
 

@@ -29,19 +29,11 @@ pub enum Request {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Response {
-    Results {
-        items: Vec<ResultItem>,
-    },
-    Providers {
-        list: Vec<ProviderDesc>,
-    },
-    SubmenuItems {
-        items: Vec<ResultItem>,
-    },
+    Results { items: Vec<ResultItem> },
+    Providers { list: Vec<ProviderDesc> },
+    SubmenuItems { items: Vec<ResultItem> },
     Ack,
-    Error {
-        message: String,
-    },
+    Error { message: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

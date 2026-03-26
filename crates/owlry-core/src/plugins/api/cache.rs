@@ -35,9 +35,9 @@ pub fn register_cache_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
     cache_table.set(
         "get",
         lua.create_function(|lua, key: String| {
-            let cache = CACHE.lock().map_err(|e| {
-                mlua::Error::external(format!("Failed to lock cache: {}", e))
-            })?;
+            let cache = CACHE
+                .lock()
+                .map_err(|e| mlua::Error::external(format!("Failed to lock cache: {}", e)))?;
 
             if let Some(entry) = cache.get(&key) {
                 if entry.is_expired() {
@@ -50,8 +50,10 @@ pub fn register_cache_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
                 }
 
                 // Parse JSON back to Lua value
-                let json_value: serde_json::Value = serde_json::from_str(&entry.value)
-                    .map_err(|e| mlua::Error::external(format!("Failed to parse cached value: {}", e)))?;
+                let json_value: serde_json::Value =
+                    serde_json::from_str(&entry.value).map_err(|e| {
+                        mlua::Error::external(format!("Failed to parse cached value: {}", e))
+                    })?;
 
                 json_to_lua(lua, &json_value)
             } else {
@@ -75,9 +77,9 @@ pub fn register_cache_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
                 expires_at,
             };
 
-            let mut cache = CACHE.lock().map_err(|e| {
-                mlua::Error::external(format!("Failed to lock cache: {}", e))
-            })?;
+            let mut cache = CACHE
+                .lock()
+                .map_err(|e| mlua::Error::external(format!("Failed to lock cache: {}", e)))?;
 
             cache.insert(key, entry);
             Ok(true)
@@ -88,9 +90,9 @@ pub fn register_cache_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
     cache_table.set(
         "delete",
         lua.create_function(|_lua, key: String| {
-            let mut cache = CACHE.lock().map_err(|e| {
-                mlua::Error::external(format!("Failed to lock cache: {}", e))
-            })?;
+            let mut cache = CACHE
+                .lock()
+                .map_err(|e| mlua::Error::external(format!("Failed to lock cache: {}", e)))?;
 
             Ok(cache.remove(&key).is_some())
         })?,
@@ -100,9 +102,9 @@ pub fn register_cache_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
     cache_table.set(
         "clear",
         lua.create_function(|_lua, ()| {
-            let mut cache = CACHE.lock().map_err(|e| {
-                mlua::Error::external(format!("Failed to lock cache: {}", e))
-            })?;
+            let mut cache = CACHE
+                .lock()
+                .map_err(|e| mlua::Error::external(format!("Failed to lock cache: {}", e)))?;
 
             let count = cache.len();
             cache.clear();
@@ -114,9 +116,9 @@ pub fn register_cache_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
     cache_table.set(
         "has",
         lua.create_function(|_lua, key: String| {
-            let cache = CACHE.lock().map_err(|e| {
-                mlua::Error::external(format!("Failed to lock cache: {}", e))
-            })?;
+            let cache = CACHE
+                .lock()
+                .map_err(|e| mlua::Error::external(format!("Failed to lock cache: {}", e)))?;
 
             if let Some(entry) = cache.get(&key) {
                 Ok(!entry.is_expired())
@@ -249,10 +251,12 @@ mod tests {
         let _: bool = chunk.call(()).unwrap();
 
         // Get and verify
-        let chunk = lua.load(r#"
+        let chunk = lua.load(
+            r#"
             local t = owlry.cache.get("table_key")
             return t.name, t.value
-        "#);
+        "#,
+        );
         let (name, value): (String, i32) = chunk.call(()).unwrap();
         assert_eq!(name, "test");
         assert_eq!(value, 42);
@@ -262,12 +266,14 @@ mod tests {
     fn test_cache_delete() {
         let lua = setup_lua();
 
-        let chunk = lua.load(r#"
+        let chunk = lua.load(
+            r#"
             owlry.cache.set("delete_key", "value")
             local existed = owlry.cache.delete("delete_key")
             local value = owlry.cache.get("delete_key")
             return existed, value
-        "#);
+        "#,
+        );
         let (existed, value): (bool, Option<String>) = chunk.call(()).unwrap();
         assert!(existed);
         assert!(value.is_none());
@@ -277,12 +283,14 @@ mod tests {
     fn test_cache_has() {
         let lua = setup_lua();
 
-        let chunk = lua.load(r#"
+        let chunk = lua.load(
+            r#"
             local before = owlry.cache.has("has_key")
             owlry.cache.set("has_key", "value")
             local after = owlry.cache.has("has_key")
             return before, after
-        "#);
+        "#,
+        );
         let (before, after): (bool, bool) = chunk.call(()).unwrap();
         assert!(!before);
         assert!(after);

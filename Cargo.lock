@@ -2417,7 +2417,7 @@ dependencies = [
 
 [[package]]
 name = "owlry"
-version = "0.4.10"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "clap",
@@ -2437,7 +2437,7 @@ dependencies = [
 
 [[package]]
 name = "owlry-core"
-version = "0.5.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "ctrlc",
@@ -2462,7 +2462,7 @@ dependencies = [
 
 [[package]]
 name = "owlry-lua"
-version = "0.4.10"
+version = "1.0.0"
 dependencies = [
  "abi_stable",
  "chrono",
@@ -2480,7 +2480,7 @@ dependencies = [
 
 [[package]]
 name = "owlry-plugin-api"
-version = "0.4.10"
+version = "1.0.0"
 dependencies = [
  "abi_stable",
  "serde",
@@ -2488,7 +2488,7 @@ dependencies = [
 
 [[package]]
 name = "owlry-rune"
-version = "0.4.10"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "dirs",

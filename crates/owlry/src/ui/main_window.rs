@@ -1,9 +1,6 @@
 use crate::backend::SearchBackend;
-use owlry_core::config::Config;
-use owlry_core::filter::ProviderFilter;
-use owlry_core::providers::{LaunchItem, ProviderType};
-use crate::ui::submenu;
 use crate::ui::ResultRow;
+use crate::ui::submenu;
 use gtk4::gdk::Key;
 use gtk4::prelude::*;
 use gtk4::{
@@ -11,6 +8,9 @@ use gtk4::{
     ListBoxRow, Orientation, ScrolledWindow, SelectionMode, ToggleButton,
 };
 use log::info;
+use owlry_core::config::Config;
+use owlry_core::filter::ProviderFilter;
+use owlry_core::providers::{LaunchItem, ProviderType};
 
 #[cfg(feature = "dev-logging")]
 use log::debug;
@@ -148,7 +148,9 @@ impl MainWindow {
         header_box.append(&filter_tabs);
 
         // Search entry with dynamic placeholder (or custom prompt if provided)
-        let placeholder = custom_prompt.clone().unwrap_or_else(|| Self::build_placeholder(&filter.borrow()));
+        let placeholder = custom_prompt
+            .clone()
+            .unwrap_or_else(|| Self::build_placeholder(&filter.borrow()));
         let search_entry = Entry::builder()
             .placeholder_text(&placeholder)
             .hexpand(true)
@@ -293,8 +295,16 @@ impl MainWindow {
             // Show number hint in the label for first 9 tabs (using superscript)
             let label = if idx < 9 {
                 let superscript = match idx + 1 {
-                    1 => "¹", 2 => "²", 3 => "³", 4 => "⁴", 5 => "⁵",
-                    6 => "⁶", 7 => "⁷", 8 => "⁸", 9 => "⁹", _ => "",
+                    1 => "¹",
+                    2 => "²",
+                    3 => "³",
+                    4 => "⁴",
+                    5 => "⁵",
+                    6 => "⁶",
+                    7 => "⁷",
+                    8 => "⁸",
+                    9 => "⁹",
+                    _ => "",
                 };
                 format!("{}{}", base_label, superscript)
             } else {
@@ -494,7 +504,11 @@ impl MainWindow {
         actions: Vec<LaunchItem>,
     ) {
         #[cfg(feature = "dev-logging")]
-        debug!("[UI] Entering submenu: {} ({} actions)", display_name, actions.len());
+        debug!(
+            "[UI] Entering submenu: {} ({} actions)",
+            display_name,
+            actions.len()
+        );
 
         // Save current state
         {
@@ -705,7 +719,8 @@ impl MainWindow {
                     }
 
                     // current_results holds only what's displayed (for selection/activation)
-                    *current_results.borrow_mut() = results.into_iter().take(initial_count).collect();
+                    *current_results.borrow_mut() =
+                        results.into_iter().take(initial_count).collect();
                 },
             );
 
@@ -736,15 +751,19 @@ impl MainWindow {
                 if let Some(item) = results.get(index) {
                     // Check if this is a submenu item and query the plugin for actions
                     let submenu_result = if submenu::is_submenu_item(item) {
-                        if let Some((plugin_id, data)) = submenu::parse_submenu_command(&item.command) {
+                        if let Some((plugin_id, data)) =
+                            submenu::parse_submenu_command(&item.command)
+                        {
                             // Clone values before dropping borrow
                             let plugin_id = plugin_id.to_string();
                             let data = data.to_string();
                             let display_name = item.name.clone();
                             drop(results); // Release borrow before querying
-                            backend_for_activate
-                                .borrow_mut()
-                                .query_submenu_actions(&plugin_id, &data, &display_name)
+                            backend_for_activate.borrow_mut().query_submenu_actions(
+                                &plugin_id,
+                                &data,
+                                &display_name,
+                            )
                         } else {
                             drop(results);
                             None
@@ -843,7 +862,10 @@ impl MainWindow {
             let shift = modifiers.contains(gtk4::gdk::ModifierType::SHIFT_MASK);
 
             #[cfg(feature = "dev-logging")]
-            debug!("[UI] Key pressed: {:?} (ctrl={}, shift={})", key, ctrl, shift);
+            debug!(
+                "[UI] Key pressed: {:?} (ctrl={}, shift={})",
+                key, ctrl, shift
+            );
 
             match key {
                 Key::Escape => {
@@ -906,10 +928,11 @@ impl MainWindow {
                     if let Some(selected) = results_list.selected_row() {
                         let prev_index = selected.index() - 1;
                         if prev_index >= 0
-                            && let Some(prev_row) = results_list.row_at_index(prev_index) {
-                                results_list.select_row(Some(&prev_row));
-                                Self::scroll_to_row(&scrolled, &results_list, &prev_row);
-                            }
+                            && let Some(prev_row) = results_list.row_at_index(prev_index)
+                        {
+                            results_list.select_row(Some(&prev_row));
+                            Self::scroll_to_row(&scrolled, &results_list, &prev_row);
+                        }
                     }
                     gtk4::glib::Propagation::Stop
                 }
@@ -941,8 +964,17 @@ impl MainWindow {
                     gtk4::glib::Propagation::Stop
                 }
                 // Ctrl+1-9 toggle specific providers based on tab order (only when not in submenu)
-                Key::_1 | Key::_2 | Key::_3 | Key::_4 | Key::_5 |
-                Key::_6 | Key::_7 | Key::_8 | Key::_9 if ctrl => {
+                Key::_1
+                | Key::_2
+                | Key::_3
+                | Key::_4
+                | Key::_5
+                | Key::_6
+                | Key::_7
+                | Key::_8
+                | Key::_9
+                    if ctrl =>
+                {
                     info!("[UI] Ctrl+number detected: {:?}", key);
                     if !submenu_state.borrow().active {
                         let idx = match key {
@@ -968,7 +1000,11 @@ impl MainWindow {
                                 &mode_label,
                             );
                         } else {
-                            info!("[UI] No provider at index {}, tab_order len={}", idx, tab_order.len());
+                            info!(
+                                "[UI] No provider at index {}, tab_order len={}",
+                                idx,
+                                tab_order.len()
+                            );
                         }
                     }
                     gtk4::glib::Propagation::Stop
@@ -1029,7 +1065,8 @@ impl MainWindow {
                     let results = current_results.borrow();
                     if let Some(item) = results.get(index).cloned() {
                         drop(results);
-                        let should_close = Self::handle_item_action(&item, &config.borrow(), &backend);
+                        let should_close =
+                            Self::handle_item_action(&item, &config.borrow(), &backend);
                         if should_close {
                             window.close();
                         } else {
@@ -1076,7 +1113,11 @@ impl MainWindow {
             }
         } else if current.len() == 1 {
             let idx = tab_order.iter().position(|p| p == &current[0]).unwrap_or(0);
-            let at_boundary = if forward { idx == tab_order.len() - 1 } else { idx == 0 };
+            let at_boundary = if forward {
+                idx == tab_order.len() - 1
+            } else {
+                idx == 0
+            };
 
             if at_boundary {
                 // At boundary, go back to "All" mode
@@ -1284,11 +1325,14 @@ impl MainWindow {
         info!("Launching: {} ({})", item.name, item.command);
 
         #[cfg(feature = "dev-logging")]
-        debug!("[UI] Launch details: terminal={}, provider={:?}, id={}", item.terminal, item.provider, item.id);
+        debug!(
+            "[UI] Launch details: terminal={}, provider={:?}, id={}",
+            item.terminal, item.provider, item.id
+        );
 
         // Check if this is a desktop application (has .desktop file as ID)
-        let is_desktop_app = matches!(item.provider, ProviderType::Application)
-            && item.id.ends_with(".desktop");
+        let is_desktop_app =
+            matches!(item.provider, ProviderType::Application) && item.id.ends_with(".desktop");
 
         // Desktop files should be launched via proper launchers that implement the
         // freedesktop Desktop Entry spec (D-Bus activation, field codes, env vars, etc.)
@@ -1315,7 +1359,10 @@ impl MainWindow {
     ///
     /// Otherwise, uses `gio launch` which is always available (part of glib2/GTK4)
     /// and handles D-Bus activation, field codes, Terminal flag, etc.
-    fn launch_desktop_file(desktop_path: &str, config: &Config) -> std::io::Result<std::process::Child> {
+    fn launch_desktop_file(
+        desktop_path: &str,
+        config: &Config,
+    ) -> std::io::Result<std::process::Child> {
         use std::path::Path;
 
         // Check if desktop file exists
@@ -1349,16 +1396,22 @@ impl MainWindow {
                 .spawn()
         } else {
             info!("Launching via gio: {}", desktop_path);
-            Command::new("gio")
-                .args(["launch", desktop_path])
-                .spawn()
+            Command::new("gio").args(["launch", desktop_path]).spawn()
         }
     }
 
     /// Launch a shell command (for non-desktop items like PATH commands, plugins, etc.)
-    fn launch_command(command: &str, terminal: bool, config: &Config) -> std::io::Result<std::process::Child> {
+    fn launch_command(
+        command: &str,
+        terminal: bool,
+        config: &Config,
+    ) -> std::io::Result<std::process::Child> {
         let cmd = if terminal {
-            let terminal_cmd = config.general.terminal_command.as_deref().unwrap_or("xterm");
+            let terminal_cmd = config
+                .general
+                .terminal_command
+                .as_deref()
+                .unwrap_or("xterm");
             format!("{} -e {}", terminal_cmd, command)
         } else {
             command.to_string()

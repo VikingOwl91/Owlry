@@ -95,9 +95,7 @@ impl Provider for LuaProvider {
 unsafe impl Send for LuaProvider {}
 
 /// Create LuaProviders from all registered providers in a plugin
-pub fn create_providers_from_plugin(
-    plugin: Rc<RefCell<LoadedPlugin>>,
-) -> Vec<Box<dyn Provider>> {
+pub fn create_providers_from_plugin(plugin: Rc<RefCell<LoadedPlugin>>) -> Vec<Box<dyn Provider>> {
     let registrations = {
         let p = plugin.borrow();
         match p.get_provider_registrations() {

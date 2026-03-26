@@ -64,10 +64,10 @@ pub struct PluginPermissions {
 impl PluginManifest {
     /// Load manifest from a plugin.toml file
     pub fn load(path: &Path) -> Result<Self, String> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read manifest: {}", e))?;
-        let manifest: PluginManifest = toml::from_str(&content)
-            .map_err(|e| format!("Failed to parse manifest: {}", e))?;
+        let content =
+            std::fs::read_to_string(path).map_err(|e| format!("Failed to read manifest: {}", e))?;
+        let manifest: PluginManifest =
+            toml::from_str(&content).map_err(|e| format!("Failed to parse manifest: {}", e))?;
         manifest.validate()?;
         Ok(manifest)
     }
@@ -78,7 +78,12 @@ impl PluginManifest {
             return Err("Plugin ID cannot be empty".to_string());
         }
 
-        if !self.plugin.id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+        if !self
+            .plugin
+            .id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        {
             return Err("Plugin ID must be lowercase alphanumeric with hyphens".to_string());
         }
 

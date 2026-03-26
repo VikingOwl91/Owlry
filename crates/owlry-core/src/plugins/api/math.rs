@@ -14,20 +14,20 @@ pub fn register_math_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
     // Returns (result, nil) on success or (nil, error_message) on failure
     math_table.set(
         "calculate",
-        lua.create_function(|_lua, expr: String| -> LuaResult<(Option<f64>, Option<String>)> {
-            match meval::eval_str(&expr) {
-                Ok(result) => {
-                    if result.is_finite() {
-                        Ok((Some(result), None))
-                    } else {
-                        Ok((None, Some("Result is not a finite number".to_string())))
+        lua.create_function(
+            |_lua, expr: String| -> LuaResult<(Option<f64>, Option<String>)> {
+                match meval::eval_str(&expr) {
+                    Ok(result) => {
+                        if result.is_finite() {
+                            Ok((Some(result), None))
+                        } else {
+                            Ok((None, Some("Result is not a finite number".to_string())))
+                        }
                     }
+                    Err(e) => Ok((None, Some(e.to_string()))),
                 }
-                Err(e) => {
-                    Ok((None, Some(e.to_string())))
-                }
-            }
-        })?,
+            },
+        )?,
     )?;
 
     // owlry.math.calc(expression) -> number (throws on error)
@@ -106,11 +106,13 @@ mod tests {
     fn test_calculate_basic() {
         let lua = setup_lua();
 
-        let chunk = lua.load(r#"
+        let chunk = lua.load(
+            r#"
             local result, err = owlry.math.calculate("2 + 2")
             if err then error(err) end
             return result
-        "#);
+        "#,
+        );
         let result: f64 = chunk.call(()).unwrap();
         assert!((result - 4.0).abs() < f64::EPSILON);
     }
@@ -119,11 +121,13 @@ mod tests {
     fn test_calculate_complex() {
         let lua = setup_lua();
 
-        let chunk = lua.load(r#"
+        let chunk = lua.load(
+            r#"
             local result, err = owlry.math.calculate("sqrt(16) + 2^3")
             if err then error(err) end
             return result
-        "#);
+        "#,
+        );
         let result: f64 = chunk.call(()).unwrap();
         assert!((result - 12.0).abs() < f64::EPSILON); // sqrt(16) = 4, 2^3 = 8
     }
@@ -132,14 +136,16 @@ mod tests {
     fn test_calculate_error() {
         let lua = setup_lua();
 
-        let chunk = lua.load(r#"
+        let chunk = lua.load(
+            r#"
             local result, err = owlry.math.calculate("invalid expression @@")
             if result then
                 return false -- should not succeed
             else
                 return true -- correctly failed
             end
-        "#);
+        "#,
+        );
         let had_error: bool = chunk.call(()).unwrap();
         assert!(had_error);
     }

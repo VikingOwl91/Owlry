@@ -28,7 +28,7 @@ impl Default for SandboxConfig {
             allow_commands: false,
             allow_network: false,
             allow_external_fs: false,
-            max_run_time_ms: 5000, // 5 seconds
+            max_run_time_ms: 5000,        // 5 seconds
             max_memory: 64 * 1024 * 1024, // 64 MB
         }
     }
@@ -50,11 +50,7 @@ impl SandboxConfig {
 pub fn create_lua_runtime(_sandbox: &SandboxConfig) -> LuaResult<Lua> {
     // Create Lua with safe standard libraries only
     // We exclude: debug, io, os (dangerous parts), package (loadlib), ffi
-    let libs = StdLib::COROUTINE
-        | StdLib::TABLE
-        | StdLib::STRING
-        | StdLib::UTF8
-        | StdLib::MATH;
+    let libs = StdLib::COROUTINE | StdLib::TABLE | StdLib::STRING | StdLib::UTF8 | StdLib::MATH;
 
     let lua = Lua::new_with(libs, mlua::LuaOptions::default())?;
 
@@ -74,11 +70,15 @@ fn setup_safe_globals(lua: &Lua) -> LuaResult<()> {
 
     // Create a restricted os table with only safe functions
     let os_table = lua.create_table()?;
-    os_table.set("clock", lua.create_function(|_, ()| {
-        Ok(std::time::Instant::now().elapsed().as_secs_f64())
-    })?)?;
+    os_table.set(
+        "clock",
+        lua.create_function(|_, ()| Ok(std::time::Instant::now().elapsed().as_secs_f64()))?,
+    )?;
     os_table.set("date", lua.create_function(os_date)?)?;
-    os_table.set("difftime", lua.create_function(|_, (t2, t1): (f64, f64)| Ok(t2 - t1))?)?;
+    os_table.set(
+        "difftime",
+        lua.create_function(|_, (t2, t1): (f64, f64)| Ok(t2 - t1))?,
+    )?;
     os_table.set("time", lua.create_function(os_time)?)?;
     globals.set("os", os_table)?;
 
@@ -107,8 +107,7 @@ fn os_time(_lua: &Lua, _args: ()) -> LuaResult<i64> {
 
 /// Load and run a Lua file in the given runtime
 pub fn load_file(lua: &Lua, path: &std::path::Path) -> LuaResult<()> {
-    let content = std::fs::read_to_string(path)
-        .map_err(mlua::Error::external)?;
+    let content = std::fs::read_to_string(path).map_err(mlua::Error::external)?;
     lua.load(&content)
         .set_name(path.file_name().and_then(|n| n.to_str()).unwrap_or("chunk"))
         .into_function()?

@@ -4,15 +4,15 @@ use crate::client::CoreClient;
 use crate::providers::DmenuProvider;
 use crate::theme;
 use crate::ui::MainWindow;
+use gtk4::prelude::*;
+use gtk4::{Application, CssProvider, gio};
+use gtk4_layer_shell::{Edge, Layer, LayerShell};
+use log::{debug, info, warn};
 use owlry_core::config::Config;
 use owlry_core::data::FrecencyStore;
 use owlry_core::filter::ProviderFilter;
 use owlry_core::paths;
 use owlry_core::providers::{Provider, ProviderManager, ProviderType};
-use gtk4::prelude::*;
-use gtk4::{gio, Application, CssProvider};
-use gtk4_layer_shell::{Edge, Layer, LayerShell};
-use log::{debug, info, warn};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -61,7 +61,7 @@ impl OwlryApp {
             let frecency = FrecencyStore::load_or_default();
 
             SearchBackend::Local {
-                providers: provider_manager,
+                providers: Box::new(provider_manager),
                 frecency,
             }
         } else {
@@ -98,11 +98,7 @@ impl OwlryApp {
                     &config.borrow().providers,
                 )
             } else {
-                ProviderFilter::new(
-                    None,
-                    Some(provider_types),
-                    &config.borrow().providers,
-                )
+                ProviderFilter::new(None, Some(provider_types), &config.borrow().providers)
             }
         } else {
             ProviderFilter::new(None, None, &config.borrow().providers)
@@ -180,7 +176,7 @@ impl OwlryApp {
         let frecency = FrecencyStore::load_or_default();
 
         SearchBackend::Local {
-            providers: provider_manager,
+            providers: Box::new(provider_manager),
             frecency,
         }
     }
@@ -241,16 +237,17 @@ impl OwlryApp {
 
         // 3. Load user's custom stylesheet if exists
         if let Some(custom_path) = paths::custom_style_file()
-            && custom_path.exists() {
-                let custom_provider = CssProvider::new();
-                custom_provider.load_from_path(&custom_path);
-                gtk4::style_context_add_provider_for_display(
-                    &display,
-                    &custom_provider,
-                    gtk4::STYLE_PROVIDER_PRIORITY_USER,
-                );
-                debug!("Loaded custom CSS from {:?}", custom_path);
-            }
+            && custom_path.exists()
+        {
+            let custom_provider = CssProvider::new();
+            custom_provider.load_from_path(&custom_path);
+            gtk4::style_context_add_provider_for_display(
+                &display,
+                &custom_provider,
+                gtk4::STYLE_PROVIDER_PRIORITY_USER,
+            );
+            debug!("Loaded custom CSS from {:?}", custom_path);
+        }
 
         // 4. Inject config variables (highest priority for overrides)
         let vars_css = theme::generate_variables_css(&config.appearance);

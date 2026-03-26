@@ -1,7 +1,7 @@
 mod app;
 mod backend;
-pub mod client;
 mod cli;
+pub mod client;
 mod plugin_commands;
 mod providers;
 mod theme;
@@ -65,7 +65,11 @@ fn main() {
     }
 
     // No subcommand - launch the app
-    let default_level = if cfg!(feature = "dev-logging") { "debug" } else { "info" };
+    let default_level = if cfg!(feature = "dev-logging") {
+        "debug"
+    } else {
+        "info"
+    };
 
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(default_level))
         .format_timestamp_millis()

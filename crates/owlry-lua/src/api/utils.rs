@@ -11,25 +11,37 @@ use std::path::{Path, PathBuf};
 pub fn register_log_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
     let log = lua.create_table()?;
 
-    log.set("debug", lua.create_function(|_, msg: String| {
-        eprintln!("[DEBUG] {}", msg);
-        Ok(())
-    })?)?;
+    log.set(
+        "debug",
+        lua.create_function(|_, msg: String| {
+            eprintln!("[DEBUG] {}", msg);
+            Ok(())
+        })?,
+    )?;
 
-    log.set("info", lua.create_function(|_, msg: String| {
-        eprintln!("[INFO] {}", msg);
-        Ok(())
-    })?)?;
+    log.set(
+        "info",
+        lua.create_function(|_, msg: String| {
+            eprintln!("[INFO] {}", msg);
+            Ok(())
+        })?,
+    )?;
 
-    log.set("warn", lua.create_function(|_, msg: String| {
-        eprintln!("[WARN] {}", msg);
-        Ok(())
-    })?)?;
+    log.set(
+        "warn",
+        lua.create_function(|_, msg: String| {
+            eprintln!("[WARN] {}", msg);
+            Ok(())
+        })?,
+    )?;
 
-    log.set("error", lua.create_function(|_, msg: String| {
-        eprintln!("[ERROR] {}", msg);
-        Ok(())
-    })?)?;
+    log.set(
+        "error",
+        lua.create_function(|_, msg: String| {
+            eprintln!("[ERROR] {}", msg);
+            Ok(())
+        })?,
+    )?;
 
     owlry.set("log", log)?;
     Ok(())
@@ -44,59 +56,79 @@ pub fn register_path_api(lua: &Lua, owlry: &Table, plugin_dir: &Path) -> LuaResu
     let path = lua.create_table()?;
 
     // owlry.path.config() -> ~/.config/owlry
-    path.set("config", lua.create_function(|_, ()| {
-        Ok(dirs::config_dir()
-            .map(|d| d.join("owlry"))
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default())
-    })?)?;
+    path.set(
+        "config",
+        lua.create_function(|_, ()| {
+            Ok(dirs::config_dir()
+                .map(|d| d.join("owlry"))
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default())
+        })?,
+    )?;
 
     // owlry.path.data() -> ~/.local/share/owlry
-    path.set("data", lua.create_function(|_, ()| {
-        Ok(dirs::data_dir()
-            .map(|d| d.join("owlry"))
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default())
-    })?)?;
+    path.set(
+        "data",
+        lua.create_function(|_, ()| {
+            Ok(dirs::data_dir()
+                .map(|d| d.join("owlry"))
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default())
+        })?,
+    )?;
 
     // owlry.path.cache() -> ~/.cache/owlry
-    path.set("cache", lua.create_function(|_, ()| {
-        Ok(dirs::cache_dir()
-            .map(|d| d.join("owlry"))
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default())
-    })?)?;
+    path.set(
+        "cache",
+        lua.create_function(|_, ()| {
+            Ok(dirs::cache_dir()
+                .map(|d| d.join("owlry"))
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default())
+        })?,
+    )?;
 
     // owlry.path.home() -> ~
-    path.set("home", lua.create_function(|_, ()| {
-        Ok(dirs::home_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default())
-    })?)?;
+    path.set(
+        "home",
+        lua.create_function(|_, ()| {
+            Ok(dirs::home_dir()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default())
+        })?,
+    )?;
 
     // owlry.path.join(...) -> joined path
-    path.set("join", lua.create_function(|_, parts: mlua::Variadic<String>| {
-        let mut path = PathBuf::new();
-        for part in parts {
-            path.push(part);
-        }
-        Ok(path.to_string_lossy().to_string())
-    })?)?;
+    path.set(
+        "join",
+        lua.create_function(|_, parts: mlua::Variadic<String>| {
+            let mut path = PathBuf::new();
+            for part in parts {
+                path.push(part);
+            }
+            Ok(path.to_string_lossy().to_string())
+        })?,
+    )?;
 
     // owlry.path.plugin_dir() -> plugin directory
     let plugin_dir_str = plugin_dir.to_string_lossy().to_string();
-    path.set("plugin_dir", lua.create_function(move |_, ()| {
-        Ok(plugin_dir_str.clone())
-    })?)?;
+    path.set(
+        "plugin_dir",
+        lua.create_function(move |_, ()| Ok(plugin_dir_str.clone()))?,
+    )?;
 
     // owlry.path.expand(path) -> expanded path (~ -> home)
-    path.set("expand", lua.create_function(|_, path: String| {
-        if path.starts_with("~/")
-            && let Some(home) = dirs::home_dir() {
+    path.set(
+        "expand",
+        lua.create_function(|_, path: String| {
+            if path.starts_with("~/")
+                && let Some(home) = dirs::home_dir()
+            {
                 return Ok(home.join(&path[2..]).to_string_lossy().to_string());
             }
-        Ok(path)
-    })?)?;
+            Ok(path)
+        })?,
+    )?;
 
     owlry.set("path", path)?;
     Ok(())
@@ -111,76 +143,95 @@ pub fn register_fs_api(lua: &Lua, owlry: &Table, _plugin_dir: &Path) -> LuaResul
     let fs = lua.create_table()?;
 
     // owlry.fs.exists(path) -> bool
-    fs.set("exists", lua.create_function(|_, path: String| {
-        let path = expand_path(&path);
-        Ok(Path::new(&path).exists())
-    })?)?;
+    fs.set(
+        "exists",
+        lua.create_function(|_, path: String| {
+            let path = expand_path(&path);
+            Ok(Path::new(&path).exists())
+        })?,
+    )?;
 
     // owlry.fs.is_dir(path) -> bool
-    fs.set("is_dir", lua.create_function(|_, path: String| {
-        let path = expand_path(&path);
-        Ok(Path::new(&path).is_dir())
-    })?)?;
+    fs.set(
+        "is_dir",
+        lua.create_function(|_, path: String| {
+            let path = expand_path(&path);
+            Ok(Path::new(&path).is_dir())
+        })?,
+    )?;
 
     // owlry.fs.read(path) -> string or nil
-    fs.set("read", lua.create_function(|_, path: String| {
-        let path = expand_path(&path);
-        match std::fs::read_to_string(&path) {
-            Ok(content) => Ok(Some(content)),
-            Err(_) => Ok(None),
-        }
-    })?)?;
+    fs.set(
+        "read",
+        lua.create_function(|_, path: String| {
+            let path = expand_path(&path);
+            match std::fs::read_to_string(&path) {
+                Ok(content) => Ok(Some(content)),
+                Err(_) => Ok(None),
+            }
+        })?,
+    )?;
 
     // owlry.fs.read_lines(path) -> table of strings or nil
-    fs.set("read_lines", lua.create_function(|lua, path: String| {
-        let path = expand_path(&path);
-        match std::fs::read_to_string(&path) {
-            Ok(content) => {
-                let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-                Ok(Some(lua.create_sequence_from(lines)?))
+    fs.set(
+        "read_lines",
+        lua.create_function(|lua, path: String| {
+            let path = expand_path(&path);
+            match std::fs::read_to_string(&path) {
+                Ok(content) => {
+                    let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+                    Ok(Some(lua.create_sequence_from(lines)?))
+                }
+                Err(_) => Ok(None),
             }
-            Err(_) => Ok(None),
-        }
-    })?)?;
+        })?,
+    )?;
 
     // owlry.fs.list_dir(path) -> table of filenames or nil
-    fs.set("list_dir", lua.create_function(|lua, path: String| {
-        let path = expand_path(&path);
-        match std::fs::read_dir(&path) {
-            Ok(entries) => {
-                let names: Vec<String> = entries
-                    .filter_map(|e| e.ok())
-                    .filter_map(|e| e.file_name().into_string().ok())
-                    .collect();
-                Ok(Some(lua.create_sequence_from(names)?))
+    fs.set(
+        "list_dir",
+        lua.create_function(|lua, path: String| {
+            let path = expand_path(&path);
+            match std::fs::read_dir(&path) {
+                Ok(entries) => {
+                    let names: Vec<String> = entries
+                        .filter_map(|e| e.ok())
+                        .filter_map(|e| e.file_name().into_string().ok())
+                        .collect();
+                    Ok(Some(lua.create_sequence_from(names)?))
+                }
+                Err(_) => Ok(None),
             }
-            Err(_) => Ok(None),
-        }
-    })?)?;
+        })?,
+    )?;
 
     // owlry.fs.read_json(path) -> table or nil
-    fs.set("read_json", lua.create_function(|lua, path: String| {
-        let path = expand_path(&path);
-        match std::fs::read_to_string(&path) {
-            Ok(content) => {
-                match serde_json::from_str::<serde_json::Value>(&content) {
+    fs.set(
+        "read_json",
+        lua.create_function(|lua, path: String| {
+            let path = expand_path(&path);
+            match std::fs::read_to_string(&path) {
+                Ok(content) => match serde_json::from_str::<serde_json::Value>(&content) {
                     Ok(value) => json_to_lua(lua, &value),
                     Err(_) => Ok(Value::Nil),
-                }
+                },
+                Err(_) => Ok(Value::Nil),
             }
-            Err(_) => Ok(Value::Nil),
-        }
-    })?)?;
+        })?,
+    )?;
 
     // owlry.fs.write(path, content) -> bool
-    fs.set("write", lua.create_function(|_, (path, content): (String, String)| {
-        let path = expand_path(&path);
-        // Create parent directories if needed
-        if let Some(parent) = Path::new(&path).parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        Ok(std::fs::write(&path, content).is_ok())
-    })?)?;
+    fs.set(
+        "write",
+        lua.create_function(|_, (path, content): (String, String)| {
+            let path = expand_path(&path);
+            // Create parent directories if needed
+            if let Some(parent) = Path::new(&path).parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            Ok(std::fs::write(&path, content).is_ok())
+        })?,
+    )?;
 
     owlry.set("fs", fs)?;
     Ok(())
@@ -195,18 +246,24 @@ pub fn register_json_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
     let json = lua.create_table()?;
 
     // owlry.json.encode(value) -> string
-    json.set("encode", lua.create_function(|lua, value: Value| {
-        let json_value = lua_to_json(lua, &value)?;
-        Ok(serde_json::to_string(&json_value).unwrap_or_else(|_| "null".to_string()))
-    })?)?;
+    json.set(
+        "encode",
+        lua.create_function(|lua, value: Value| {
+            let json_value = lua_to_json(lua, &value)?;
+            Ok(serde_json::to_string(&json_value).unwrap_or_else(|_| "null".to_string()))
+        })?,
+    )?;
 
     // owlry.json.decode(string) -> value or nil
-    json.set("decode", lua.create_function(|lua, s: String| {
-        match serde_json::from_str::<serde_json::Value>(&s) {
-            Ok(value) => json_to_lua(lua, &value),
-            Err(_) => Ok(Value::Nil),
-        }
-    })?)?;
+    json.set(
+        "decode",
+        lua.create_function(|lua, s: String| {
+            match serde_json::from_str::<serde_json::Value>(&s) {
+                Ok(value) => json_to_lua(lua, &value),
+                Err(_) => Ok(Value::Nil),
+            }
+        })?,
+    )?;
 
     owlry.set("json", json)?;
     Ok(())
@@ -219,9 +276,10 @@ pub fn register_json_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
 /// Expand ~ in paths
 fn expand_path(path: &str) -> String {
     if path.starts_with("~/")
-        && let Some(home) = dirs::home_dir() {
-            return home.join(&path[2..]).to_string_lossy().to_string();
-        }
+        && let Some(home) = dirs::home_dir()
+    {
+        return home.join(&path[2..]).to_string_lossy().to_string();
+    }
     path.to_string()
 }
 
@@ -305,7 +363,7 @@ fn lua_to_json(_lua: &Lua, value: &Value) -> LuaResult<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::{create_lua_runtime, SandboxConfig};
+    use crate::runtime::{SandboxConfig, create_lua_runtime};
 
     #[test]
     fn test_log_api() {
@@ -316,7 +374,10 @@ mod tests {
         lua.globals().set("owlry", owlry).unwrap();
 
         // Just verify it doesn't panic
-        lua.load("owlry.log.info('test message')").set_name("test").call::<()>(()).unwrap();
+        lua.load("owlry.log.info('test message')")
+            .set_name("test")
+            .call::<()>(())
+            .unwrap();
     }
 
     #[test]
@@ -327,10 +388,18 @@ mod tests {
         register_path_api(&lua, &owlry, Path::new("/tmp/test-plugin")).unwrap();
         lua.globals().set("owlry", owlry).unwrap();
 
-        let home: String = lua.load("return owlry.path.home()").set_name("test").call(()).unwrap();
+        let home: String = lua
+            .load("return owlry.path.home()")
+            .set_name("test")
+            .call(())
+            .unwrap();
         assert!(!home.is_empty());
 
-        let plugin_dir: String = lua.load("return owlry.path.plugin_dir()").set_name("test").call(()).unwrap();
+        let plugin_dir: String = lua
+            .load("return owlry.path.plugin_dir()")
+            .set_name("test")
+            .call(())
+            .unwrap();
         assert_eq!(plugin_dir, "/tmp/test-plugin");
     }
 
@@ -342,10 +411,18 @@ mod tests {
         register_fs_api(&lua, &owlry, Path::new("/tmp")).unwrap();
         lua.globals().set("owlry", owlry).unwrap();
 
-        let exists: bool = lua.load("return owlry.fs.exists('/tmp')").set_name("test").call(()).unwrap();
+        let exists: bool = lua
+            .load("return owlry.fs.exists('/tmp')")
+            .set_name("test")
+            .call(())
+            .unwrap();
         assert!(exists);
 
-        let is_dir: bool = lua.load("return owlry.fs.is_dir('/tmp')").set_name("test").call(()).unwrap();
+        let is_dir: bool = lua
+            .load("return owlry.fs.is_dir('/tmp')")
+            .set_name("test")
+            .call(())
+            .unwrap();
         assert!(is_dir);
     }
 

@@ -9,7 +9,9 @@
 use std::sync::{Arc, RwLock};
 
 use log::debug;
-use owlry_plugin_api::{PluginItem as ApiPluginItem, ProviderHandle, ProviderInfo, ProviderKind, ProviderPosition};
+use owlry_plugin_api::{
+    PluginItem as ApiPluginItem, ProviderHandle, ProviderInfo, ProviderKind, ProviderPosition,
+};
 
 use super::{LaunchItem, Provider, ProviderType};
 use crate::plugins::native_loader::NativePlugin;
@@ -76,7 +78,10 @@ impl NativeProvider {
         }
 
         let api_items = self.plugin.query_provider(self.handle, query);
-        api_items.into_iter().map(|item| self.convert_item(item)).collect()
+        api_items
+            .into_iter()
+            .map(|item| self.convert_item(item))
+            .collect()
     }
 
     /// Check if this provider has a prefix that matches the query

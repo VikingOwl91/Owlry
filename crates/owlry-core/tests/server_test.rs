@@ -37,7 +37,11 @@ fn test_server_responds_to_providers_request() {
     match resp {
         Response::Providers { list } => {
             // The default ProviderManager always has at least Application and Command
-            assert!(list.len() >= 2, "expected at least 2 providers, got {}", list.len());
+            assert!(
+                list.len() >= 2,
+                "expected at least 2 providers, got {}",
+                list.len()
+            );
             let ids: Vec<&str> = list.iter().map(|p| p.id.as_str()).collect();
             assert!(ids.contains(&"app"), "missing 'app' provider");
             assert!(ids.contains(&"cmd"), "missing 'cmd' provider");
@@ -95,7 +99,10 @@ fn test_server_handles_query_request() {
         Response::Results { items } => {
             // A nonsense query should return empty or very few results
             // (no items will fuzzy-match "nonexistent_query_xyz")
-            assert!(items.len() <= 5, "expected few/no results for gibberish query");
+            assert!(
+                items.len() <= 5,
+                "expected few/no results for gibberish query"
+            );
         }
         other => panic!("expected Results response, got: {:?}", other),
     }
@@ -172,7 +179,10 @@ fn test_server_handles_submenu_for_unknown_plugin() {
                 "error should mention the plugin id"
             );
         }
-        other => panic!("expected Error response for unknown plugin, got: {:?}", other),
+        other => panic!(
+            "expected Error response for unknown plugin, got: {:?}",
+            other
+        ),
     }
 
     drop(stream);

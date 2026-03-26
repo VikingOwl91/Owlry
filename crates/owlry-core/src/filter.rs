@@ -94,7 +94,10 @@ impl ProviderFilter {
         };
 
         #[cfg(feature = "dev-logging")]
-        debug!("[Filter] Created with enabled providers: {:?}", filter.enabled);
+        debug!(
+            "[Filter] Created with enabled providers: {:?}",
+            filter.enabled
+        );
 
         filter
     }
@@ -118,13 +121,19 @@ impl ProviderFilter {
                 self.enabled.insert(ProviderType::Application);
             }
             #[cfg(feature = "dev-logging")]
-            debug!("[Filter] Toggled OFF {:?}, enabled: {:?}", provider, self.enabled);
+            debug!(
+                "[Filter] Toggled OFF {:?}, enabled: {:?}",
+                provider, self.enabled
+            );
         } else {
             #[cfg(feature = "dev-logging")]
             let provider_debug = format!("{:?}", provider);
             self.enabled.insert(provider);
             #[cfg(feature = "dev-logging")]
-            debug!("[Filter] Toggled ON {}, enabled: {:?}", provider_debug, self.enabled);
+            debug!(
+                "[Filter] Toggled ON {}, enabled: {:?}",
+                provider_debug, self.enabled
+            );
         }
     }
 
@@ -151,7 +160,10 @@ impl ProviderFilter {
     pub fn set_prefix(&mut self, prefix: Option<ProviderType>) {
         #[cfg(feature = "dev-logging")]
         if self.active_prefix != prefix {
-            debug!("[Filter] Prefix changed: {:?} -> {:?}", self.active_prefix, prefix);
+            debug!(
+                "[Filter] Prefix changed: {:?} -> {:?}",
+                self.active_prefix, prefix
+            );
         }
         self.active_prefix = prefix;
     }
@@ -190,7 +202,10 @@ impl ProviderFilter {
                 let tag = rest[..space_idx].to_lowercase();
                 let query_part = rest[space_idx + 1..].to_string();
                 #[cfg(feature = "dev-logging")]
-                debug!("[Filter] parse_query({:?}) -> tag={:?}, query={:?}", query, tag, query_part);
+                debug!(
+                    "[Filter] parse_query({:?}) -> tag={:?}, query={:?}",
+                    query, tag, query_part
+                );
                 return ParsedQuery {
                     prefix: None,
                     tag_filter: Some(tag),
@@ -245,7 +260,10 @@ impl ProviderFilter {
         for (prefix_str, provider) in core_prefixes {
             if let Some(rest) = trimmed.strip_prefix(prefix_str) {
                 #[cfg(feature = "dev-logging")]
-                debug!("[Filter] parse_query({:?}) -> prefix={:?}, query={:?}", query, provider, rest);
+                debug!(
+                    "[Filter] parse_query({:?}) -> prefix={:?}, query={:?}",
+                    query, provider, rest
+                );
                 return ParsedQuery {
                     prefix: Some(provider.clone()),
                     tag_filter: None,
@@ -259,7 +277,10 @@ impl ProviderFilter {
             if let Some(rest) = trimmed.strip_prefix(prefix_str) {
                 let provider = ProviderType::Plugin(type_id.to_string());
                 #[cfg(feature = "dev-logging")]
-                debug!("[Filter] parse_query({:?}) -> prefix={:?}, query={:?}", query, provider, rest);
+                debug!(
+                    "[Filter] parse_query({:?}) -> prefix={:?}, query={:?}",
+                    query, provider, rest
+                );
                 return ParsedQuery {
                     prefix: Some(provider),
                     tag_filter: None,
@@ -304,7 +325,10 @@ impl ProviderFilter {
         for (prefix_str, provider) in partial_core {
             if trimmed == *prefix_str {
                 #[cfg(feature = "dev-logging")]
-                debug!("[Filter] parse_query({:?}) -> partial prefix {:?}", query, provider);
+                debug!(
+                    "[Filter] parse_query({:?}) -> partial prefix {:?}",
+                    query, provider
+                );
                 return ParsedQuery {
                     prefix: Some(provider.clone()),
                     tag_filter: None,
@@ -317,7 +341,10 @@ impl ProviderFilter {
             if trimmed == *prefix_str {
                 let provider = ProviderType::Plugin(type_id.to_string());
                 #[cfg(feature = "dev-logging")]
-                debug!("[Filter] parse_query({:?}) -> partial prefix {:?}", query, provider);
+                debug!(
+                    "[Filter] parse_query({:?}) -> partial prefix {:?}",
+                    query, provider
+                );
                 return ParsedQuery {
                     prefix: Some(provider),
                     tag_filter: None,
@@ -333,7 +360,10 @@ impl ProviderFilter {
         };
 
         #[cfg(feature = "dev-logging")]
-        debug!("[Filter] parse_query({:?}) -> prefix={:?}, tag={:?}, query={:?}", query, result.prefix, result.tag_filter, result.query);
+        debug!(
+            "[Filter] parse_query({:?}) -> prefix={:?}, tag={:?}, query={:?}",
+            query, result.prefix, result.tag_filter, result.query
+        );
 
         result
     }
@@ -396,7 +426,8 @@ impl ProviderFilter {
     /// "app"/"apps"/"application" -> Application, "cmd"/"command" -> Command,
     /// "dmenu" -> Dmenu, and everything else -> Plugin(id).
     pub fn mode_string_to_provider_type(mode: &str) -> ProviderType {
-        mode.parse::<ProviderType>().unwrap_or_else(|_| ProviderType::Plugin(mode.to_string()))
+        mode.parse::<ProviderType>()
+            .unwrap_or_else(|_| ProviderType::Plugin(mode.to_string()))
     }
 
     /// Get display name for current mode
@@ -452,7 +483,10 @@ mod tests {
     #[test]
     fn test_parse_query_plugin_prefix() {
         let result = ProviderFilter::parse_query(":calc 5+3");
-        assert_eq!(result.prefix, Some(ProviderType::Plugin("calc".to_string())));
+        assert_eq!(
+            result.prefix,
+            Some(ProviderType::Plugin("calc".to_string()))
+        );
         assert_eq!(result.query, "5+3");
     }
 
@@ -544,10 +578,7 @@ mod tests {
 
     #[test]
     fn test_explicit_mode_filter_rejects_unknown_plugins() {
-        let filter = ProviderFilter::from_mode_strings(&[
-            "app".to_string(),
-            "cmd".to_string(),
-        ]);
+        let filter = ProviderFilter::from_mode_strings(&["app".to_string(), "cmd".to_string()]);
         assert!(filter.is_active(ProviderType::Application));
         assert!(filter.is_active(ProviderType::Command));
         // Plugins not in the explicit list must be rejected

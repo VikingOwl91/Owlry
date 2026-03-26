@@ -141,13 +141,25 @@ impl ProviderManager {
             let type_id = provider.type_id();
 
             if provider.is_dynamic() {
-                info!("Registered dynamic provider: {} ({})", provider.name(), type_id);
+                info!(
+                    "Registered dynamic provider: {} ({})",
+                    provider.name(),
+                    type_id
+                );
                 manager.dynamic_providers.push(provider);
             } else if provider.is_widget() {
-                info!("Registered widget provider: {} ({})", provider.name(), type_id);
+                info!(
+                    "Registered widget provider: {} ({})",
+                    provider.name(),
+                    type_id
+                );
                 manager.widget_providers.push(provider);
             } else {
-                info!("Registered static provider: {} ({})", provider.name(), type_id);
+                info!(
+                    "Registered static provider: {} ({})",
+                    provider.name(),
+                    type_id
+                );
                 manager.static_native_providers.push(provider);
             }
         }
@@ -263,15 +275,25 @@ impl ProviderManager {
     /// Searches in all native provider lists (static, dynamic, widget)
     pub fn find_native_provider(&self, type_id: &str) -> Option<&NativeProvider> {
         // Check static native providers first (clipboard, emoji, ssh, systemd, etc.)
-        if let Some(p) = self.static_native_providers.iter().find(|p| p.type_id() == type_id) {
+        if let Some(p) = self
+            .static_native_providers
+            .iter()
+            .find(|p| p.type_id() == type_id)
+        {
             return Some(p);
         }
         // Check widget providers (pomodoro, weather, media)
-        if let Some(p) = self.widget_providers.iter().find(|p| p.type_id() == type_id) {
+        if let Some(p) = self
+            .widget_providers
+            .iter()
+            .find(|p| p.type_id() == type_id)
+        {
             return Some(p);
         }
         // Then dynamic providers (calc, websearch, filesearch)
-        self.dynamic_providers.iter().find(|p| p.type_id() == type_id)
+        self.dynamic_providers
+            .iter()
+            .find(|p| p.type_id() == type_id)
     }
 
     /// Execute a plugin action command
@@ -311,27 +333,31 @@ impl ProviderManager {
 
     /// Iterate over all static provider items (core + native static plugins)
     fn all_static_items(&self) -> impl Iterator<Item = &LaunchItem> {
-        self.providers
-            .iter()
-            .flat_map(|p| p.items().iter())
-            .chain(self.static_native_providers.iter().flat_map(|p| p.items().iter()))
+        self.providers.iter().flat_map(|p| p.items().iter()).chain(
+            self.static_native_providers
+                .iter()
+                .flat_map(|p| p.items().iter()),
+        )
     }
 
     #[allow(dead_code)]
     pub fn search(&self, query: &str, max_results: usize) -> Vec<(LaunchItem, i64)> {
         if query.is_empty() {
             // Return recent/popular items when query is empty
-            return self.all_static_items()
+            return self
+                .all_static_items()
                 .take(max_results)
                 .map(|item| (item.clone(), 0))
                 .collect();
         }
 
-        let mut results: Vec<(LaunchItem, i64)> = self.all_static_items()
+        let mut results: Vec<(LaunchItem, i64)> = self
+            .all_static_items()
             .filter_map(|item| {
                 // Match against name and description
                 let name_score = self.matcher.fuzzy_match(&item.name, query);
-                let desc_score = item.description
+                let desc_score = item
+                    .description
                     .as_ref()
                     .and_then(|d| self.matcher.fuzzy_match(d, query));
 
@@ -417,7 +443,10 @@ impl ProviderManager {
         tag_filter: Option<&str>,
     ) -> Vec<(LaunchItem, i64)> {
         #[cfg(feature = "dev-logging")]
-        debug!("[Search] query={:?}, max={}, frecency_weight={}", query, max_results, frecency_weight);
+        debug!(
+            "[Search] query={:?}, max={}, frecency_weight={}",
+            query, max_results, frecency_weight
+        );
 
         let mut results: Vec<(LaunchItem, i64)> = Vec::new();
 
@@ -567,7 +596,13 @@ impl ProviderManager {
         {
             debug!("[Search] Returning {} results", results.len());
             for (i, (item, score)) in results.iter().take(5).enumerate() {
-                debug!("[Search]   #{}: {} (score={}, provider={:?})", i + 1, item.name, score, item.provider);
+                debug!(
+                    "[Search]   #{}: {} (score={}, provider={:?})",
+                    i + 1,
+                    item.name,
+                    score,
+                    item.provider
+                );
             }
             if results.len() > 5 {
                 debug!("[Search]   ... and {} more", results.len() - 5);
@@ -583,7 +618,11 @@ impl ProviderManager {
         self.providers
             .iter()
             .map(|p| p.provider_type())
-            .chain(self.static_native_providers.iter().map(|p| p.provider_type()))
+            .chain(
+                self.static_native_providers
+                    .iter()
+                    .map(|p| p.provider_type()),
+            )
             .collect()
     }
 
@@ -606,16 +645,10 @@ impl ProviderManager {
                     Some(":cmd".to_string()),
                     "utilities-terminal".to_string(),
                 ),
-                ProviderType::Dmenu => (
-                    "dmenu".to_string(),
-                    None,
-                    "view-list-symbolic".to_string(),
-                ),
-                ProviderType::Plugin(type_id) => (
-                    type_id,
-                    None,
-                    "application-x-addon".to_string(),
-                ),
+                ProviderType::Dmenu => {
+                    ("dmenu".to_string(), None, "view-list-symbolic".to_string())
+                }
+                ProviderType::Plugin(type_id) => (type_id, None, "application-x-addon".to_string()),
             };
             descs.push(ProviderDescriptor {
                 id,
@@ -771,7 +804,10 @@ impl ProviderManager {
         }
 
         #[cfg(feature = "dev-logging")]
-        debug!("[Submenu] No submenu actions found for plugin '{}'", plugin_id);
+        debug!(
+            "[Submenu] No submenu actions found for plugin '{}'",
+            plugin_id
+        );
 
         None
     }
@@ -856,9 +892,8 @@ mod tests {
 
     #[test]
     fn test_available_providers_dmenu() {
-        let providers: Vec<Box<dyn Provider>> = vec![
-            Box::new(MockProvider::new("dmenu", ProviderType::Dmenu)),
-        ];
+        let providers: Vec<Box<dyn Provider>> =
+            vec![Box::new(MockProvider::new("dmenu", ProviderType::Dmenu))];
         let pm = ProviderManager::new(providers, Vec::new());
         let descs = pm.available_providers();
         assert_eq!(descs.len(), 1);
@@ -895,9 +930,10 @@ mod tests {
 
     #[test]
     fn test_refresh_provider_unknown_does_not_panic() {
-        let providers: Vec<Box<dyn Provider>> = vec![
-            Box::new(MockProvider::new("Applications", ProviderType::Application)),
-        ];
+        let providers: Vec<Box<dyn Provider>> = vec![Box::new(MockProvider::new(
+            "Applications",
+            ProviderType::Application,
+        ))];
         let mut pm = ProviderManager::new(providers, Vec::new());
         pm.refresh_provider("nonexistent");
         // Should complete without panicking
@@ -909,8 +945,8 @@ mod tests {
             make_item("firefox", "Firefox", ProviderType::Application),
             make_item("vim", "Vim", ProviderType::Application),
         ];
-        let provider = MockProvider::new("Applications", ProviderType::Application)
-            .with_items(items);
+        let provider =
+            MockProvider::new("Applications", ProviderType::Application).with_items(items);
         let providers: Vec<Box<dyn Provider>> = vec![Box::new(provider)];
         let pm = ProviderManager::new(providers, Vec::new());
 

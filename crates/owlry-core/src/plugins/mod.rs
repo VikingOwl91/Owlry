@@ -50,7 +50,7 @@ pub use loader::LoadedPlugin;
 
 // Used by plugins/commands.rs for plugin CLI commands
 #[allow(unused_imports)]
-pub use manifest::{check_compatibility, discover_plugins, PluginManifest};
+pub use manifest::{PluginManifest, check_compatibility, discover_plugins};
 
 // ============================================================================
 // Lua Plugin Manager (only available with lua feature)
@@ -64,7 +64,7 @@ mod lua_manager {
     use std::path::PathBuf;
     use std::rc::Rc;
 
-    use manifest::{discover_plugins, check_compatibility};
+    use manifest::{check_compatibility, discover_plugins};
 
     /// Plugin manager coordinates loading, initialization, and lifecycle of Lua plugins
     pub struct PluginManager {
@@ -158,7 +158,10 @@ mod lua_manager {
 
         /// Get all enabled plugins
         pub fn enabled_plugins(&self) -> impl Iterator<Item = Rc<RefCell<LoadedPlugin>>> + '_ {
-            self.plugins.values().filter(|p| p.borrow().enabled).cloned()
+            self.plugins
+                .values()
+                .filter(|p| p.borrow().enabled)
+                .cloned()
         }
 
         /// Get the number of loaded plugins
@@ -176,7 +179,10 @@ mod lua_manager {
         /// Enable a plugin by ID
         #[allow(dead_code)]
         pub fn enable(&mut self, id: &str) -> PluginResult<()> {
-            let plugin_rc = self.plugins.get(id).ok_or_else(|| PluginError::NotFound(id.to_string()))?;
+            let plugin_rc = self
+                .plugins
+                .get(id)
+                .ok_or_else(|| PluginError::NotFound(id.to_string()))?;
             let mut plugin = plugin_rc.borrow_mut();
 
             if !plugin.enabled {
@@ -191,7 +197,10 @@ mod lua_manager {
         /// Disable a plugin by ID
         #[allow(dead_code)]
         pub fn disable(&mut self, id: &str) -> PluginResult<()> {
-            let plugin_rc = self.plugins.get(id).ok_or_else(|| PluginError::NotFound(id.to_string()))?;
+            let plugin_rc = self
+                .plugins
+                .get(id)
+                .ok_or_else(|| PluginError::NotFound(id.to_string()))?;
             plugin_rc.borrow_mut().enabled = false;
             Ok(())
         }
@@ -200,7 +209,13 @@ mod lua_manager {
         #[allow(dead_code)]
         pub fn providers_for(&self, provider_name: &str) -> Vec<String> {
             self.enabled_plugins()
-                .filter(|p| p.borrow().manifest.provides.providers.contains(&provider_name.to_string()))
+                .filter(|p| {
+                    p.borrow()
+                        .manifest
+                        .provides
+                        .providers
+                        .contains(&provider_name.to_string())
+                })
                 .map(|p| p.borrow().id().to_string())
                 .collect()
         }
@@ -208,13 +223,15 @@ mod lua_manager {
         /// Check if any plugin provides actions
         #[allow(dead_code)]
         pub fn has_action_plugins(&self) -> bool {
-            self.enabled_plugins().any(|p| p.borrow().manifest.provides.actions)
+            self.enabled_plugins()
+                .any(|p| p.borrow().manifest.provides.actions)
         }
 
         /// Check if any plugin provides hooks
         #[allow(dead_code)]
         pub fn has_hook_plugins(&self) -> bool {
-            self.enabled_plugins().any(|p| p.borrow().manifest.provides.hooks)
+            self.enabled_plugins()
+                .any(|p| p.borrow().manifest.provides.hooks)
         }
 
         /// Get all theme names provided by plugins

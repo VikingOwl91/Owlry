@@ -284,12 +284,8 @@ pub enum NotifyUrgency {
 pub struct HostAPI {
     /// Send a notification to the user
     /// Parameters: summary, body, icon (optional, empty string for none), urgency
-    pub notify: extern "C" fn(
-        summary: RStr<'_>,
-        body: RStr<'_>,
-        icon: RStr<'_>,
-        urgency: NotifyUrgency,
-    ),
+    pub notify:
+        extern "C" fn(summary: RStr<'_>, body: RStr<'_>, icon: RStr<'_>, urgency: NotifyUrgency),
 
     /// Log a message at info level
     pub log_info: extern "C" fn(message: RStr<'_>),

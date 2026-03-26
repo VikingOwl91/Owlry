@@ -141,8 +141,14 @@ impl Server {
 
                 let pm_guard = pm.lock().unwrap();
                 let frecency_guard = frecency.lock().unwrap();
-                let results =
-                    pm_guard.search_with_frecency(text, max, &filter, &frecency_guard, weight, None);
+                let results = pm_guard.search_with_frecency(
+                    text,
+                    max,
+                    &filter,
+                    &frecency_guard,
+                    weight,
+                    None,
+                );
 
                 Response::Results {
                     items: results
@@ -152,7 +158,10 @@ impl Server {
                 }
             }
 
-            Request::Launch { item_id, provider: _ } => {
+            Request::Launch {
+                item_id,
+                provider: _,
+            } => {
                 let mut frecency_guard = frecency.lock().unwrap();
                 frecency_guard.record_launch(item_id);
                 Response::Ack

@@ -32,7 +32,6 @@ pub fn cache_home() -> Option<PathBuf> {
     dirs::cache_dir()
 }
 
-
 // =============================================================================
 // Owlry-specific directories
 // =============================================================================
@@ -175,9 +174,10 @@ pub fn socket_path() -> PathBuf {
 /// Ensure parent directory of a file exists
 pub fn ensure_parent_dir(path: &std::path::Path) -> std::io::Result<()> {
     if let Some(parent) = path.parent()
-        && !parent.exists() {
-            std::fs::create_dir_all(parent)?;
-        }
+        && !parent.exists()
+    {
+        std::fs::create_dir_all(parent)?;
+    }
     Ok(())
 }
 

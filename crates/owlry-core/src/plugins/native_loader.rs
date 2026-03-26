@@ -17,8 +17,8 @@ use std::sync::{Arc, Once};
 use libloading::Library;
 use log::{debug, error, info, warn};
 use owlry_plugin_api::{
-    HostAPI, NotifyUrgency, PluginInfo, PluginVTable, ProviderHandle, ProviderInfo, ProviderKind,
-    RStr, API_VERSION,
+    API_VERSION, HostAPI, NotifyUrgency, PluginInfo, PluginVTable, ProviderHandle, ProviderInfo,
+    ProviderKind, RStr,
 };
 
 use crate::notify;
@@ -28,9 +28,18 @@ use crate::notify;
 // ============================================================================
 
 /// Host notification handler
-extern "C" fn host_notify(summary: RStr<'_>, body: RStr<'_>, icon: RStr<'_>, urgency: NotifyUrgency) {
+extern "C" fn host_notify(
+    summary: RStr<'_>,
+    body: RStr<'_>,
+    icon: RStr<'_>,
+    urgency: NotifyUrgency,
+) {
     let icon_str = icon.as_str();
-    let icon_opt = if icon_str.is_empty() { None } else { Some(icon_str) };
+    let icon_opt = if icon_str.is_empty() {
+        None
+    } else {
+        Some(icon_str)
+    };
 
     let notify_urgency = match urgency {
         NotifyUrgency::Low => notify::NotifyUrgency::Low,
@@ -121,7 +130,9 @@ impl NativePlugin {
         handle: ProviderHandle,
         query: &str,
     ) -> Vec<owlry_plugin_api::PluginItem> {
-        (self.vtable.provider_query)(handle, query.into()).into_iter().collect()
+        (self.vtable.provider_query)(handle, query.into())
+            .into_iter()
+            .collect()
     }
 
     /// Drop a provider handle

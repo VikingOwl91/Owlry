@@ -54,9 +54,9 @@ pub fn register_action_api(lua: &Lua, owlry: &Table, plugin_id: &str) -> LuaResu
                 .get("name")
                 .map_err(|_| mlua::Error::external("action.register: 'name' is required"))?;
 
-            let _handler: Function = config
-                .get("handler")
-                .map_err(|_| mlua::Error::external("action.register: 'handler' function is required"))?;
+            let _handler: Function = config.get("handler").map_err(|_| {
+                mlua::Error::external("action.register: 'handler' function is required")
+            })?;
 
             // Extract optional fields
             let icon: Option<String> = config.get("icon").ok();
@@ -166,7 +166,7 @@ pub fn get_actions_for_item(lua: &Lua, item: &Table) -> LuaResult<Vec<ActionRegi
         // Check filter if present
         if let Ok(filter) = entry.get::<Function>("filter") {
             match filter.call::<bool>(item.clone()) {
-                Ok(true) => {} // Include this action
+                Ok(true) => {}         // Include this action
                 Ok(false) => continue, // Skip this action
                 Err(e) => {
                     log::warn!("Action filter failed: {}", e);
@@ -220,7 +220,8 @@ mod tests {
     fn test_action_registration() {
         let lua = setup_lua("test-plugin");
 
-        let chunk = lua.load(r#"
+        let chunk = lua.load(
+            r#"
             return owlry.action.register({
                 id = "copy-name",
                 name = "Copy Name",
@@ -229,7 +230,8 @@ mod tests {
                     -- copy logic here
                 end
             })
-        "#);
+        "#,
+        );
         let action_id: String = chunk.call(()).unwrap();
         assert_eq!(action_id, "test-plugin:copy-name");
 
@@ -243,7 +245,8 @@ mod tests {
     fn test_action_with_filter() {
         let lua = setup_lua("test-plugin");
 
-        let chunk = lua.load(r#"
+        let chunk = lua.load(
+            r#"
             owlry.action.register({
                 id = "bookmark-action",
                 name = "Open in Browser",
@@ -252,7 +255,8 @@ mod tests {
                 end,
                 handler = function(item) end
             })
-        "#);
+        "#,
+        );
         chunk.call::<()>(()).unwrap();
 
         // Create bookmark item
@@ -276,14 +280,16 @@ mod tests {
     fn test_action_unregister() {
         let lua = setup_lua("test-plugin");
 
-        let chunk = lua.load(r#"
+        let chunk = lua.load(
+            r#"
             owlry.action.register({
                 id = "temp-action",
                 name = "Temporary",
                 handler = function(item) end
             })
             return owlry.action.unregister("temp-action")
-        "#);
+        "#,
+        );
         let unregistered: bool = chunk.call(()).unwrap();
         assert!(unregistered);
 
@@ -296,7 +302,8 @@ mod tests {
         let lua = setup_lua("test-plugin");
 
         // Register action that sets a global
-        let chunk = lua.load(r#"
+        let chunk = lua.load(
+            r#"
             result = nil
             owlry.action.register({
                 id = "test-exec",
@@ -305,7 +312,8 @@ mod tests {
                     result = item.name
                 end
             })
-        "#);
+        "#,
+        );
         chunk.call::<()>(()).unwrap();
 
         // Create test item

@@ -122,7 +122,8 @@ fn test_plugin_action_request() {
 #[test]
 fn test_terminal_field_defaults_false() {
     // terminal field should default to false when missing from JSON
-    let json = r#"{"id":"test","title":"Test","description":"","icon":"","provider":"cmd","score":0}"#;
+    let json =
+        r#"{"id":"test","title":"Test","description":"","icon":"","provider":"cmd","score":0}"#;
     let item: ResultItem = serde_json::from_str(json).unwrap();
     assert!(!item.terminal);
 }

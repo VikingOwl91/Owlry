@@ -59,7 +59,11 @@ pub struct ScriptRuntimeVTable {
     pub init: extern "C" fn(plugins_dir: RStr<'_>) -> RuntimeHandle,
     pub providers: extern "C" fn(handle: RuntimeHandle) -> RVec<ScriptProviderInfo>,
     pub refresh: extern "C" fn(handle: RuntimeHandle, provider_id: RStr<'_>) -> RVec<PluginItem>,
-    pub query: extern "C" fn(handle: RuntimeHandle, provider_id: RStr<'_>, query: RStr<'_>) -> RVec<PluginItem>,
+    pub query: extern "C" fn(
+        handle: RuntimeHandle,
+        provider_id: RStr<'_>,
+        query: RStr<'_>,
+    ) -> RVec<PluginItem>,
     pub drop: extern "C" fn(handle: RuntimeHandle),
 }
 
@@ -100,9 +104,8 @@ impl LoadedRuntime {
         }
 
         // SAFETY: We trust the runtime library to be correct
-        let library = unsafe { Library::new(library_path) }.map_err(|e| {
-            PluginError::LoadError(format!("{}: {}", library_path.display(), e))
-        })?;
+        let library = unsafe { Library::new(library_path) }
+            .map_err(|e| PluginError::LoadError(format!("{}: {}", library_path.display(), e)))?;
 
         let library = Arc::new(library);
 
@@ -152,12 +155,8 @@ impl LoadedRuntime {
         self.providers
             .iter()
             .map(|info| {
-                let provider = RuntimeProvider::new(
-                    self.name,
-                    self.vtable,
-                    self.handle,
-                    info.clone(),
-                );
+                let provider =
+                    RuntimeProvider::new(self.name, self.vtable, self.handle, info.clone());
                 Box::new(provider) as Box<dyn Provider>
             })
             .collect()
@@ -227,7 +226,10 @@ impl Provider for RuntimeProvider {
 
         let name_rstr = RStr::from_str(self.info.name.as_str());
         let items_rvec = (self.vtable.refresh)(self.handle, name_rstr);
-        self.items = items_rvec.into_iter().map(|i| self.convert_item(i)).collect();
+        self.items = items_rvec
+            .into_iter()
+            .map(|i| self.convert_item(i))
+            .collect();
 
         log::debug!(
             "[RuntimeProvider] '{}' refreshed with {} items",
@@ -246,12 +248,16 @@ unsafe impl Send for RuntimeProvider {}
 
 /// Check if the Lua runtime is available
 pub fn lua_runtime_available() -> bool {
-    PathBuf::from(SYSTEM_RUNTIMES_DIR).join("liblua.so").exists()
+    PathBuf::from(SYSTEM_RUNTIMES_DIR)
+        .join("liblua.so")
+        .exists()
 }
 
 /// Check if the Rune runtime is available
 pub fn rune_runtime_available() -> bool {
-    PathBuf::from(SYSTEM_RUNTIMES_DIR).join("librune.so").exists()
+    PathBuf::from(SYSTEM_RUNTIMES_DIR)
+        .join("librune.so")
+        .exists()
 }
 
 impl LoadedRuntime {

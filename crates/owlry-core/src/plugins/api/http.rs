@@ -26,18 +26,21 @@ pub fn register_http_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
             let client = reqwest::blocking::Client::builder()
                 .timeout(Duration::from_secs(timeout_secs))
                 .build()
-                .map_err(|e| mlua::Error::external(format!("Failed to create HTTP client: {}", e)))?;
+                .map_err(|e| {
+                    mlua::Error::external(format!("Failed to create HTTP client: {}", e))
+                })?;
 
             let mut request = client.get(&url);
 
             // Add custom headers if provided
             if let Some(ref opts) = opts
-                && let Ok(headers) = opts.get::<Table>("headers") {
-                    for pair in headers.pairs::<String, String>() {
-                        let (key, value) = pair?;
-                        request = request.header(&key, &value);
-                    }
+                && let Ok(headers) = opts.get::<Table>("headers")
+            {
+                for pair in headers.pairs::<String, String>() {
+                    let (key, value) = pair?;
+                    request = request.header(&key, &value);
                 }
+            }
 
             let response = request
                 .send()
@@ -45,9 +48,9 @@ pub fn register_http_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
 
             let status = response.status().as_u16();
             let headers = extract_headers(&response);
-            let body = response
-                .text()
-                .map_err(|e| mlua::Error::external(format!("Failed to read response body: {}", e)))?;
+            let body = response.text().map_err(|e| {
+                mlua::Error::external(format!("Failed to read response body: {}", e))
+            })?;
 
             let result = lua.create_table()?;
             result.set("status", status)?;
@@ -78,18 +81,21 @@ pub fn register_http_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
             let client = reqwest::blocking::Client::builder()
                 .timeout(Duration::from_secs(timeout_secs))
                 .build()
-                .map_err(|e| mlua::Error::external(format!("Failed to create HTTP client: {}", e)))?;
+                .map_err(|e| {
+                    mlua::Error::external(format!("Failed to create HTTP client: {}", e))
+                })?;
 
             let mut request = client.post(&url);
 
             // Add custom headers if provided
             if let Some(ref opts) = opts
-                && let Ok(headers) = opts.get::<Table>("headers") {
-                    for pair in headers.pairs::<String, String>() {
-                        let (key, value) = pair?;
-                        request = request.header(&key, &value);
-                    }
+                && let Ok(headers) = opts.get::<Table>("headers")
+            {
+                for pair in headers.pairs::<String, String>() {
+                    let (key, value) = pair?;
+                    request = request.header(&key, &value);
                 }
+            }
 
             // Set body based on type
             request = match body {
@@ -102,11 +108,7 @@ pub fn register_http_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
                         .body(json_str)
                 }
                 Value::Nil => request,
-                _ => {
-                    return Err(mlua::Error::external(
-                        "POST body must be a string or table",
-                    ))
-                }
+                _ => return Err(mlua::Error::external("POST body must be a string or table")),
             };
 
             let response = request
@@ -115,9 +117,9 @@ pub fn register_http_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
 
             let status = response.status().as_u16();
             let headers = extract_headers(&response);
-            let body = response
-                .text()
-                .map_err(|e| mlua::Error::external(format!("Failed to read response body: {}", e)))?;
+            let body = response.text().map_err(|e| {
+                mlua::Error::external(format!("Failed to read response body: {}", e))
+            })?;
 
             let result = lua.create_table()?;
             result.set("status", status)?;
@@ -149,19 +151,22 @@ pub fn register_http_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
             let client = reqwest::blocking::Client::builder()
                 .timeout(Duration::from_secs(timeout_secs))
                 .build()
-                .map_err(|e| mlua::Error::external(format!("Failed to create HTTP client: {}", e)))?;
+                .map_err(|e| {
+                    mlua::Error::external(format!("Failed to create HTTP client: {}", e))
+                })?;
 
             let mut request = client.get(&url);
             request = request.header("Accept", "application/json");
 
             // Add custom headers if provided
             if let Some(ref opts) = opts
-                && let Ok(headers) = opts.get::<Table>("headers") {
-                    for pair in headers.pairs::<String, String>() {
-                        let (key, value) = pair?;
-                        request = request.header(&key, &value);
-                    }
+                && let Ok(headers) = opts.get::<Table>("headers")
+            {
+                for pair in headers.pairs::<String, String>() {
+                    let (key, value) = pair?;
+                    request = request.header(&key, &value);
                 }
+            }
 
             let response = request
                 .send()
@@ -174,9 +179,9 @@ pub fn register_http_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
                 )));
             }
 
-            let body = response
-                .text()
-                .map_err(|e| mlua::Error::external(format!("Failed to read response body: {}", e)))?;
+            let body = response.text().map_err(|e| {
+                mlua::Error::external(format!("Failed to read response body: {}", e))
+            })?;
 
             // Parse JSON and convert to Lua table
             let json_value: serde_json::Value = serde_json::from_str(&body)

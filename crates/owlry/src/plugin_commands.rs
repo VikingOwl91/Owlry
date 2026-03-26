@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use crate::cli::{PluginCommand as CliPluginCommand, PluginRuntime};
 use owlry_core::config::Config;
 use owlry_core::paths;
-use owlry_core::plugins::manifest::{discover_plugins, PluginManifest};
+use owlry_core::plugins::manifest::{PluginManifest, discover_plugins};
 use owlry_core::plugins::registry::{self, RegistryClient};
 use owlry_core::plugins::runtime_loader::{lua_runtime_available, rune_runtime_available};
 
@@ -46,15 +46,30 @@ fn any_runtime_available() -> bool {
 /// Execute a plugin command
 pub fn execute(cmd: CliPluginCommand) -> CommandResult {
     match cmd {
-        CliPluginCommand::List { enabled, disabled, runtime, available, refresh, json } => {
+        CliPluginCommand::List {
+            enabled,
+            disabled,
+            runtime,
+            available,
+            refresh,
+            json,
+        } => {
             if available {
                 cmd_list_available(refresh, json)
             } else {
                 cmd_list_installed(enabled, disabled, runtime, json)
             }
         }
-        CliPluginCommand::Search { query, refresh, json } => cmd_search(&query, refresh, json),
-        CliPluginCommand::Info { name, registry, json } => {
+        CliPluginCommand::Search {
+            query,
+            refresh,
+            json,
+        } => cmd_search(&query, refresh, json),
+        CliPluginCommand::Info {
+            name,
+            registry,
+            json,
+        } => {
             if registry {
                 cmd_info_registry(&name, json)
             } else {
@@ -74,15 +89,29 @@ pub fn execute(cmd: CliPluginCommand) -> CommandResult {
         CliPluginCommand::Update { name } => cmd_update(name.as_deref()),
         CliPluginCommand::Enable { name } => cmd_enable(&name),
         CliPluginCommand::Disable { name } => cmd_disable(&name),
-        CliPluginCommand::Create { name, runtime, dir, display_name, description } => {
+        CliPluginCommand::Create {
+            name,
+            runtime,
+            dir,
+            display_name,
+            description,
+        } => {
             check_runtime_available(runtime)?;
-            cmd_create(&name, runtime, dir.as_deref(), display_name.as_deref(), description.as_deref())
+            cmd_create(
+                &name,
+                runtime,
+                dir.as_deref(),
+                display_name.as_deref(),
+                description.as_deref(),
+            )
         }
         CliPluginCommand::Validate { path } => cmd_validate(path.as_deref()),
         CliPluginCommand::Runtimes => cmd_runtimes(),
-        CliPluginCommand::Run { plugin_id, command, args } => {
-            cmd_run_plugin_command(&plugin_id, &command, &args)
-        }
+        CliPluginCommand::Run {
+            plugin_id,
+            command,
+            args,
+        } => cmd_run_plugin_command(&plugin_id, &command, &args),
         CliPluginCommand::Commands { plugin_id } => cmd_list_commands(plugin_id.as_deref()),
     }
 }
@@ -351,7 +380,10 @@ fn cmd_info_installed(name: &str, json_output: bool) -> CommandResult {
         });
         println!("{}", serde_json::to_string_pretty(&info).unwrap());
     } else {
-        println!("Plugin: {} v{}", manifest.plugin.name, manifest.plugin.version);
+        println!(
+            "Plugin: {} v{}",
+            manifest.plugin.name, manifest.plugin.version
+        );
         println!("ID: {}", manifest.plugin.id);
         if !manifest.plugin.description.is_empty() {
             println!("Description: {}", manifest.plugin.description);
@@ -359,11 +391,18 @@ fn cmd_info_installed(name: &str, json_output: bool) -> CommandResult {
         if !manifest.plugin.author.is_empty() {
             println!("Author: {}", manifest.plugin.author);
         }
-        println!("Status: {}", if is_enabled { "enabled" } else { "disabled" });
+        println!(
+            "Status: {}",
+            if is_enabled { "enabled" } else { "disabled" }
+        );
         println!(
             "Runtime: {}{}",
             runtime,
-            if runtime_available { "" } else { " (NOT INSTALLED)" }
+            if runtime_available {
+                ""
+            } else {
+                " (NOT INSTALLED)"
+            }
         );
         println!("Path: {}", plugin_path.display());
         println!();
@@ -382,12 +421,25 @@ fn cmd_info_installed(name: &str, json_output: bool) -> CommandResult {
         }
         println!();
         println!("Permissions:");
-        println!("  Network: {}", if manifest.permissions.network { "yes" } else { "no" });
+        println!(
+            "  Network: {}",
+            if manifest.permissions.network {
+                "yes"
+            } else {
+                "no"
+            }
+        );
         if !manifest.permissions.filesystem.is_empty() {
-            println!("  Filesystem: {}", manifest.permissions.filesystem.join(", "));
+            println!(
+                "  Filesystem: {}",
+                manifest.permissions.filesystem.join(", ")
+            );
         }
         if !manifest.permissions.run_commands.is_empty() {
-            println!("  Commands: {}", manifest.permissions.run_commands.join(", "));
+            println!(
+                "  Commands: {}",
+                manifest.permissions.run_commands.join(", ")
+            );
         }
     }
 
@@ -398,7 +450,8 @@ fn cmd_info_installed(name: &str, json_output: bool) -> CommandResult {
 fn cmd_info_registry(name: &str, json_output: bool) -> CommandResult {
     let client = get_registry_client();
 
-    let plugin = client.find(name, false)?
+    let plugin = client
+        .find(name, false)?
         .ok_or_else(|| format!("Plugin '{}' not found in registry", name))?;
 
     if json_output {
@@ -466,12 +519,10 @@ fn cmd_install(source: &str, force: bool) -> CommandResult {
                 println!("Found: {} v{}", plugin.name, plugin.version);
                 install_from_git(&plugin.repository, &plugins_dir, force)
             }
-            None => {
-                Err(format!(
-                    "Plugin '{}' not found in registry. Use a local path or git URL.",
-                    source
-                ))
-            }
+            None => Err(format!(
+                "Plugin '{}' not found in registry. Use a local path or git URL.",
+                source
+            )),
         }
     }
 }
@@ -597,8 +648,7 @@ fn cmd_remove(name: &str, yes: bool) -> CommandResult {
         }
     }
 
-    fs::remove_dir_all(&plugin_path)
-        .map_err(|e| format!("Failed to remove plugin: {}", e))?;
+    fs::remove_dir_all(&plugin_path).map_err(|e| format!("Failed to remove plugin: {}", e))?;
 
     // Also remove from disabled list if present
     if let Ok(mut config) = Config::load() {
@@ -645,7 +695,9 @@ fn cmd_enable(name: &str) -> CommandResult {
     }
 
     config.plugins.disabled_plugins.retain(|id| id != name);
-    config.save().map_err(|e| format!("Failed to save config: {}", e))?;
+    config
+        .save()
+        .map_err(|e| format!("Failed to save config: {}", e))?;
 
     println!("Enabled plugin '{}'", name);
     Ok(())
@@ -668,7 +720,9 @@ fn cmd_disable(name: &str) -> CommandResult {
     }
 
     config.plugins.disabled_plugins.push(name.to_string());
-    config.save().map_err(|e| format!("Failed to save config: {}", e))?;
+    config
+        .save()
+        .map_err(|e| format!("Failed to save config: {}", e))?;
 
     println!("Disabled plugin '{}'", name);
     Ok(())
@@ -688,11 +742,13 @@ fn cmd_create(
     let plugin_dir = base_dir.join(name);
 
     if plugin_dir.exists() {
-        return Err(format!("Directory '{}' already exists", plugin_dir.display()));
+        return Err(format!(
+            "Directory '{}' already exists",
+            plugin_dir.display()
+        ));
     }
 
-    fs::create_dir_all(&plugin_dir)
-        .map_err(|e| format!("Failed to create directory: {}", e))?;
+    fs::create_dir_all(&plugin_dir).map_err(|e| format!("Failed to create directory: {}", e))?;
 
     let display = display_name.unwrap_or(name);
     let desc = description.unwrap_or("A custom owlry plugin");
@@ -825,14 +881,28 @@ pub fn register(owlry) {{{{
         }
     }
 
-    println!("Created {} plugin '{}' at {}", runtime, name, plugin_dir.display());
+    println!(
+        "Created {} plugin '{}' at {}",
+        runtime,
+        name,
+        plugin_dir.display()
+    );
     println!();
     println!("Next steps:");
-    println!("  1. Edit {}/{} to implement your provider", name, entry_file);
-    println!("  2. Install: owlry plugin install {}", plugin_dir.display());
+    println!(
+        "  1. Edit {}/{} to implement your provider",
+        name, entry_file
+    );
+    println!(
+        "  2. Install: owlry plugin install {}",
+        plugin_dir.display()
+    );
     println!("  3. Test: owlry  (your plugin items should appear)");
     println!();
-    println!("Runtime: {} (requires owlry-{} package)", runtime, entry_ext);
+    println!(
+        "Runtime: {} (requires owlry-{} package)",
+        runtime, entry_ext
+    );
 
     Ok(())
 }
@@ -996,15 +1066,29 @@ fn cmd_run_plugin_command(plugin_id: &str, command: &str, args: &[String]) -> Co
         .map_err(|e| format!("Failed to parse manifest: {}", e))?;
 
     // Check if plugin provides this command
-    let cmd_info = manifest.provides.commands.iter().find(|c| c.name == command);
+    let cmd_info = manifest
+        .provides
+        .commands
+        .iter()
+        .find(|c| c.name == command);
     if cmd_info.is_none() {
-        let available: Vec<_> = manifest.provides.commands.iter().map(|c| c.name.as_str()).collect();
+        let available: Vec<_> = manifest
+            .provides
+            .commands
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect();
         if available.is_empty() {
-            return Err(format!("Plugin '{}' does not provide any CLI commands", plugin_id));
+            return Err(format!(
+                "Plugin '{}' does not provide any CLI commands",
+                plugin_id
+            ));
         }
         return Err(format!(
             "Plugin '{}' does not have command '{}'. Available: {}",
-            plugin_id, command, available.join(", ")
+            plugin_id,
+            command,
+            available.join(", ")
         ));
     }
 
@@ -1030,10 +1114,8 @@ fn execute_plugin_command(
 
     // Load the appropriate runtime
     let loaded_runtime = match runtime {
-        PluginRuntime::Lua => {
-            LoadedRuntime::load_lua(plugin_path.parent().unwrap_or(plugin_path))
-                .map_err(|e| format!("Failed to load Lua runtime: {}", e))?
-        }
+        PluginRuntime::Lua => LoadedRuntime::load_lua(plugin_path.parent().unwrap_or(plugin_path))
+            .map_err(|e| format!("Failed to load Lua runtime: {}", e))?,
         PluginRuntime::Rune => {
             LoadedRuntime::load_rune(plugin_path.parent().unwrap_or(plugin_path))
                 .map_err(|e| format!("Failed to load Rune runtime: {}", e))?
@@ -1047,7 +1129,10 @@ fn execute_plugin_command(
     let _query = query_parts.join(":");
 
     // Find the provider from this plugin and send the command query
-    let _provider_name = manifest.provides.providers.first()
+    let _provider_name = manifest
+        .provides
+        .providers
+        .first()
         .ok_or_else(|| format!("Plugin '{}' has no providers", manifest.plugin.id))?;
 
     // Query the provider with the command
@@ -1056,14 +1141,31 @@ fn execute_plugin_command(
 
     // For now, we use a simpler approach: invoke the entry point with command args
     // This requires runtime support for command execution
-    println!("Executing: owlry plugin run {} {} {}", manifest.plugin.id, command, args.join(" "));
+    println!(
+        "Executing: owlry plugin run {} {} {}",
+        manifest.plugin.id,
+        command,
+        args.join(" ")
+    );
     println!();
     println!("Note: Plugin command execution requires runtime support.");
     println!("The plugin entry point should handle CLI commands via owlry.command.register()");
     println!();
-    println!("Runtime: {} ({})", runtime, if PathBuf::from(SYSTEM_RUNTIMES_DIR).join(
-        match runtime { PluginRuntime::Lua => "liblua.so", PluginRuntime::Rune => "librune.so" }
-    ).exists() { "available" } else { "NOT INSTALLED" });
+    println!(
+        "Runtime: {} ({})",
+        runtime,
+        if PathBuf::from(SYSTEM_RUNTIMES_DIR)
+            .join(match runtime {
+                PluginRuntime::Lua => "liblua.so",
+                PluginRuntime::Rune => "librune.so",
+            })
+            .exists()
+        {
+            "available"
+        } else {
+            "NOT INSTALLED"
+        }
+    );
 
     // TODO: Implement actual command execution through runtime
     // This would involve:
@@ -1087,7 +1189,8 @@ fn cmd_list_commands(plugin_id: Option<&str>) -> CommandResult {
 
     if let Some(id) = plugin_id {
         // Show commands for a specific plugin
-        let (manifest, _path) = discovered.get(id)
+        let (manifest, _path) = discovered
+            .get(id)
             .ok_or_else(|| format!("Plugin '{}' not found", id))?;
 
         if manifest.provides.commands.is_empty() {

@@ -25,7 +25,6 @@ pub struct SandboxConfig {
     pub allowed_commands: Vec<String>,
 }
 
-
 impl SandboxConfig {
     /// Create sandbox config from plugin permissions
     pub fn from_permissions(permissions: &PluginPermissions) -> Self {
@@ -59,12 +58,9 @@ pub fn create_context(sandbox: &SandboxConfig) -> Result<Context, rune::ContextE
 }
 
 /// Compile Rune source code into a Unit
-pub fn compile_source(
-    context: &Context,
-    source_path: &Path,
-) -> Result<Arc<Unit>, CompileError> {
-    let source_content = std::fs::read_to_string(source_path)
-        .map_err(|e| CompileError::Io(e.to_string()))?;
+pub fn compile_source(context: &Context, source_path: &Path) -> Result<Arc<Unit>, CompileError> {
+    let source_content =
+        std::fs::read_to_string(source_path).map_err(|e| CompileError::Io(e.to_string()))?;
 
     let source_name = source_path
         .file_name()
@@ -73,7 +69,10 @@ pub fn compile_source(
 
     let mut sources = Sources::new();
     sources
-        .insert(Source::new(source_name, &source_content).map_err(|e| CompileError::Compile(e.to_string()))?)
+        .insert(
+            Source::new(source_name, &source_content)
+                .map_err(|e| CompileError::Compile(e.to_string()))?,
+        )
         .map_err(|e| CompileError::Compile(format!("Failed to insert source: {}", e)))?;
 
     let mut diagnostics = Diagnostics::new();
@@ -97,13 +96,11 @@ pub fn compile_source(
 }
 
 /// Create a new Rune VM from compiled unit
-pub fn create_vm(
-    context: &Context,
-    unit: Arc<Unit>,
-) -> Result<Vm, CompileError> {
+pub fn create_vm(context: &Context, unit: Arc<Unit>) -> Result<Vm, CompileError> {
     let runtime = Arc::new(
-        context.runtime()
-            .map_err(|e| CompileError::Compile(format!("Failed to get runtime: {}", e)))?
+        context
+            .runtime()
+            .map_err(|e| CompileError::Compile(format!("Failed to get runtime: {}", e)))?,
     );
     Ok(Vm::new(runtime, unit))
 }

@@ -54,7 +54,11 @@ pub struct LuaRuntimeVTable {
     /// Refresh a provider's items
     pub refresh: extern "C" fn(handle: RuntimeHandle, provider_id: RStr<'_>) -> RVec<PluginItem>,
     /// Query a dynamic provider
-    pub query: extern "C" fn(handle: RuntimeHandle, provider_id: RStr<'_>, query: RStr<'_>) -> RVec<PluginItem>,
+    pub query: extern "C" fn(
+        handle: RuntimeHandle,
+        provider_id: RStr<'_>,
+        query: RStr<'_>,
+    ) -> RVec<PluginItem>,
     /// Cleanup and drop the runtime
     pub drop: extern "C" fn(handle: RuntimeHandle),
 }
@@ -83,11 +87,15 @@ impl RuntimeHandle {
     /// Create a null handle (reserved for error cases)
     #[allow(dead_code)]
     fn null() -> Self {
-        Self { ptr: std::ptr::null_mut() }
+        Self {
+            ptr: std::ptr::null_mut(),
+        }
     }
 
     fn from_box<T>(state: Box<T>) -> Self {
-        Self { ptr: Box::into_raw(state) as *mut () }
+        Self {
+            ptr: Box::into_raw(state) as *mut (),
+        }
     }
 
     unsafe fn drop_as<T>(&self) {
@@ -147,7 +155,10 @@ impl LuaRuntimeState {
         for (id, (manifest, path)) in discovered {
             // Check version compatibility
             if !manifest.is_compatible_with(owlry_version) {
-                eprintln!("owlry-lua: Plugin '{}' not compatible with owlry {}", id, owlry_version);
+                eprintln!(
+                    "owlry-lua: Plugin '{}' not compatible with owlry {}",
+                    id, owlry_version
+                );
                 continue;
             }
 
@@ -285,13 +296,19 @@ extern "C" fn runtime_refresh(handle: RuntimeHandle, provider_id: RStr<'_>) -> R
     state.refresh_provider(provider_id.as_str()).into()
 }
 
-extern "C" fn runtime_query(handle: RuntimeHandle, provider_id: RStr<'_>, query: RStr<'_>) -> RVec<PluginItem> {
+extern "C" fn runtime_query(
+    handle: RuntimeHandle,
+    provider_id: RStr<'_>,
+    query: RStr<'_>,
+) -> RVec<PluginItem> {
     if handle.ptr.is_null() {
         return RVec::new();
     }
 
     let state = unsafe { &*(handle.ptr as *const LuaRuntimeState) };
-    state.query_provider(provider_id.as_str(), query.as_str()).into()
+    state
+        .query_provider(provider_id.as_str(), query.as_str())
+        .into()
 }
 
 extern "C" fn runtime_drop(handle: RuntimeHandle) {

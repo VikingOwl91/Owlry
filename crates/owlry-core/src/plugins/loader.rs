@@ -7,7 +7,7 @@ use mlua::Lua;
 use super::api;
 use super::error::{PluginError, PluginResult};
 use super::manifest::PluginManifest;
-use super::runtime::{create_lua_runtime, load_file, SandboxConfig};
+use super::runtime::{SandboxConfig, create_lua_runtime, load_file};
 
 /// A loaded plugin instance
 #[derive(Debug)]
@@ -94,7 +94,10 @@ impl LoadedPlugin {
     }
 
     /// Call a provider's refresh function
-    pub fn call_provider_refresh(&self, provider_name: &str) -> PluginResult<Vec<super::PluginItem>> {
+    pub fn call_provider_refresh(
+        &self,
+        provider_name: &str,
+    ) -> PluginResult<Vec<super::PluginItem>> {
         let lua = self.lua.as_ref().ok_or_else(|| PluginError::LuaError {
             plugin: self.id().to_string(),
             message: "Plugin not initialized".to_string(),
@@ -108,7 +111,11 @@ impl LoadedPlugin {
 
     /// Call a provider's query function
     #[allow(dead_code)] // Will be used for dynamic query providers
-    pub fn call_provider_query(&self, provider_name: &str, query: &str) -> PluginResult<Vec<super::PluginItem>> {
+    pub fn call_provider_query(
+        &self,
+        provider_name: &str,
+        query: &str,
+    ) -> PluginResult<Vec<super::PluginItem>> {
         let lua = self.lua.as_ref().ok_or_else(|| PluginError::LuaError {
             plugin: self.id().to_string(),
             message: "Plugin not initialized".to_string(),
@@ -138,8 +145,8 @@ impl LoadedPlugin {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::manifest::{check_compatibility, discover_plugins};
+    use super::*;
     use std::fs;
     use std::path::Path;
     use tempfile::TempDir;

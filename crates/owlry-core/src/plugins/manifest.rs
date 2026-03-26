@@ -112,11 +112,16 @@ pub struct PluginPermissions {
 /// Discover all plugins in a directory
 ///
 /// Returns a map of plugin ID -> (manifest, path)
-pub fn discover_plugins(plugins_dir: &Path) -> PluginResult<HashMap<String, (PluginManifest, PathBuf)>> {
+pub fn discover_plugins(
+    plugins_dir: &Path,
+) -> PluginResult<HashMap<String, (PluginManifest, PathBuf)>> {
     let mut plugins = HashMap::new();
 
     if !plugins_dir.exists() {
-        log::debug!("Plugins directory does not exist: {}", plugins_dir.display());
+        log::debug!(
+            "Plugins directory does not exist: {}",
+            plugins_dir.display()
+        );
         return Ok(plugins);
     }
 
@@ -143,7 +148,11 @@ pub fn discover_plugins(plugins_dir: &Path) -> PluginResult<HashMap<String, (Plu
                     log::warn!("Duplicate plugin ID '{}', skipping {}", id, path.display());
                     continue;
                 }
-                log::info!("Discovered plugin: {} v{}", manifest.plugin.name, manifest.plugin.version);
+                log::info!(
+                    "Discovered plugin: {} v{}",
+                    manifest.plugin.name,
+                    manifest.plugin.version
+                );
                 plugins.insert(id, (manifest, path));
             }
             Err(e) => {
@@ -204,7 +213,12 @@ impl PluginManifest {
             });
         }
 
-        if !self.plugin.id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+        if !self
+            .plugin
+            .id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        {
             return Err(PluginError::InvalidManifest {
                 plugin: self.plugin.id.clone(),
                 message: "Plugin ID must be lowercase alphanumeric with hyphens".to_string(),
@@ -223,7 +237,10 @@ impl PluginManifest {
         if semver::VersionReq::parse(&self.plugin.owlry_version).is_err() {
             return Err(PluginError::InvalidManifest {
                 plugin: self.plugin.id.clone(),
-                message: format!("Invalid owlry_version constraint: {}", self.plugin.owlry_version),
+                message: format!(
+                    "Invalid owlry_version constraint: {}",
+                    self.plugin.owlry_version
+                ),
             });
         }
 

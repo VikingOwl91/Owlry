@@ -110,9 +110,10 @@ impl RegistryClient {
 
         if let Ok(metadata) = fs::metadata(&cache_path)
             && let Ok(modified) = metadata.modified()
-                && let Ok(elapsed) = SystemTime::now().duration_since(modified) {
-                    return elapsed < CACHE_DURATION;
-                }
+            && let Ok(elapsed) = SystemTime::now().duration_since(modified)
+        {
+            return elapsed < CACHE_DURATION;
+        }
 
         false
     }
@@ -120,11 +121,13 @@ impl RegistryClient {
     /// Fetch the registry index (from cache or network)
     pub fn fetch_index(&self, force_refresh: bool) -> Result<RegistryIndex, String> {
         // Use cache if valid and not forcing refresh
-        if !force_refresh && self.is_cache_valid()
+        if !force_refresh
+            && self.is_cache_valid()
             && let Ok(content) = fs::read_to_string(self.cache_path())
-                && let Ok(index) = toml::from_str(&content) {
-                    return Ok(index);
-                }
+            && let Ok(index) = toml::from_str(&content)
+        {
+            return Ok(index);
+        }
 
         // Fetch from network
         self.fetch_from_network()
@@ -134,12 +137,7 @@ impl RegistryClient {
     fn fetch_from_network(&self) -> Result<RegistryIndex, String> {
         // Use curl for fetching (available on most systems)
         let output = std::process::Command::new("curl")
-            .args([
-                "-fsSL",
-                "--max-time",
-                "30",
-                &self.registry_url,
-            ])
+            .args(["-fsSL", "--max-time", "30", &self.registry_url])
             .output()
             .map_err(|e| format!("Failed to run curl: {}", e))?;
 
@@ -185,7 +183,9 @@ impl RegistryClient {
                 p.id.to_lowercase().contains(&query_lower)
                     || p.name.to_lowercase().contains(&query_lower)
                     || p.description.to_lowercase().contains(&query_lower)
-                    || p.tags.iter().any(|t| t.to_lowercase().contains(&query_lower))
+                    || p.tags
+                        .iter()
+                        .any(|t| t.to_lowercase().contains(&query_lower))
             })
             .collect();
 
@@ -210,8 +210,7 @@ impl RegistryClient {
     pub fn clear_cache(&self) -> Result<(), String> {
         let cache_path = self.cache_path();
         if cache_path.exists() {
-            fs::remove_file(&cache_path)
-                .map_err(|e| format!("Failed to remove cache: {}", e))?;
+            fs::remove_file(&cache_path).map_err(|e| format!("Failed to remove cache: {}", e))?;
         }
         Ok(())
     }
