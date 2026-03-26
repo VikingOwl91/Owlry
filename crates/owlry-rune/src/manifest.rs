@@ -11,6 +11,28 @@ pub struct PluginManifest {
     pub provides: PluginProvides,
     #[serde(default)]
     pub permissions: PluginPermissions,
+    /// Provider declarations from [[providers]] sections
+    #[serde(default)]
+    pub providers: Vec<ProviderDecl>,
+}
+
+/// A provider declared in [[providers]] section of plugin.toml
+#[derive(Debug, Clone, Deserialize)]
+pub struct ProviderDecl {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub prefix: Option<String>,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default = "default_provider_type", rename = "type")]
+    pub provider_type: String,
+    #[serde(default)]
+    pub type_id: Option<String>,
+}
+
+fn default_provider_type() -> String {
+    "static".to_string()
 }
 
 /// Core plugin information

@@ -59,8 +59,20 @@ impl LoadedPlugin {
             }
         }
 
-        // Collect registrations
-        let registrations = api::get_registrations();
+        // Collect registrations — from runtime API or from manifest [[providers]]
+        let mut registrations = api::get_registrations();
+        if registrations.is_empty() && !manifest.providers.is_empty() {
+            for decl in &manifest.providers {
+                registrations.push(ProviderRegistration {
+                    name: decl.id.clone(),
+                    display_name: decl.name.clone(),
+                    type_id: decl.type_id.clone().unwrap_or_else(|| decl.id.clone()),
+                    default_icon: decl.icon.clone().unwrap_or_else(|| "application-x-addon".to_string()),
+                    is_static: decl.provider_type != "dynamic",
+                    prefix: decl.prefix.clone(),
+                });
+            }
+        }
 
         log::info!(
             "Loaded Rune plugin '{}' with {} provider(s)",
