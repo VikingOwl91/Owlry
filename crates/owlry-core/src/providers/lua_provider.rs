@@ -90,8 +90,9 @@ impl Provider for LuaProvider {
 }
 
 // LuaProvider needs to be Send + Sync for the Provider trait.
-// Since we're using Rc<RefCell<>>, we need to be careful about thread safety.
-// For now, owlry is single-threaded, so this is safe.
+// Rc<RefCell<>> is !Send and !Sync, but the ProviderManager RwLock ensures
+// Rc<RefCell<>> is only accessed during refresh() (write lock = exclusive access).
+// Read-only operations (items(), search) only touch self.items (Vec<LaunchItem>).
 unsafe impl Send for LuaProvider {}
 unsafe impl Sync for LuaProvider {}
 
