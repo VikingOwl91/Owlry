@@ -836,18 +836,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fallible-iterator"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649"
-
-[[package]]
-name = "fallible-streaming-iterator"
-version = "0.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
-
-[[package]]
 name = "fastrand"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -890,12 +878,6 @@ name = "foldhash"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
-
-[[package]]
-name = "foldhash"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "form_urlencoded"
@@ -1521,7 +1503,7 @@ version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
 dependencies = [
- "foldhash 0.1.5",
+ "foldhash",
 ]
 
 [[package]]
@@ -1529,18 +1511,6 @@ name = "hashbrown"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
-dependencies = [
- "foldhash 0.2.0",
-]
-
-[[package]]
-name = "hashlink"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea0b22561a9c04a7cb1a302c013e0259cd3b4bb619f145b32f72b8b4bcbed230"
-dependencies = [
- "hashbrown 0.16.1",
-]
 
 [[package]]
 name = "heck"
@@ -1974,17 +1944,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ddbf48fd451246b1f8c2610bd3b4ac0cc6e149d89832867093ab69a17194f08"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "libsqlite3-sys"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1f111c8c41e7c61a49cd34e44c7619462967221a6443b0ec299e0ac30cfb9b1"
-dependencies = [
- "cc",
- "pkg-config",
- "vcpkg",
 ]
 
 [[package]]
@@ -2528,127 +2487,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "owlry-plugin-bookmarks"
-version = "0.4.10"
-dependencies = [
- "abi_stable",
- "dirs",
- "owlry-plugin-api",
- "rusqlite",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "owlry-plugin-calculator"
-version = "0.4.10"
-dependencies = [
- "abi_stable",
- "meval",
- "owlry-plugin-api",
-]
-
-[[package]]
-name = "owlry-plugin-clipboard"
-version = "0.4.10"
-dependencies = [
- "abi_stable",
- "owlry-plugin-api",
-]
-
-[[package]]
-name = "owlry-plugin-emoji"
-version = "0.4.10"
-dependencies = [
- "abi_stable",
- "owlry-plugin-api",
-]
-
-[[package]]
-name = "owlry-plugin-filesearch"
-version = "0.4.10"
-dependencies = [
- "abi_stable",
- "dirs",
- "owlry-plugin-api",
-]
-
-[[package]]
-name = "owlry-plugin-media"
-version = "0.4.10"
-dependencies = [
- "abi_stable",
- "owlry-plugin-api",
-]
-
-[[package]]
-name = "owlry-plugin-pomodoro"
-version = "0.4.10"
-dependencies = [
- "abi_stable",
- "dirs",
- "owlry-plugin-api",
- "serde",
- "serde_json",
- "toml 0.8.23",
-]
-
-[[package]]
-name = "owlry-plugin-scripts"
-version = "0.4.10"
-dependencies = [
- "abi_stable",
- "dirs",
- "owlry-plugin-api",
-]
-
-[[package]]
-name = "owlry-plugin-ssh"
-version = "0.4.10"
-dependencies = [
- "abi_stable",
- "dirs",
- "owlry-plugin-api",
-]
-
-[[package]]
-name = "owlry-plugin-system"
-version = "0.4.10"
-dependencies = [
- "abi_stable",
- "owlry-plugin-api",
-]
-
-[[package]]
-name = "owlry-plugin-systemd"
-version = "0.4.10"
-dependencies = [
- "abi_stable",
- "owlry-plugin-api",
-]
-
-[[package]]
-name = "owlry-plugin-weather"
-version = "0.4.10"
-dependencies = [
- "abi_stable",
- "dirs",
- "owlry-plugin-api",
- "reqwest 0.13.2",
- "serde",
- "serde_json",
- "toml 0.8.23",
-]
-
-[[package]]
-name = "owlry-plugin-websearch"
-version = "0.4.10"
-dependencies = [
- "abi_stable",
- "owlry-plugin-api",
-]
-
-[[package]]
 name = "owlry-rune"
 version = "0.4.10"
 dependencies = [
@@ -3130,16 +2968,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rsqlite-vfs"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8a1f2315036ef6b1fbacd1972e8ee7688030b0a2121edfc2a6550febd41574d"
-dependencies = [
- "hashbrown 0.16.1",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "rune"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3245,21 +3073,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
-]
-
-[[package]]
-name = "rusqlite"
-version = "0.39.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0d2b0146dd9661bf67bb107c0bb2a55064d556eeb3fc314151b957f313bcd4e"
-dependencies = [
- "bitflags",
- "fallible-iterator",
- "fallible-streaming-iterator",
- "hashlink",
- "libsqlite3-sys",
- "smallvec",
- "sqlite-wasm-rs",
 ]
 
 [[package]]
@@ -3588,18 +3401,6 @@ checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "sqlite-wasm-rs"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f4206ed3a67690b9c29b77d728f6acc3ce78f16bf846d83c94f76400320181b"
-dependencies = [
- "cc",
- "js-sys",
- "rsqlite-vfs",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -4217,12 +4018,6 @@ name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
-
-[[package]]
-name = "vcpkg"
-version = "0.2.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "version-compare"

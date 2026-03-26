@@ -2,23 +2,10 @@
 resolver = "2"
 members = [
     "crates/owlry",
+    "crates/owlry-core",
     "crates/owlry-plugin-api",
-    "crates/owlry-plugin-calculator",
-    "crates/owlry-plugin-system",
-    "crates/owlry-plugin-ssh",
-    "crates/owlry-plugin-clipboard",
-    "crates/owlry-plugin-emoji",
-    "crates/owlry-plugin-scripts",
-    "crates/owlry-plugin-bookmarks",
-    "crates/owlry-plugin-websearch",
-    "crates/owlry-plugin-filesearch",
-    "crates/owlry-plugin-weather",
-    "crates/owlry-plugin-media",
-    "crates/owlry-plugin-pomodoro",
-    "crates/owlry-plugin-systemd",
     "crates/owlry-lua",
     "crates/owlry-rune",
-    "crates/owlry-core",
 ]
 
 # Shared workspace settings
