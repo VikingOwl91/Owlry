@@ -109,12 +109,27 @@ install-local:
         echo "  → librune.so"
     fi
 
+    echo "Installing systemd service files..."
+    if [ -f "systemd/owlry-core.service" ]; then
+        sudo install -Dm644 systemd/owlry-core.service /usr/lib/systemd/user/owlry-core.service
+        echo "  → owlry-core.service"
+    fi
+    if [ -f "systemd/owlry-core.socket" ]; then
+        sudo install -Dm644 systemd/owlry-core.socket /usr/lib/systemd/user/owlry-core.socket
+        echo "  → owlry-core.socket"
+    fi
+
     echo ""
     echo "Installation complete!"
     echo "  - /usr/bin/owlry (UI)"
     echo "  - /usr/bin/owlry-core (daemon)"
     echo "  - $(ls /usr/lib/owlry/plugins/*.so 2>/dev/null | wc -l) plugins"
     echo "  - $(ls /usr/lib/owlry/runtimes/*.so 2>/dev/null | wc -l) runtimes"
+    echo "  - systemd: owlry-core.service, owlry-core.socket"
+    echo ""
+    echo "To start the daemon:"
+    echo "  systemctl --user enable --now owlry-core.service"
+    echo "  OR add 'exec-once = owlry-core' to your compositor config"
 
 # === Release Management ===
 
