@@ -234,8 +234,9 @@ impl ProviderManager {
         let owlry_version = env!("CARGO_PKG_VERSION");
 
         let skip_runtimes = std::env::var("OWLRY_SKIP_RUNTIMES").is_ok();
-        if !skip_runtimes {
-        if let Some(plugins_dir) = crate::paths::plugins_dir() {
+        if !skip_runtimes
+            && let Some(plugins_dir) = crate::paths::plugins_dir()
+        {
             // Try Lua runtime
             match LoadedRuntime::load_lua(&plugins_dir, owlry_version) {
                 Ok(rt) => {
@@ -267,7 +268,6 @@ impl ProviderManager {
                     info!("Rune runtime not available: {}", e);
                 }
             }
-        }
         } // skip_runtimes
 
         // Merge runtime providers into core providers
@@ -280,6 +280,66 @@ impl ProviderManager {
         manager.runtimes = runtimes;
         manager.runtime_type_ids = runtime_type_ids;
         manager
+    }
+
+    /// Reload all script runtime providers (called by filesystem watcher)
+    pub fn reload_runtimes(&mut self) {
+        use crate::plugins::runtime_loader::LoadedRuntime;
+
+        // Remove old runtime providers from the core providers list
+        self.providers.retain(|p| {
+            let type_str = format!("{}", p.provider_type());
+            !self.runtime_type_ids.contains(&type_str)
+        });
+
+        // Drop old runtimes
+        self.runtimes.clear();
+        self.runtime_type_ids.clear();
+
+        let owlry_version = env!("CARGO_PKG_VERSION");
+        let plugins_dir = match crate::paths::plugins_dir() {
+            Some(d) => d,
+            None => return,
+        };
+
+        // Reload Lua runtime
+        match LoadedRuntime::load_lua(&plugins_dir, owlry_version) {
+            Ok(rt) => {
+                info!("Reloaded Lua runtime with {} provider(s)", rt.providers().len());
+                for provider in rt.create_providers() {
+                    let type_id = format!("{}", provider.provider_type());
+                    self.runtime_type_ids.insert(type_id);
+                    self.providers.push(provider);
+                }
+                self.runtimes.push(rt);
+            }
+            Err(e) => {
+                info!("Lua runtime not available on reload: {}", e);
+            }
+        }
+
+        // Reload Rune runtime
+        match LoadedRuntime::load_rune(&plugins_dir, owlry_version) {
+            Ok(rt) => {
+                info!("Reloaded Rune runtime with {} provider(s)", rt.providers().len());
+                for provider in rt.create_providers() {
+                    let type_id = format!("{}", provider.provider_type());
+                    self.runtime_type_ids.insert(type_id);
+                    self.providers.push(provider);
+                }
+                self.runtimes.push(rt);
+            }
+            Err(e) => {
+                info!("Rune runtime not available on reload: {}", e);
+            }
+        }
+
+        // Refresh the newly added providers
+        for provider in &mut self.providers {
+            provider.refresh();
+        }
+
+        info!("Runtime reload complete");
     }
 
     #[allow(dead_code)]

@@ -26,6 +26,7 @@ pub mod manifest;
 pub mod native_loader;
 pub mod registry;
 pub mod runtime_loader;
+pub mod watcher;
 
 // Lua-specific modules (require mlua)
 #[cfg(feature = "lua")]

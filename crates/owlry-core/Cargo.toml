@@ -36,6 +36,10 @@ dirs = "5"
 # Error handling
 thiserror = "2"
 
+# Filesystem watching (plugin hot-reload)
+notify = "7"
+notify-debouncer-mini = "0.5"
+
 # Signal handling
 ctrlc = { version = "3", features = ["termination"] }
 

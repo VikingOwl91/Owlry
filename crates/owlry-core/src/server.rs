@@ -57,6 +57,9 @@ impl Server {
 
     /// Accept connections in a loop, spawning a thread per client.
     pub fn run(&self) -> io::Result<()> {
+        // Start filesystem watcher for user plugin hot-reload
+        crate::plugins::watcher::start_watching(Arc::clone(&self.provider_manager));
+
         info!("Server entering accept loop");
         for stream in self.listener.incoming() {
             match stream {
