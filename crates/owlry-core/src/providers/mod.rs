@@ -94,7 +94,7 @@ impl std::fmt::Display for ProviderType {
 }
 
 /// Trait for all search providers
-pub trait Provider: Send {
+pub trait Provider: Send + Sync {
     #[allow(dead_code)]
     fn name(&self) -> &str;
     fn provider_type(&self) -> ProviderType;

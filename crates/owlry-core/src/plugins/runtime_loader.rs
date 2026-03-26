@@ -243,8 +243,12 @@ impl Provider for RuntimeProvider {
     }
 }
 
-// RuntimeProvider needs to be Send for the Provider trait
+// RuntimeProvider needs to be Send + Sync for the Provider trait.
+// Safety: RuntimeHandle is an opaque FFI handle accessed only through
+// extern "C" vtable functions. The same safety argument that justifies
+// Send applies to Sync — all access is mediated by the vtable.
 unsafe impl Send for RuntimeProvider {}
+unsafe impl Sync for RuntimeProvider {}
 
 /// Check if the Lua runtime is available
 pub fn lua_runtime_available() -> bool {

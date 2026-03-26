@@ -89,10 +89,11 @@ impl Provider for LuaProvider {
     }
 }
 
-// LuaProvider needs to be Send for the Provider trait
-// Since we're using Rc<RefCell<>>, we need to be careful about thread safety
-// For now, owlry is single-threaded, so this is safe
+// LuaProvider needs to be Send + Sync for the Provider trait.
+// Since we're using Rc<RefCell<>>, we need to be careful about thread safety.
+// For now, owlry is single-threaded, so this is safe.
 unsafe impl Send for LuaProvider {}
+unsafe impl Sync for LuaProvider {}
 
 /// Create LuaProviders from all registered providers in a plugin
 pub fn create_providers_from_plugin(plugin: Rc<RefCell<LoadedPlugin>>) -> Vec<Box<dyn Provider>> {

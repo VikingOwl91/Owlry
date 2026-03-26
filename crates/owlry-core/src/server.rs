@@ -2,7 +2,7 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use std::thread;
 
@@ -22,8 +22,8 @@ use crate::providers::{LaunchItem, ProviderManager};
 pub struct Server {
     listener: UnixListener,
     socket_path: PathBuf,
-    provider_manager: Arc<Mutex<ProviderManager>>,
-    frecency: Arc<Mutex<FrecencyStore>>,
+    provider_manager: Arc<RwLock<ProviderManager>>,
+    frecency: Arc<RwLock<FrecencyStore>>,
     config: Arc<Config>,
 }
 
@@ -49,8 +49,8 @@ impl Server {
         Ok(Self {
             listener,
             socket_path: socket_path.to_path_buf(),
-            provider_manager: Arc::new(Mutex::new(provider_manager)),
-            frecency: Arc::new(Mutex::new(frecency)),
+            provider_manager: Arc::new(RwLock::new(provider_manager)),
+            frecency: Arc::new(RwLock::new(frecency)),
             config: Arc::new(config),
         })
     }
@@ -96,8 +96,8 @@ impl Server {
     /// dispatch each, and write the JSON response back.
     fn handle_client(
         stream: UnixStream,
-        pm: Arc<Mutex<ProviderManager>>,
-        frecency: Arc<Mutex<FrecencyStore>>,
+        pm: Arc<RwLock<ProviderManager>>,
+        frecency: Arc<RwLock<FrecencyStore>>,
         config: Arc<Config>,
     ) -> io::Result<()> {
         stream.set_read_timeout(Some(Duration::from_secs(30)))?;
@@ -131,6 +131,7 @@ impl Server {
             let request: Request = match serde_json::from_str(trimmed) {
                 Ok(req) => req,
                 Err(e) => {
+                    warn!("Malformed request from client: {}", e);
                     let resp = Response::Error {
                         message: format!("invalid request JSON: {}", e),
                     };
@@ -150,8 +151,8 @@ impl Server {
     /// the response.
     fn handle_request(
         request: &Request,
-        pm: &Arc<Mutex<ProviderManager>>,
-        frecency: &Arc<Mutex<FrecencyStore>>,
+        pm: &Arc<RwLock<ProviderManager>>,
+        frecency: &Arc<RwLock<FrecencyStore>>,
         config: &Arc<Config>,
     ) -> Response {
         match request {
@@ -163,8 +164,8 @@ impl Server {
                 let max = config.general.max_results;
                 let weight = config.providers.frecency_weight;
 
-                let pm_guard = pm.lock().unwrap_or_else(|e| e.into_inner());
-                let frecency_guard = frecency.lock().unwrap_or_else(|e| e.into_inner());
+                let pm_guard = pm.read().unwrap_or_else(|e| e.into_inner());
+                let frecency_guard = frecency.read().unwrap_or_else(|e| e.into_inner());
                 let results = pm_guard.search_with_frecency(
                     text,
                     max,
@@ -186,13 +187,13 @@ impl Server {
                 item_id,
                 provider: _,
             } => {
-                let mut frecency_guard = frecency.lock().unwrap_or_else(|e| e.into_inner());
+                let mut frecency_guard = frecency.write().unwrap_or_else(|e| e.into_inner());
                 frecency_guard.record_launch(item_id);
                 Response::Ack
             }
 
             Request::Providers => {
-                let pm_guard = pm.lock().unwrap_or_else(|e| e.into_inner());
+                let pm_guard = pm.read().unwrap_or_else(|e| e.into_inner());
                 let descs = pm_guard.available_providers();
                 Response::Providers {
                     list: descs.into_iter().map(descriptor_to_desc).collect(),
@@ -200,7 +201,7 @@ impl Server {
             }
 
             Request::Refresh { provider } => {
-                let mut pm_guard = pm.lock().unwrap_or_else(|e| e.into_inner());
+                let mut pm_guard = pm.write().unwrap_or_else(|e| e.into_inner());
                 pm_guard.refresh_provider(provider);
                 Response::Ack
             }
@@ -211,7 +212,7 @@ impl Server {
             }
 
             Request::Submenu { plugin_id, data } => {
-                let pm_guard = pm.lock().unwrap_or_else(|e| e.into_inner());
+                let pm_guard = pm.read().unwrap_or_else(|e| e.into_inner());
                 match pm_guard.query_submenu_actions(plugin_id, data, plugin_id) {
                     Some((_name, actions)) => Response::SubmenuItems {
                         items: actions
@@ -226,7 +227,7 @@ impl Server {
             }
 
             Request::PluginAction { command } => {
-                let pm_guard = pm.lock().unwrap_or_else(|e| e.into_inner());
+                let pm_guard = pm.read().unwrap_or_else(|e| e.into_inner());
                 if pm_guard.execute_plugin_action(command) {
                     Response::Ack
                 } else {
