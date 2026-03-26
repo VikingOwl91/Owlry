@@ -28,4 +28,4 @@ serde_json = "1.0"
 
 # For reading Firefox bookmarks (places.sqlite)
 # Use bundled SQLite to avoid system library version conflicts
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.39", features = ["bundled"] }
