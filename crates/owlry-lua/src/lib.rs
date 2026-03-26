@@ -27,7 +27,7 @@ mod manifest;
 mod runtime;
 
 use abi_stable::std_types::{ROption, RStr, RString, RVec};
-use owlry_plugin_api::{PluginItem, ProviderKind};
+use owlry_plugin_api::PluginItem;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -94,24 +94,22 @@ impl RuntimeHandle {
 }
 
 /// Provider info from a Lua plugin
+///
+/// Must match ScriptProviderInfo layout in owlry-core/src/plugins/runtime_loader.rs
 #[repr(C)]
 pub struct LuaProviderInfo {
-    /// Full provider ID: "plugin_id:provider_name"
-    pub id: RString,
-    /// Plugin ID this provider belongs to
-    pub plugin_id: RString,
-    /// Provider name within the plugin
-    pub provider_name: RString,
+    /// Provider name (used as vtable refresh/query key: "plugin_id:provider_name")
+    pub name: RString,
     /// Display name
     pub display_name: RString,
-    /// Optional prefix trigger
-    pub prefix: ROption<RString>,
-    /// Icon name
-    pub icon: RString,
-    /// Provider type (static/dynamic)
-    pub provider_type: ProviderKind,
     /// Type ID for filtering
     pub type_id: RString,
+    /// Icon name
+    pub default_icon: RString,
+    /// Whether this is a static provider (true) or dynamic (false)
+    pub is_static: bool,
+    /// Optional prefix trigger
+    pub prefix: ROption<RString>,
 }
 
 /// Internal runtime state
@@ -175,21 +173,14 @@ impl LuaRuntimeState {
             if let Ok(registrations) = plugin.get_provider_registrations() {
                 for reg in registrations {
                     let full_id = format!("{}:{}", plugin_id, reg.name);
-                    let provider_type = if reg.is_dynamic {
-                        ProviderKind::Dynamic
-                    } else {
-                        ProviderKind::Static
-                    };
 
                     providers.push(LuaProviderInfo {
-                        id: RString::from(full_id),
-                        plugin_id: RString::from(plugin_id.as_str()),
-                        provider_name: RString::from(reg.name.as_str()),
+                        name: RString::from(full_id),
                         display_name: RString::from(reg.display_name.as_str()),
-                        prefix: reg.prefix.map(RString::from).into(),
-                        icon: RString::from(reg.default_icon.as_str()),
-                        provider_type,
                         type_id: RString::from(reg.type_id.as_str()),
+                        default_icon: RString::from(reg.default_icon.as_str()),
+                        is_static: !reg.is_dynamic,
+                        prefix: reg.prefix.map(RString::from).into(),
                     });
                 }
             }

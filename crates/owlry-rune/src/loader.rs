@@ -92,16 +92,37 @@ impl LoadedPlugin {
         self.registrations.iter().any(|r| r.name == name)
     }
 
-    /// Refresh a static provider (stub for now)
+    /// Refresh a static provider by calling the Rune `refresh()` function
     pub fn refresh_provider(&mut self, _name: &str) -> Result<Vec<PluginItem>, String> {
-        // TODO: Implement provider refresh by calling Rune function
-        Ok(Vec::new())
+        let mut vm = create_vm(&self.context, self.unit.clone())
+            .map_err(|e| format!("Failed to create VM: {}", e))?;
+
+        let output = vm
+            .call(rune::Hash::type_hash(["refresh"]), ())
+            .map_err(|e| format!("refresh() call failed: {}", e))?;
+
+        let items: Vec<crate::api::Item> = rune::from_value(output)
+            .map_err(|e| format!("Failed to parse refresh() result: {}", e))?;
+
+        Ok(items.iter().map(|i| i.to_plugin_item()).collect())
     }
 
-    /// Query a dynamic provider (stub for now)
-    pub fn query_provider(&mut self, _name: &str, _query: &str) -> Result<Vec<PluginItem>, String> {
-        // TODO: Implement provider query by calling Rune function
-        Ok(Vec::new())
+    /// Query a dynamic provider by calling the Rune `query(q)` function
+    pub fn query_provider(&mut self, _name: &str, query: &str) -> Result<Vec<PluginItem>, String> {
+        let mut vm = create_vm(&self.context, self.unit.clone())
+            .map_err(|e| format!("Failed to create VM: {}", e))?;
+
+        let output = vm
+            .call(
+                rune::Hash::type_hash(["query"]),
+                (query.to_string(),),
+            )
+            .map_err(|e| format!("query() call failed: {}", e))?;
+
+        let items: Vec<crate::api::Item> = rune::from_value(output)
+            .map_err(|e| format!("Failed to parse query() result: {}", e))?;
+
+        Ok(items.iter().map(|i| i.to_plugin_item()).collect())
     }
 }
 

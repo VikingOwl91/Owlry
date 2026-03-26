@@ -2,7 +2,7 @@
 //!
 //! This module provides the `owlry` module that Rune plugins can use.
 
-use rune::{ContextError, Module};
+use rune::{Any, ContextError, Module};
 use std::sync::Mutex;
 
 use owlry_plugin_api::{PluginItem, RString};
@@ -20,9 +20,8 @@ pub struct ProviderRegistration {
 
 /// An item returned by a provider
 ///
-/// Used for converting Rune plugin items to FFI format.
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
+/// Exposed to Rune scripts as `owlry::Item`.
+#[derive(Debug, Clone, Any)]
 pub struct Item {
     pub id: String,
     pub name: String,
@@ -34,8 +33,38 @@ pub struct Item {
 }
 
 impl Item {
+    /// Create a new item (exposed to Rune as Item::new)
+    fn rune_new(id: &str, name: &str, command: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            name: name.to_string(),
+            command: command.to_string(),
+            description: None,
+            icon: None,
+            terminal: false,
+            keywords: Vec::new(),
+        }
+    }
+
+    /// Set description (builder pattern for Rune)
+    fn rune_description(mut self, desc: &str) -> Self {
+        self.description = Some(desc.to_string());
+        self
+    }
+
+    /// Set icon (builder pattern for Rune)
+    fn rune_icon(mut self, icon: &str) -> Self {
+        self.icon = Some(icon.to_string());
+        self
+    }
+
+    /// Set keywords (builder pattern for Rune)
+    fn rune_keywords(mut self, keywords: Vec<String>) -> Self {
+        self.keywords = keywords;
+        self
+    }
+
     /// Convert to PluginItem for FFI
-    #[allow(dead_code)]
     pub fn to_plugin_item(&self) -> PluginItem {
         let mut item = PluginItem::new(
             RString::from(self.id.as_str()),
@@ -62,7 +91,19 @@ pub static REGISTRATIONS: Mutex<Vec<ProviderRegistration>> = Mutex::new(Vec::new
 pub fn module() -> Result<Module, ContextError> {
     let mut module = Module::with_crate("owlry")?;
 
-    // Register logging functions using builder pattern
+    // Register Item type with constructor and builder methods
+    module.ty::<Item>()?;
+    module
+        .function("Item::new", Item::rune_new)
+        .build()?;
+    module
+        .associated_function("description", Item::rune_description)?;
+    module
+        .associated_function("icon", Item::rune_icon)?;
+    module
+        .associated_function("keywords", Item::rune_keywords)?;
+
+    // Register logging functions
     module.function("log_info", log_info).build()?;
     module.function("log_debug", log_debug).build()?;
     module.function("log_warn", log_warn).build()?;
