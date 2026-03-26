@@ -184,6 +184,11 @@ impl ProviderFilter {
         self.accept_all || self.enabled.contains(&provider)
     }
 
+    /// Whether this filter accepts all provider types
+    pub fn is_accept_all(&self) -> bool {
+        self.accept_all
+    }
+
     /// Get current active prefix if any
     #[allow(dead_code)]
     pub fn active_prefix(&self) -> Option<ProviderType> {

@@ -39,13 +39,18 @@ impl SearchBackend {
     ) -> Vec<LaunchItem> {
         match self {
             SearchBackend::Daemon(client) => {
-                let modes: Vec<String> = filter
-                    .enabled_providers()
-                    .iter()
-                    .map(|p| p.to_string())
-                    .collect();
-
-                let modes_param = if modes.is_empty() { None } else { Some(modes) };
+                // When accept_all, send None so daemon doesn't restrict to a specific set
+                // (otherwise dynamically loaded plugin types would be filtered out)
+                let modes_param = if filter.is_accept_all() {
+                    None
+                } else {
+                    let modes: Vec<String> = filter
+                        .enabled_providers()
+                        .iter()
+                        .map(|p| p.to_string())
+                        .collect();
+                    if modes.is_empty() { None } else { Some(modes) }
+                };
 
                 match client.query(query, modes_param) {
                     Ok(items) => items.into_iter().map(result_to_launch_item).collect(),
@@ -105,13 +110,18 @@ impl SearchBackend {
                     query.to_string()
                 };
 
-                let modes: Vec<String> = filter
-                    .enabled_providers()
-                    .iter()
-                    .map(|p| p.to_string())
-                    .collect();
-
-                let modes_param = if modes.is_empty() { None } else { Some(modes) };
+                // When accept_all, send None so daemon doesn't restrict to a specific set
+                // (otherwise dynamically loaded plugin types would be filtered out)
+                let modes_param = if filter.is_accept_all() {
+                    None
+                } else {
+                    let modes: Vec<String> = filter
+                        .enabled_providers()
+                        .iter()
+                        .map(|p| p.to_string())
+                        .collect();
+                    if modes.is_empty() { None } else { Some(modes) }
+                };
 
                 match client.query(&effective_query, modes_param) {
                     Ok(items) => items.into_iter().map(result_to_launch_item).collect(),
