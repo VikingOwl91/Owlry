@@ -116,6 +116,19 @@ impl NativeProvider {
         self.info.priority
     }
 
+    /// Get the provider's default icon name
+    pub fn icon(&self) -> &str {
+        self.info.icon.as_str()
+    }
+
+    /// Get the provider's display position as a string
+    pub fn position_str(&self) -> &str {
+        match self.info.position {
+            ProviderPosition::Widget => "widget",
+            ProviderPosition::Normal => "normal",
+        }
+    }
+
     /// Execute an action command on the provider
     /// Uses query with "!" prefix to trigger action handling in the plugin
     pub fn execute_action(&self, action: &str) {

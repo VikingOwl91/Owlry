@@ -23,7 +23,18 @@ use log::info;
 #[cfg(feature = "dev-logging")]
 use log::debug;
 
+use crate::config::Config;
 use crate::data::FrecencyStore;
+
+/// Metadata descriptor for an available provider (used by IPC/daemon API)
+#[derive(Debug, Clone)]
+pub struct ProviderDescriptor {
+    pub id: String,
+    pub name: String,
+    pub prefix: Option<String>,
+    pub icon: String,
+    pub position: String,
+}
 
 /// Represents a single searchable/launchable item
 #[derive(Debug, Clone)]
@@ -145,6 +156,59 @@ impl ProviderManager {
         manager.refresh_all();
 
         manager
+    }
+
+    /// Create a self-contained ProviderManager from config.
+    ///
+    /// Loads native plugins, creates core providers (Application + Command),
+    /// categorizes everything, and performs initial refresh. Used by the daemon
+    /// which doesn't have the UI-driven setup path from `app.rs`.
+    pub fn new_with_config(config: &Config) -> Self {
+        use crate::plugins::native_loader::NativePluginLoader;
+        use std::sync::Arc;
+
+        // Create core providers
+        let core_providers: Vec<Box<dyn Provider>> = vec![
+            Box::new(ApplicationProvider::new()),
+            Box::new(CommandProvider::new()),
+        ];
+
+        // Load native plugins
+        let mut loader = NativePluginLoader::new();
+        loader.set_disabled(config.plugins.disabled_plugins.clone());
+
+        let native_providers = match loader.discover() {
+            Ok(count) => {
+                if count == 0 {
+                    info!("No native plugins found");
+                    Vec::new()
+                } else {
+                    info!("Discovered {} native plugin(s)", count);
+                    let plugins: Vec<Arc<crate::plugins::native_loader::NativePlugin>> =
+                        loader.into_plugins();
+                    let mut providers = Vec::new();
+                    for plugin in plugins {
+                        for provider_info in &plugin.providers {
+                            let provider =
+                                NativeProvider::new(Arc::clone(&plugin), provider_info.clone());
+                            info!(
+                                "Created native provider: {} ({})",
+                                provider.name(),
+                                provider.type_id()
+                            );
+                            providers.push(provider);
+                        }
+                    }
+                    providers
+                }
+            }
+            Err(e) => {
+                log::warn!("Failed to discover native plugins: {}", e);
+                Vec::new()
+            }
+        };
+
+        Self::new(core_providers, native_providers)
     }
 
     #[allow(dead_code)]
@@ -515,12 +579,128 @@ impl ProviderManager {
 
     /// Get all available provider types (for UI tabs)
     #[allow(dead_code)]
-    pub fn available_providers(&self) -> Vec<ProviderType> {
+    pub fn available_provider_types(&self) -> Vec<ProviderType> {
         self.providers
             .iter()
             .map(|p| p.provider_type())
             .chain(self.static_native_providers.iter().map(|p| p.provider_type()))
             .collect()
+    }
+
+    /// Get descriptors for all registered providers (core + native plugins).
+    ///
+    /// Used by the IPC server to report what providers are available to clients.
+    pub fn available_providers(&self) -> Vec<ProviderDescriptor> {
+        let mut descs = Vec::new();
+
+        // Core providers
+        for provider in &self.providers {
+            let (id, prefix, icon) = match provider.provider_type() {
+                ProviderType::Application => (
+                    "app".to_string(),
+                    Some(":app".to_string()),
+                    "application-x-executable".to_string(),
+                ),
+                ProviderType::Command => (
+                    "cmd".to_string(),
+                    Some(":cmd".to_string()),
+                    "utilities-terminal".to_string(),
+                ),
+                ProviderType::Dmenu => (
+                    "dmenu".to_string(),
+                    None,
+                    "view-list-symbolic".to_string(),
+                ),
+                ProviderType::Plugin(type_id) => (
+                    type_id,
+                    None,
+                    "application-x-addon".to_string(),
+                ),
+            };
+            descs.push(ProviderDescriptor {
+                id,
+                name: provider.name().to_string(),
+                prefix,
+                icon,
+                position: "normal".to_string(),
+            });
+        }
+
+        // Static native plugin providers
+        for provider in &self.static_native_providers {
+            descs.push(ProviderDescriptor {
+                id: provider.type_id().to_string(),
+                name: provider.name().to_string(),
+                prefix: provider.prefix().map(String::from),
+                icon: provider.icon().to_string(),
+                position: provider.position_str().to_string(),
+            });
+        }
+
+        // Dynamic native plugin providers
+        for provider in &self.dynamic_providers {
+            descs.push(ProviderDescriptor {
+                id: provider.type_id().to_string(),
+                name: provider.name().to_string(),
+                prefix: provider.prefix().map(String::from),
+                icon: provider.icon().to_string(),
+                position: provider.position_str().to_string(),
+            });
+        }
+
+        // Widget native plugin providers
+        for provider in &self.widget_providers {
+            descs.push(ProviderDescriptor {
+                id: provider.type_id().to_string(),
+                name: provider.name().to_string(),
+                prefix: provider.prefix().map(String::from),
+                icon: provider.icon().to_string(),
+                position: provider.position_str().to_string(),
+            });
+        }
+
+        descs
+    }
+
+    /// Refresh a specific provider by its type_id.
+    ///
+    /// Searches core providers (by ProviderType string), static native providers,
+    /// and widget providers. Dynamic providers are skipped (they query on demand).
+    pub fn refresh_provider(&mut self, provider_id: &str) {
+        // Check core providers
+        for provider in &mut self.providers {
+            let matches = match provider.provider_type() {
+                ProviderType::Application => provider_id == "app",
+                ProviderType::Command => provider_id == "cmd",
+                ProviderType::Dmenu => provider_id == "dmenu",
+                ProviderType::Plugin(ref id) => provider_id == id,
+            };
+            if matches {
+                provider.refresh();
+                info!("Refreshed core provider '{}'", provider.name());
+                return;
+            }
+        }
+
+        // Check static native providers
+        for provider in &mut self.static_native_providers {
+            if provider.type_id() == provider_id {
+                provider.refresh();
+                info!("Refreshed static provider '{}'", provider.name());
+                return;
+            }
+        }
+
+        // Check widget providers
+        for provider in &mut self.widget_providers {
+            if provider.type_id() == provider_id {
+                provider.refresh();
+                info!("Refreshed widget provider '{}'", provider.name());
+                return;
+            }
+        }
+
+        info!("Provider '{}' not found for refresh", provider_id);
     }
 
     /// Get a widget item by type_id (e.g., "pomodoro", "weather", "media")
@@ -594,5 +774,148 @@ impl ProviderManager {
         debug!("[Submenu] No submenu actions found for plugin '{}'", plugin_id);
 
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Minimal mock provider for testing ProviderManager
+    struct MockProvider {
+        name: String,
+        provider_type: ProviderType,
+        items: Vec<LaunchItem>,
+        refresh_count: usize,
+    }
+
+    impl MockProvider {
+        fn new(name: &str, provider_type: ProviderType) -> Self {
+            Self {
+                name: name.to_string(),
+                provider_type,
+                items: Vec::new(),
+                refresh_count: 0,
+            }
+        }
+
+        fn with_items(mut self, items: Vec<LaunchItem>) -> Self {
+            self.items = items;
+            self
+        }
+    }
+
+    impl Provider for MockProvider {
+        fn name(&self) -> &str {
+            &self.name
+        }
+
+        fn provider_type(&self) -> ProviderType {
+            self.provider_type.clone()
+        }
+
+        fn refresh(&mut self) {
+            self.refresh_count += 1;
+        }
+
+        fn items(&self) -> &[LaunchItem] {
+            &self.items
+        }
+    }
+
+    fn make_item(id: &str, name: &str, provider: ProviderType) -> LaunchItem {
+        LaunchItem {
+            id: id.to_string(),
+            name: name.to_string(),
+            description: None,
+            icon: None,
+            provider,
+            command: format!("run-{}", id),
+            terminal: false,
+            tags: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn test_available_providers_core_only() {
+        let providers: Vec<Box<dyn Provider>> = vec![
+            Box::new(MockProvider::new("Applications", ProviderType::Application)),
+            Box::new(MockProvider::new("Commands", ProviderType::Command)),
+        ];
+        let pm = ProviderManager::new(providers, Vec::new());
+        let descs = pm.available_providers();
+        assert_eq!(descs.len(), 2);
+        assert_eq!(descs[0].id, "app");
+        assert_eq!(descs[0].name, "Applications");
+        assert_eq!(descs[0].prefix, Some(":app".to_string()));
+        assert_eq!(descs[0].icon, "application-x-executable");
+        assert_eq!(descs[0].position, "normal");
+        assert_eq!(descs[1].id, "cmd");
+        assert_eq!(descs[1].name, "Commands");
+    }
+
+    #[test]
+    fn test_available_providers_dmenu() {
+        let providers: Vec<Box<dyn Provider>> = vec![
+            Box::new(MockProvider::new("dmenu", ProviderType::Dmenu)),
+        ];
+        let pm = ProviderManager::new(providers, Vec::new());
+        let descs = pm.available_providers();
+        assert_eq!(descs.len(), 1);
+        assert_eq!(descs[0].id, "dmenu");
+        assert!(descs[0].prefix.is_none());
+    }
+
+    #[test]
+    fn test_available_provider_types() {
+        let providers: Vec<Box<dyn Provider>> = vec![
+            Box::new(MockProvider::new("Applications", ProviderType::Application)),
+            Box::new(MockProvider::new("Commands", ProviderType::Command)),
+        ];
+        let pm = ProviderManager::new(providers, Vec::new());
+        let types = pm.available_provider_types();
+        assert_eq!(types.len(), 2);
+        assert!(types.contains(&ProviderType::Application));
+        assert!(types.contains(&ProviderType::Command));
+    }
+
+    #[test]
+    fn test_refresh_provider_core() {
+        let app = MockProvider::new("Applications", ProviderType::Application);
+        let cmd = MockProvider::new("Commands", ProviderType::Command);
+        let providers: Vec<Box<dyn Provider>> = vec![Box::new(app), Box::new(cmd)];
+        let mut pm = ProviderManager::new(providers, Vec::new());
+
+        // refresh_all was called during construction, now refresh individual
+        pm.refresh_provider("app");
+        pm.refresh_provider("cmd");
+        // Just verifying it doesn't panic; can't easily inspect refresh_count
+        // through Box<dyn Provider>
+    }
+
+    #[test]
+    fn test_refresh_provider_unknown_does_not_panic() {
+        let providers: Vec<Box<dyn Provider>> = vec![
+            Box::new(MockProvider::new("Applications", ProviderType::Application)),
+        ];
+        let mut pm = ProviderManager::new(providers, Vec::new());
+        pm.refresh_provider("nonexistent");
+        // Should complete without panicking
+    }
+
+    #[test]
+    fn test_search_with_core_providers() {
+        let items = vec![
+            make_item("firefox", "Firefox", ProviderType::Application),
+            make_item("vim", "Vim", ProviderType::Application),
+        ];
+        let provider = MockProvider::new("Applications", ProviderType::Application)
+            .with_items(items);
+        let providers: Vec<Box<dyn Provider>> = vec![Box::new(provider)];
+        let pm = ProviderManager::new(providers, Vec::new());
+
+        let results = pm.search("fire", 10);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0.name, "Firefox");
     }
 }

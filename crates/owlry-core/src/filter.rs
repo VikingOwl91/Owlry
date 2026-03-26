@@ -342,6 +342,61 @@ impl ProviderFilter {
         providers
     }
 
+    /// Create a filter from a list of mode name strings.
+    ///
+    /// Maps each string to a ProviderType: "app" -> Application, "cmd" -> Command,
+    /// "dmenu" -> Dmenu, anything else -> Plugin(id). An empty list produces an
+    /// all-providers filter.
+    pub fn from_mode_strings(modes: &[String]) -> Self {
+        if modes.is_empty() {
+            return Self::all();
+        }
+        let enabled: HashSet<ProviderType> = modes
+            .iter()
+            .map(|s| Self::mode_string_to_provider_type(s))
+            .collect();
+        Self {
+            enabled,
+            active_prefix: None,
+        }
+    }
+
+    /// Create a filter that accepts all providers.
+    ///
+    /// Internally enables Application, Command, and Dmenu. Plugin providers are
+    /// implicitly accepted because `is_active` will match them when they appear
+    /// in the enabled set. For a true "pass everything" filter, this also
+    /// pre-populates common plugin types.
+    ///
+    /// The daemon uses this as the default when no modes are specified.
+    pub fn all() -> Self {
+        let mut enabled = HashSet::new();
+        enabled.insert(ProviderType::Application);
+        enabled.insert(ProviderType::Command);
+        enabled.insert(ProviderType::Dmenu);
+        // Common plugin types — the daemon typically has all plugins loaded
+        for id in &[
+            "calc", "clipboard", "emoji", "bookmarks", "ssh", "scripts",
+            "system", "uuctl", "filesearch", "websearch", "weather",
+            "media", "pomodoro",
+        ] {
+            enabled.insert(ProviderType::Plugin(id.to_string()));
+        }
+        Self {
+            enabled,
+            active_prefix: None,
+        }
+    }
+
+    /// Map a mode string to a ProviderType.
+    ///
+    /// Delegates to the existing `FromStr` impl on `ProviderType` which maps
+    /// "app"/"apps"/"application" -> Application, "cmd"/"command" -> Command,
+    /// "dmenu" -> Dmenu, and everything else -> Plugin(id).
+    pub fn mode_string_to_provider_type(mode: &str) -> ProviderType {
+        mode.parse::<ProviderType>().unwrap_or_else(|_| ProviderType::Plugin(mode.to_string()))
+    }
+
     /// Get display name for current mode
     pub fn mode_display_name(&self) -> &'static str {
         if let Some(ref prefix) = self.active_prefix {
@@ -405,5 +460,108 @@ mod tests {
         filter.toggle(ProviderType::Application);
         // Should still have apps enabled as fallback
         assert!(filter.is_enabled(ProviderType::Application));
+    }
+
+    #[test]
+    fn test_from_mode_strings_single_core() {
+        let filter = ProviderFilter::from_mode_strings(&["app".to_string()]);
+        assert!(filter.is_enabled(ProviderType::Application));
+        assert!(!filter.is_enabled(ProviderType::Command));
+    }
+
+    #[test]
+    fn test_from_mode_strings_multiple() {
+        let filter = ProviderFilter::from_mode_strings(&[
+            "app".to_string(),
+            "cmd".to_string(),
+            "calc".to_string(),
+        ]);
+        assert!(filter.is_enabled(ProviderType::Application));
+        assert!(filter.is_enabled(ProviderType::Command));
+        assert!(filter.is_enabled(ProviderType::Plugin("calc".to_string())));
+        assert!(!filter.is_enabled(ProviderType::Dmenu));
+    }
+
+    #[test]
+    fn test_from_mode_strings_empty_returns_all() {
+        let filter = ProviderFilter::from_mode_strings(&[]);
+        assert!(filter.is_enabled(ProviderType::Application));
+        assert!(filter.is_enabled(ProviderType::Command));
+        assert!(filter.is_enabled(ProviderType::Dmenu));
+    }
+
+    #[test]
+    fn test_from_mode_strings_plugin() {
+        let filter = ProviderFilter::from_mode_strings(&["emoji".to_string()]);
+        assert!(filter.is_enabled(ProviderType::Plugin("emoji".to_string())));
+        assert!(!filter.is_enabled(ProviderType::Application));
+    }
+
+    #[test]
+    fn test_from_mode_strings_dmenu() {
+        let filter = ProviderFilter::from_mode_strings(&["dmenu".to_string()]);
+        assert!(filter.is_enabled(ProviderType::Dmenu));
+        assert!(!filter.is_enabled(ProviderType::Application));
+    }
+
+    #[test]
+    fn test_all_includes_core_types() {
+        let filter = ProviderFilter::all();
+        assert!(filter.is_enabled(ProviderType::Application));
+        assert!(filter.is_enabled(ProviderType::Command));
+        assert!(filter.is_enabled(ProviderType::Dmenu));
+    }
+
+    #[test]
+    fn test_all_includes_common_plugins() {
+        let filter = ProviderFilter::all();
+        assert!(filter.is_enabled(ProviderType::Plugin("calc".to_string())));
+        assert!(filter.is_enabled(ProviderType::Plugin("clipboard".to_string())));
+        assert!(filter.is_enabled(ProviderType::Plugin("emoji".to_string())));
+        assert!(filter.is_enabled(ProviderType::Plugin("weather".to_string())));
+    }
+
+    #[test]
+    fn test_mode_string_to_provider_type_core() {
+        assert_eq!(
+            ProviderFilter::mode_string_to_provider_type("app"),
+            ProviderType::Application
+        );
+        assert_eq!(
+            ProviderFilter::mode_string_to_provider_type("cmd"),
+            ProviderType::Command
+        );
+        assert_eq!(
+            ProviderFilter::mode_string_to_provider_type("dmenu"),
+            ProviderType::Dmenu
+        );
+    }
+
+    #[test]
+    fn test_mode_string_to_provider_type_plugin() {
+        assert_eq!(
+            ProviderFilter::mode_string_to_provider_type("calc"),
+            ProviderType::Plugin("calc".to_string())
+        );
+        assert_eq!(
+            ProviderFilter::mode_string_to_provider_type("websearch"),
+            ProviderType::Plugin("websearch".to_string())
+        );
+    }
+
+    #[test]
+    fn test_mode_string_to_provider_type_aliases() {
+        assert_eq!(
+            ProviderFilter::mode_string_to_provider_type("apps"),
+            ProviderType::Application
+        );
+        assert_eq!(
+            ProviderFilter::mode_string_to_provider_type("application"),
+            ProviderType::Application
+        );
+        assert_eq!(
+            ProviderFilter::mode_string_to_provider_type("command"),
+            ProviderType::Command
+        );
     }
 }
