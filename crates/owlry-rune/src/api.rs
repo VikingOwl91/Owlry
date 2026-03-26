@@ -22,6 +22,7 @@ pub struct ProviderRegistration {
 ///
 /// Exposed to Rune scripts as `owlry::Item`.
 #[derive(Debug, Clone, Any)]
+#[rune(item = ::owlry)]
 pub struct Item {
     pub id: String,
     pub name: String,
