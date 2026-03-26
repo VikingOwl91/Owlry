@@ -33,22 +33,13 @@ use std::path::PathBuf;
 
 use loader::LoadedPlugin;
 
-// Runtime metadata
-const RUNTIME_ID: &str = "lua";
-const RUNTIME_NAME: &str = "Lua Runtime";
-const RUNTIME_VERSION: &str = env!("CARGO_PKG_VERSION");
-const RUNTIME_DESCRIPTION: &str = "Lua 5.4 runtime for user plugins";
-
-/// API version for compatibility checking
-pub const LUA_RUNTIME_API_VERSION: u32 = 1;
-
 /// Runtime vtable - exported interface for the core to use
 #[repr(C)]
 pub struct LuaRuntimeVTable {
     /// Get runtime info
     pub info: extern "C" fn() -> RuntimeInfo,
     /// Initialize the runtime with plugins directory
-    pub init: extern "C" fn(plugins_dir: RStr<'_>) -> RuntimeHandle,
+    pub init: extern "C" fn(plugins_dir: RStr<'_>, owlry_version: RStr<'_>) -> RuntimeHandle,
     /// Get provider infos from all loaded plugins
     pub providers: extern "C" fn(handle: RuntimeHandle) -> RVec<LuaProviderInfo>,
     /// Refresh a provider's items
@@ -66,11 +57,8 @@ pub struct LuaRuntimeVTable {
 /// Runtime info returned by the runtime
 #[repr(C)]
 pub struct RuntimeInfo {
-    pub id: RString,
     pub name: RString,
     pub version: RString,
-    pub description: RString,
-    pub api_version: u32,
 }
 
 /// Opaque handle to the runtime state
@@ -259,22 +247,15 @@ impl LuaRuntimeState {
 
 extern "C" fn runtime_info() -> RuntimeInfo {
     RuntimeInfo {
-        id: RString::from(RUNTIME_ID),
-        name: RString::from(RUNTIME_NAME),
-        version: RString::from(RUNTIME_VERSION),
-        description: RString::from(RUNTIME_DESCRIPTION),
-        api_version: LUA_RUNTIME_API_VERSION,
+        name: RString::from("Lua"),
+        version: RString::from(env!("CARGO_PKG_VERSION")),
     }
 }
 
-extern "C" fn runtime_init(plugins_dir: RStr<'_>) -> RuntimeHandle {
+extern "C" fn runtime_init(plugins_dir: RStr<'_>, owlry_version: RStr<'_>) -> RuntimeHandle {
     let plugins_dir = PathBuf::from(plugins_dir.as_str());
     let mut state = Box::new(LuaRuntimeState::new(plugins_dir));
-
-    // TODO: Get owlry version from core somehow
-    // For now, use a reasonable default
-    state.discover_and_load("0.3.0");
-
+    state.discover_and_load(owlry_version.as_str());
     RuntimeHandle::from_box(state)
 }
 
@@ -346,8 +327,8 @@ mod tests {
     #[test]
     fn test_runtime_info() {
         let info = runtime_info();
-        assert_eq!(info.id.as_str(), "lua");
-        assert_eq!(info.api_version, LUA_RUNTIME_API_VERSION);
+        assert_eq!(info.name.as_str(), "Lua");
+        assert!(!info.version.as_str().is_empty());
     }
 
     #[test]

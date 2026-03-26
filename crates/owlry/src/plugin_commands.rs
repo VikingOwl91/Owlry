@@ -1114,10 +1114,14 @@ fn execute_plugin_command(
 
     // Load the appropriate runtime
     let loaded_runtime = match runtime {
-        PluginRuntime::Lua => LoadedRuntime::load_lua(plugin_path.parent().unwrap_or(plugin_path))
-            .map_err(|e| format!("Failed to load Lua runtime: {}", e))?,
+        PluginRuntime::Lua => {
+            let owlry_version = env!("CARGO_PKG_VERSION");
+            LoadedRuntime::load_lua(plugin_path.parent().unwrap_or(plugin_path), owlry_version)
+                .map_err(|e| format!("Failed to load Lua runtime: {}", e))?
+        }
         PluginRuntime::Rune => {
-            LoadedRuntime::load_rune(plugin_path.parent().unwrap_or(plugin_path))
+            let owlry_version = env!("CARGO_PKG_VERSION");
+            LoadedRuntime::load_rune(plugin_path.parent().unwrap_or(plugin_path), owlry_version)
                 .map_err(|e| format!("Failed to load Rune runtime: {}", e))?
         }
     };

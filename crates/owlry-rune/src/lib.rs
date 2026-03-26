@@ -72,7 +72,7 @@ struct RuntimeState {
 #[repr(C)]
 pub struct RuneRuntimeVTable {
     pub info: extern "C" fn() -> RuntimeInfo,
-    pub init: extern "C" fn(plugins_dir: RStr<'_>) -> RuntimeHandle,
+    pub init: extern "C" fn(plugins_dir: RStr<'_>, owlry_version: RStr<'_>) -> RuntimeHandle,
     pub providers: extern "C" fn(handle: RuntimeHandle) -> RVec<RuneProviderInfo>,
     pub refresh: extern "C" fn(handle: RuntimeHandle, provider_id: RStr<'_>) -> RVec<PluginItem>,
     pub query: extern "C" fn(
@@ -94,8 +94,9 @@ extern "C" fn runtime_info() -> RuntimeInfo {
     }
 }
 
-extern "C" fn runtime_init(plugins_dir: RStr<'_>) -> RuntimeHandle {
+extern "C" fn runtime_init(plugins_dir: RStr<'_>, owlry_version: RStr<'_>) -> RuntimeHandle {
     let _ = env_logger::try_init();
+    let _version = owlry_version.as_str();
 
     let plugins_dir = PathBuf::from(plugins_dir.as_str());
     log::info!(
@@ -250,7 +251,7 @@ mod tests {
         let plugins_dir = temp.path().to_string_lossy();
 
         // Initialize runtime
-        let handle = runtime_init(RStr::from_str(&plugins_dir));
+        let handle = runtime_init(RStr::from_str(&plugins_dir), RStr::from_str("1.0.0"));
         assert!(!handle.0.is_null());
 
         // Get providers (should be empty with no plugins)

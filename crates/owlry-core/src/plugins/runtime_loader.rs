@@ -56,7 +56,7 @@ pub struct RuntimeHandle(pub *mut ());
 #[repr(C)]
 pub struct ScriptRuntimeVTable {
     pub info: extern "C" fn() -> RuntimeInfo,
-    pub init: extern "C" fn(plugins_dir: RStr<'_>) -> RuntimeHandle,
+    pub init: extern "C" fn(plugins_dir: RStr<'_>, owlry_version: RStr<'_>) -> RuntimeHandle,
     pub providers: extern "C" fn(handle: RuntimeHandle) -> RVec<ScriptProviderInfo>,
     pub refresh: extern "C" fn(handle: RuntimeHandle, provider_id: RStr<'_>) -> RVec<PluginItem>,
     pub query: extern "C" fn(
@@ -83,12 +83,13 @@ pub struct LoadedRuntime {
 
 impl LoadedRuntime {
     /// Load the Lua runtime from the system directory
-    pub fn load_lua(plugins_dir: &Path) -> PluginResult<Self> {
+    pub fn load_lua(plugins_dir: &Path, owlry_version: &str) -> PluginResult<Self> {
         Self::load_from_path(
             "Lua",
             &PathBuf::from(SYSTEM_RUNTIMES_DIR).join("liblua.so"),
             b"owlry_lua_runtime_vtable",
             plugins_dir,
+            owlry_version,
         )
     }
 
@@ -98,6 +99,7 @@ impl LoadedRuntime {
         library_path: &Path,
         vtable_symbol: &[u8],
         plugins_dir: &Path,
+        owlry_version: &str,
     ) -> PluginResult<Self> {
         if !library_path.exists() {
             return Err(PluginError::NotFound(library_path.display().to_string()));
@@ -124,7 +126,7 @@ impl LoadedRuntime {
 
         // Initialize the runtime
         let plugins_dir_str = plugins_dir.to_string_lossy();
-        let handle = (vtable.init)(RStr::from_str(&plugins_dir_str));
+        let handle = (vtable.init)(RStr::from_str(&plugins_dir_str), RStr::from_str(owlry_version));
 
         // Get provider information
         let providers_rvec = (vtable.providers)(handle);
@@ -266,12 +268,13 @@ pub fn rune_runtime_available() -> bool {
 
 impl LoadedRuntime {
     /// Load the Rune runtime from the system directory
-    pub fn load_rune(plugins_dir: &Path) -> PluginResult<Self> {
+    pub fn load_rune(plugins_dir: &Path, owlry_version: &str) -> PluginResult<Self> {
         Self::load_from_path(
             "Rune",
             &PathBuf::from(SYSTEM_RUNTIMES_DIR).join("librune.so"),
             b"owlry_rune_runtime_vtable",
             plugins_dir,
+            owlry_version,
         )
     }
 }
