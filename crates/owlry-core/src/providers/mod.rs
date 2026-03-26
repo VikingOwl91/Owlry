@@ -25,6 +25,7 @@ use log::debug;
 
 use crate::config::Config;
 use crate::data::FrecencyStore;
+use crate::plugins::runtime_loader::LoadedRuntime;
 
 /// Metadata descriptor for an available provider (used by IPC/daemon API)
 #[derive(Debug, Clone)]
@@ -116,6 +117,10 @@ pub struct ProviderManager {
     widget_providers: Vec<NativeProvider>,
     /// Fuzzy matcher for search
     matcher: SkimMatcherV2,
+    /// Loaded script runtimes (Lua, Rune) — must stay alive to keep Library handles
+    runtimes: Vec<LoadedRuntime>,
+    /// Type IDs of providers from script runtimes (for hot-reload removal)
+    runtime_type_ids: std::collections::HashSet<String>,
 }
 
 impl ProviderManager {
@@ -134,6 +139,8 @@ impl ProviderManager {
             dynamic_providers: Vec::new(),
             widget_providers: Vec::new(),
             matcher: SkimMatcherV2::default(),
+            runtimes: Vec::new(),
+            runtime_type_ids: std::collections::HashSet::new(),
         };
 
         // Categorize native plugins based on their declared ProviderKind and ProviderPosition
@@ -180,7 +187,7 @@ impl ProviderManager {
         use std::sync::Arc;
 
         // Create core providers
-        let core_providers: Vec<Box<dyn Provider>> = vec![
+        let mut core_providers: Vec<Box<dyn Provider>> = vec![
             Box::new(ApplicationProvider::new()),
             Box::new(CommandProvider::new()),
         ];
@@ -220,7 +227,59 @@ impl ProviderManager {
             }
         };
 
-        Self::new(core_providers, native_providers)
+        // Load script runtimes (Lua, Rune) for user plugins
+        let mut runtime_providers: Vec<Box<dyn Provider>> = Vec::new();
+        let mut runtimes: Vec<LoadedRuntime> = Vec::new();
+        let mut runtime_type_ids = std::collections::HashSet::new();
+        let owlry_version = env!("CARGO_PKG_VERSION");
+
+        let skip_runtimes = std::env::var("OWLRY_SKIP_RUNTIMES").is_ok();
+        if !skip_runtimes {
+        if let Some(plugins_dir) = crate::paths::plugins_dir() {
+            // Try Lua runtime
+            match LoadedRuntime::load_lua(&plugins_dir, owlry_version) {
+                Ok(rt) => {
+                    info!("Loaded Lua runtime with {} provider(s)", rt.providers().len());
+                    for provider in rt.create_providers() {
+                        let type_id = format!("{}", provider.provider_type());
+                        runtime_type_ids.insert(type_id);
+                        runtime_providers.push(provider);
+                    }
+                    runtimes.push(rt);
+                }
+                Err(e) => {
+                    info!("Lua runtime not available: {}", e);
+                }
+            }
+
+            // Try Rune runtime
+            match LoadedRuntime::load_rune(&plugins_dir, owlry_version) {
+                Ok(rt) => {
+                    info!("Loaded Rune runtime with {} provider(s)", rt.providers().len());
+                    for provider in rt.create_providers() {
+                        let type_id = format!("{}", provider.provider_type());
+                        runtime_type_ids.insert(type_id);
+                        runtime_providers.push(provider);
+                    }
+                    runtimes.push(rt);
+                }
+                Err(e) => {
+                    info!("Rune runtime not available: {}", e);
+                }
+            }
+        }
+        } // skip_runtimes
+
+        // Merge runtime providers into core providers
+        for provider in runtime_providers {
+            info!("Registered runtime provider: {}", provider.name());
+            core_providers.push(provider);
+        }
+
+        let mut manager = Self::new(core_providers, native_providers);
+        manager.runtimes = runtimes;
+        manager.runtime_type_ids = runtime_type_ids;
+        manager
     }
 
     #[allow(dead_code)]

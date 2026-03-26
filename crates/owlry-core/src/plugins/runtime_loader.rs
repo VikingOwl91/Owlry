@@ -10,8 +10,6 @@
 //! Note: This module is infrastructure for the runtime architecture. Full integration
 //! is pending Phase 5 (AUR Packaging) when runtime packages will be available.
 
-#![allow(dead_code)]
-
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -170,6 +168,14 @@ impl Drop for LoadedRuntime {
         (self.vtable.drop)(self.handle);
     }
 }
+
+// LoadedRuntime needs to be Send + Sync because ProviderManager is shared across
+// threads via Arc<RwLock<ProviderManager>>.
+// Safety: RuntimeHandle is an opaque FFI handle accessed only through extern "C"
+// vtable functions. The same safety argument that applies to RuntimeProvider applies
+// here — all access is mediated by the vtable, and the runtime itself serializes access.
+unsafe impl Send for LoadedRuntime {}
+unsafe impl Sync for LoadedRuntime {}
 
 /// A provider backed by a dynamically loaded runtime
 pub struct RuntimeProvider {
