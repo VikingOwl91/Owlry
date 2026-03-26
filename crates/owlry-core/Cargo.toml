@@ -11,6 +11,10 @@ description = "Core daemon for the Owlry application launcher"
 name = "owlry_core"
 path = "src/lib.rs"
 
+[[bin]]
+name = "owlry-core"
+path = "src/main.rs"
+
 [dependencies]
 owlry-plugin-api = { path = "../owlry-plugin-api" }
 
@@ -31,6 +35,9 @@ dirs = "5"
 
 # Error handling
 thiserror = "2"
+
+# Signal handling
+ctrlc = { version = "3", features = ["termination"] }
 
 # Logging & notifications
 log = "0.4"

@@ -155,6 +155,20 @@ pub fn system_data_dirs() -> Vec<PathBuf> {
 }
 
 // =============================================================================
+// Runtime files
+// =============================================================================
+
+/// IPC socket path: `$XDG_RUNTIME_DIR/owlry/owlry.sock`
+///
+/// Falls back to `/tmp` if `$XDG_RUNTIME_DIR` is not set.
+pub fn socket_path() -> PathBuf {
+    let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/tmp"));
+    runtime_dir.join(APP_NAME).join("owlry.sock")
+}
+
+// =============================================================================
 // Helper functions
 // =============================================================================
 
