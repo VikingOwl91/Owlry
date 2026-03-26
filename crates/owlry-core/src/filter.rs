@@ -32,6 +32,8 @@ impl ProviderFilter {
         cli_providers: Option<Vec<ProviderType>>,
         config_providers: &ProvidersConfig,
     ) -> Self {
+        let accept_all = cli_mode.is_none() && cli_providers.is_none();
+
         let enabled = if let Some(mode) = cli_mode {
             // --mode overrides everything: single provider
             HashSet::from([mode])
@@ -90,7 +92,7 @@ impl ProviderFilter {
         let filter = Self {
             enabled,
             active_prefix: None,
-            accept_all: false,
+            accept_all,
         };
 
         #[cfg(feature = "dev-logging")]
