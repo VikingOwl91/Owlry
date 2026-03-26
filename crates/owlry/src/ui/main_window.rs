@@ -1,7 +1,7 @@
+use crate::backend::SearchBackend;
 use owlry_core::config::Config;
-use owlry_core::data::FrecencyStore;
 use owlry_core::filter::ProviderFilter;
-use owlry_core::providers::{LaunchItem, ProviderManager, ProviderType};
+use owlry_core::providers::{LaunchItem, ProviderType};
 use crate::ui::submenu;
 use crate::ui::ResultRow;
 use gtk4::gdk::Key;
@@ -56,8 +56,7 @@ pub struct MainWindow {
     results_list: ListBox,
     scrolled: ScrolledWindow,
     config: Rc<RefCell<Config>>,
-    providers: Rc<RefCell<ProviderManager>>,
-    frecency: Rc<RefCell<FrecencyStore>>,
+    backend: Rc<RefCell<SearchBackend>>,
     current_results: Rc<RefCell<Vec<LaunchItem>>>,
     filter: Rc<RefCell<ProviderFilter>>,
     mode_label: Label,
@@ -81,8 +80,7 @@ impl MainWindow {
     pub fn new(
         app: &Application,
         config: Rc<RefCell<Config>>,
-        providers: Rc<RefCell<ProviderManager>>,
-        frecency: Rc<RefCell<FrecencyStore>>,
+        backend: Rc<RefCell<SearchBackend>>,
         filter: Rc<RefCell<ProviderFilter>>,
         custom_prompt: Option<String>,
     ) -> Self {
@@ -199,8 +197,8 @@ impl MainWindow {
 
         let lazy_state = Rc::new(RefCell::new(LazyLoadState::default()));
 
-        // Check if we're in dmenu mode (stdin pipe input)
-        let is_dmenu_mode = providers.borrow().is_dmenu_mode();
+        // Check if we're in dmenu mode
+        let is_dmenu_mode = backend.borrow().is_dmenu_mode();
 
         let main_window = Self {
             window,
@@ -208,8 +206,7 @@ impl MainWindow {
             results_list,
             scrolled,
             config,
-            providers,
-            frecency,
+            backend,
             current_results: Rc::new(RefCell::new(Vec::new())),
             filter,
             mode_label,
@@ -230,46 +227,43 @@ impl MainWindow {
         // Ensure search entry has focus when window is shown
         main_window.search_entry.grab_focus();
 
-        // Schedule widget refresh after window is shown
+        // Schedule widget refresh after window is shown (only for local backend)
         // Widget providers (weather, media, pomodoro) may make network/dbus calls
         // We defer this to avoid blocking startup, then re-render results
-        let providers_for_refresh = main_window.providers.clone();
+        let backend_for_refresh = main_window.backend.clone();
         let search_entry_for_refresh = main_window.search_entry.clone();
         gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(50), move || {
-            providers_for_refresh.borrow_mut().refresh_widgets();
+            backend_for_refresh.borrow_mut().refresh_widgets();
             // Trigger UI update by emitting changed signal on search entry
             search_entry_for_refresh.emit_by_name::<()>("changed", &[]);
         });
 
-        // Set up periodic widget auto-refresh (every 5 seconds)
-        // Always refresh widgets (for pomodoro timer/notifications), but only update UI when visible
-        let providers_for_auto = main_window.providers.clone();
+        // Set up periodic widget auto-refresh (every 5 seconds) — local backend only
+        // In daemon mode, the daemon handles widget refresh and results come via IPC
+        if main_window.is_dmenu_mode {
+            // dmenu typically has no widgets, but this is harmless
+        }
+        let backend_for_auto = main_window.backend.clone();
         let current_results_for_auto = main_window.current_results.clone();
         let submenu_state_for_auto = main_window.submenu_state.clone();
+        let search_entry_for_auto = main_window.search_entry.clone();
         gtk4::glib::timeout_add_local(std::time::Duration::from_secs(5), move || {
-            // Skip UI updates if in submenu, but still refresh providers for notifications
             let in_submenu = submenu_state_for_auto.borrow().active;
 
-            // Always refresh widget providers (pomodoro needs this for timer/notifications)
-            providers_for_auto.borrow_mut().refresh_widgets();
+            // For local backend: refresh widgets (daemon handles this itself)
+            backend_for_auto.borrow_mut().refresh_widgets();
 
-            // Only update UI if not in submenu and widgets are visible
+            // For daemon backend: re-query to get updated widget data
             if !in_submenu {
-                // Collect widget type_ids first to avoid borrow conflicts
-                let widget_ids: Vec<String> = providers_for_auto
-                    .borrow()
-                    .widget_type_ids()
-                    .map(|s| s.to_string())
-                    .collect();
-
-                let mut results = current_results_for_auto.borrow_mut();
-                for type_id in &widget_ids {
-                    if let Some(new_item) = providers_for_auto.borrow().get_widget_item(type_id)
-                        && let Some(existing) = results.iter_mut().find(|i| i.id == new_item.id)
-                    {
-                        existing.name = new_item.name;
-                        existing.description = new_item.description;
-                    }
+                if let SearchBackend::Daemon(_) = &*backend_for_auto.borrow() {
+                    // Trigger a re-search to pick up updated widget items from daemon
+                    search_entry_for_auto.emit_by_name::<()>("changed", &[]);
+                } else {
+                    // Local backend: update widget items in-place (legacy behavior)
+                    // This path is only hit in dmenu mode which doesn't have widgets,
+                    // but keep it for completeness.
+                    let _results = current_results_for_auto.borrow();
+                    // No-op for local mode without widget access
                 }
             }
             gtk4::glib::ControlFlow::Continue
@@ -566,10 +560,9 @@ impl MainWindow {
 
     fn setup_signals(&self) {
         // Search input handling with prefix detection and debouncing
-        let providers = self.providers.clone();
+        let backend = self.backend.clone();
         let results_list = self.results_list.clone();
         let config = self.config.clone();
-        let frecency = self.frecency.clone();
         let current_results = self.current_results.clone();
         let filter = self.filter.clone();
         let mode_label = self.mode_label.clone();
@@ -661,10 +654,9 @@ impl MainWindow {
             }
 
             // Clone references for the debounced closure
-            let providers = providers.clone();
+            let backend = backend.clone();
             let results_list = results_list.clone();
             let config = config.clone();
-            let frecency = frecency.clone();
             let current_results = current_results.clone();
             let filter = filter.clone();
             let lazy_state = lazy_state.clone();
@@ -679,25 +671,15 @@ impl MainWindow {
 
                     let cfg = config.borrow();
                     let max_results = cfg.general.max_results;
-                    let frecency_weight = cfg.providers.frecency_weight;
-                    let use_frecency = cfg.providers.frecency;
                     drop(cfg);
 
-                    let results: Vec<LaunchItem> = if use_frecency {
-                        providers
-                            .borrow_mut()
-                            .search_with_frecency(&parsed.query, max_results, &filter.borrow(), &frecency.borrow(), frecency_weight, parsed.tag_filter.as_deref())
-                            .into_iter()
-                            .map(|(item, _)| item)
-                            .collect()
-                    } else {
-                        providers
-                            .borrow()
-                            .search_filtered(&parsed.query, max_results, &filter.borrow())
-                            .into_iter()
-                            .map(|(item, _)| item)
-                            .collect()
-                    };
+                    let results = backend.borrow_mut().search_with_tag(
+                        &parsed.query,
+                        max_results,
+                        &filter.borrow(),
+                        &config.borrow(),
+                        parsed.tag_filter.as_deref(),
+                    );
 
                     // Clear existing results
                     while let Some(child) = results_list.first_child() {
@@ -734,8 +716,7 @@ impl MainWindow {
         let results_list_for_activate = self.results_list.clone();
         let current_results_for_activate = self.current_results.clone();
         let config_for_activate = self.config.clone();
-        let frecency_for_activate = self.frecency.clone();
-        let providers_for_activate = self.providers.clone();
+        let backend_for_activate = self.backend.clone();
         let window_for_activate = self.window.clone();
         let submenu_state_for_activate = self.submenu_state.clone();
         let mode_label_for_activate = self.mode_label.clone();
@@ -761,8 +742,8 @@ impl MainWindow {
                             let data = data.to_string();
                             let display_name = item.name.clone();
                             drop(results); // Release borrow before querying
-                            providers_for_activate
-                                .borrow()
+                            backend_for_activate
+                                .borrow_mut()
                                 .query_submenu_actions(&plugin_id, &data, &display_name)
                         } else {
                             drop(results);
@@ -791,8 +772,7 @@ impl MainWindow {
                             let should_close = Self::handle_item_action(
                                 &item,
                                 &config_for_activate.borrow(),
-                                &frecency_for_activate,
-                                &providers_for_activate,
+                                &backend_for_activate,
                             );
                             if should_close {
                                 // In dmenu mode, exit with success code
@@ -1002,8 +982,7 @@ impl MainWindow {
         // Double-click to launch
         let current_results = self.current_results.clone();
         let config = self.config.clone();
-        let frecency = self.frecency.clone();
-        let providers = self.providers.clone();
+        let backend = self.backend.clone();
         let window = self.window.clone();
         let submenu_state = self.submenu_state.clone();
         let results_list_for_click = self.results_list.clone();
@@ -1023,8 +1002,8 @@ impl MainWindow {
                         let data = data.to_string();
                         let display_name = item.name.clone();
                         drop(results);
-                        providers
-                            .borrow()
+                        backend
+                            .borrow_mut()
                             .query_submenu_actions(&plugin_id, &data, &display_name)
                     } else {
                         drop(results);
@@ -1050,7 +1029,7 @@ impl MainWindow {
                     let results = current_results.borrow();
                     if let Some(item) = results.get(index).cloned() {
                         drop(results);
-                        let should_close = Self::handle_item_action(&item, &config.borrow(), &frecency, &providers);
+                        let should_close = Self::handle_item_action(&item, &config.borrow(), &backend);
                         if should_close {
                             window.close();
                         } else {
@@ -1166,26 +1145,14 @@ impl MainWindow {
     fn update_results(&self, query: &str) {
         let cfg = self.config.borrow();
         let max_results = cfg.general.max_results;
-        let frecency_weight = cfg.providers.frecency_weight;
-        let use_frecency = cfg.providers.frecency;
         drop(cfg);
 
-        // Fetch all matching results (up to max_results)
-        let results: Vec<LaunchItem> = if use_frecency {
-            self.providers
-                .borrow_mut()
-                .search_with_frecency(query, max_results, &self.filter.borrow(), &self.frecency.borrow(), frecency_weight, None)
-                .into_iter()
-                .map(|(item, _)| item)
-                .collect()
-        } else {
-            self.providers
-                .borrow()
-                .search_filtered(query, max_results, &self.filter.borrow())
-                .into_iter()
-                .map(|(item, _)| item)
-                .collect()
-        };
+        let results = self.backend.borrow_mut().search(
+            query,
+            max_results,
+            &self.filter.borrow(),
+            &self.config.borrow(),
+        );
 
         // Clear existing results
         while let Some(child) = self.results_list.first_child() {
@@ -1284,32 +1251,32 @@ impl MainWindow {
     fn handle_item_action(
         item: &LaunchItem,
         config: &Config,
-        frecency: &Rc<RefCell<FrecencyStore>>,
-        providers: &Rc<RefCell<ProviderManager>>,
+        backend: &Rc<RefCell<SearchBackend>>,
     ) -> bool {
         // Check for plugin internal commands (format: PLUGIN_ID:action)
         // These are handled by the plugin itself, not launched as shell commands
-        if providers.borrow().execute_plugin_action(&item.command) {
+        if backend.borrow_mut().execute_plugin_action(&item.command) {
             // Plugin handled the action - don't close window
             // User might want to see updated state (e.g., pomodoro timer)
             return false;
         }
 
         // Regular item launch
-        Self::launch_item(item, config, frecency);
+        Self::launch_item(item, config, backend);
         true
     }
 
-    fn launch_item(item: &LaunchItem, config: &Config, frecency: &Rc<RefCell<FrecencyStore>>) {
+    fn launch_item(item: &LaunchItem, config: &Config, backend: &Rc<RefCell<SearchBackend>>) {
         // dmenu mode: print selection to stdout instead of executing
         if matches!(item.provider, ProviderType::Dmenu) {
             println!("{}", item.name);
             return;
         }
 
-        // Record this launch for frecency tracking
+        // Record this launch for frecency tracking (via backend)
         if config.providers.frecency {
-            frecency.borrow_mut().record_launch(&item.id);
+            let provider_str = item.provider.to_string();
+            backend.borrow_mut().record_launch(&item.id, &provider_str);
             #[cfg(feature = "dev-logging")]
             debug!("[UI] Recorded frecency launch for: {}", item.id);
         }

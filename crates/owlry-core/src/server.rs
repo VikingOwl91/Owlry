@@ -191,6 +191,17 @@ impl Server {
                     },
                 }
             }
+
+            Request::PluginAction { command } => {
+                let pm_guard = pm.lock().unwrap();
+                if pm_guard.execute_plugin_action(command) {
+                    Response::Ack
+                } else {
+                    Response::Error {
+                        message: format!("no plugin handled action '{}'", command),
+                    }
+                }
+            }
         }
     }
 }
@@ -222,6 +233,7 @@ fn launch_item_to_result(item: LaunchItem, score: i64) -> ResultItem {
         provider: format!("{}", item.provider),
         score,
         command: Some(item.command),
+        terminal: item.terminal,
         tags: item.tags,
     }
 }

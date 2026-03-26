@@ -160,6 +160,23 @@ impl CoreClient {
         }
     }
 
+    /// Execute a plugin action command (e.g., "POMODORO:start").
+    /// Returns Ok(true) if the plugin handled the action, Ok(false) if not.
+    pub fn plugin_action(&mut self, command: &str) -> io::Result<bool> {
+        self.send(&Request::PluginAction {
+            command: command.to_string(),
+        })?;
+
+        match self.receive()? {
+            Response::Ack => Ok(true),
+            Response::Error { .. } => Ok(false),
+            other => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("unexpected response to PluginAction: {other:?}"),
+            )),
+        }
+    }
+
     /// Query a plugin's submenu actions.
     pub fn submenu(
         &mut self,
@@ -268,6 +285,7 @@ mod tests {
                 provider: "app".into(),
                 score: 100,
                 command: Some("firefox".into()),
+                terminal: false,
                 tags: vec![],
             }],
         };
@@ -338,6 +356,7 @@ mod tests {
                 provider: "systemd".into(),
                 score: 0,
                 command: Some("systemctl --user start foo".into()),
+                terminal: false,
                 tags: vec![],
             }],
         };

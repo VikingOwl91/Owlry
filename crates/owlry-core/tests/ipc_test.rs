@@ -45,6 +45,7 @@ fn test_results_response_roundtrip() {
             provider: "app".into(),
             score: 95,
             command: Some("firefox".into()),
+            terminal: false,
             tags: vec![],
         }],
     };
@@ -106,4 +107,41 @@ fn test_refresh_request() {
     let json = serde_json::to_string(&req).unwrap();
     let parsed: Request = serde_json::from_str(&json).unwrap();
     assert_eq!(req, parsed);
+}
+
+#[test]
+fn test_plugin_action_request() {
+    let req = Request::PluginAction {
+        command: "POMODORO:start".into(),
+    };
+    let json = serde_json::to_string(&req).unwrap();
+    let parsed: Request = serde_json::from_str(&json).unwrap();
+    assert_eq!(req, parsed);
+}
+
+#[test]
+fn test_terminal_field_defaults_false() {
+    // terminal field should default to false when missing from JSON
+    let json = r#"{"id":"test","title":"Test","description":"","icon":"","provider":"cmd","score":0}"#;
+    let item: ResultItem = serde_json::from_str(json).unwrap();
+    assert!(!item.terminal);
+}
+
+#[test]
+fn test_terminal_field_roundtrip() {
+    let item = ResultItem {
+        id: "htop".into(),
+        title: "htop".into(),
+        description: "Process viewer".into(),
+        icon: "htop".into(),
+        provider: "cmd".into(),
+        score: 50,
+        command: Some("htop".into()),
+        terminal: true,
+        tags: vec![],
+    };
+    let json = serde_json::to_string(&item).unwrap();
+    assert!(json.contains("\"terminal\":true"));
+    let parsed: ResultItem = serde_json::from_str(&json).unwrap();
+    assert!(parsed.terminal);
 }

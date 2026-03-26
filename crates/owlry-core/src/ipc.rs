@@ -21,6 +21,9 @@ pub enum Request {
         plugin_id: String,
         data: String,
     },
+    PluginAction {
+        command: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -51,6 +54,8 @@ pub struct ResultItem {
     pub score: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    #[serde(default)]
+    pub terminal: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
 }
