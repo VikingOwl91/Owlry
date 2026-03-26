@@ -69,9 +69,17 @@ fn watch_loop(
 
     info!("Watching {} for plugin changes", plugins_dir.display());
 
+    // Skip events during initial startup grace period (watcher setup triggers events)
+    let startup = std::time::Instant::now();
+    let grace_period = Duration::from_secs(2);
+
     loop {
         match rx.recv() {
             Ok(Ok(events)) => {
+                if startup.elapsed() < grace_period {
+                    continue;
+                }
+
                 let has_relevant_change = events.iter().any(|e| {
                     matches!(
                         e.kind,

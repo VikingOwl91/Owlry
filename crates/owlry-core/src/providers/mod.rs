@@ -292,8 +292,11 @@ impl ProviderManager {
             !self.runtime_type_ids.contains(&type_str)
         });
 
-        // Drop old runtimes
-        self.runtimes.clear();
+        // Drop old runtimes (catch panics from runtime cleanup)
+        let old_runtimes = std::mem::take(&mut self.runtimes);
+        drop(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            drop(old_runtimes);
+        })));
         self.runtime_type_ids.clear();
 
         let owlry_version = env!("CARGO_PKG_VERSION");
