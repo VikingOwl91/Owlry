@@ -33,12 +33,13 @@ pub struct Item {
 }
 
 impl Item {
-    /// Create a new item (exposed to Rune as Item::new)
-    fn rune_new(id: &str, name: &str, command: &str) -> Self {
+    /// Constructor exposed to Rune via #[rune::function]
+    #[rune::function(path = Self::new)]
+    pub fn rune_new(id: String, name: String, command: String) -> Self {
         Self {
-            id: id.to_string(),
-            name: name.to_string(),
-            command: command.to_string(),
+            id,
+            name,
+            command,
             description: None,
             icon: None,
             terminal: false,
@@ -47,19 +48,22 @@ impl Item {
     }
 
     /// Set description (builder pattern for Rune)
-    fn rune_description(mut self, desc: &str) -> Self {
-        self.description = Some(desc.to_string());
+    #[rune::function]
+    fn description(mut self, desc: String) -> Self {
+        self.description = Some(desc);
         self
     }
 
     /// Set icon (builder pattern for Rune)
-    fn rune_icon(mut self, icon: &str) -> Self {
-        self.icon = Some(icon.to_string());
+    #[rune::function]
+    fn icon(mut self, icon: String) -> Self {
+        self.icon = Some(icon);
         self
     }
 
     /// Set keywords (builder pattern for Rune)
-    fn rune_keywords(mut self, keywords: Vec<String>) -> Self {
+    #[rune::function]
+    fn keywords(mut self, keywords: Vec<String>) -> Self {
         self.keywords = keywords;
         self
     }
@@ -93,17 +97,10 @@ pub fn module() -> Result<Module, ContextError> {
 
     // Register Item type with constructor and builder methods
     module.ty::<Item>()?;
-    module
-        .function("Item::new", |id: String, name: String, command: String| -> Item {
-            Item::rune_new(&id, &name, &command)
-        })
-        .build()?;
-    module
-        .associated_function("description", Item::rune_description)?;
-    module
-        .associated_function("icon", Item::rune_icon)?;
-    module
-        .associated_function("keywords", Item::rune_keywords)?;
+    module.function_meta(Item::rune_new)?;
+    module.function_meta(Item::description)?;
+    module.function_meta(Item::icon)?;
+    module.function_meta(Item::keywords)?;
 
     // Register logging functions
     module.function("log_info", log_info).build()?;
