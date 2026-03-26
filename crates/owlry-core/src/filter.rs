@@ -11,6 +11,10 @@ use crate::providers::ProviderType;
 pub struct ProviderFilter {
     enabled: HashSet<ProviderType>,
     active_prefix: Option<ProviderType>,
+    /// When true, `is_active`/`is_enabled` accept any provider type
+    /// (unless a prefix narrows the scope). Used by `all()` so that
+    /// dynamically loaded plugins are accepted without being listed.
+    accept_all: bool,
 }
 
 /// Result of parsing a query for prefix syntax
@@ -86,6 +90,7 @@ impl ProviderFilter {
         let filter = Self {
             enabled,
             active_prefix: None,
+            accept_all: false,
         };
 
         #[cfg(feature = "dev-logging")]
@@ -100,6 +105,7 @@ impl ProviderFilter {
         Self {
             enabled: HashSet::from([ProviderType::Application]),
             active_prefix: None,
+            accept_all: false,
         }
     }
 
@@ -154,6 +160,8 @@ impl ProviderFilter {
     pub fn is_active(&self, provider: ProviderType) -> bool {
         if let Some(ref prefix) = self.active_prefix {
             &provider == prefix
+        } else if self.accept_all {
+            true
         } else {
             self.enabled.contains(&provider)
         }
@@ -161,7 +169,7 @@ impl ProviderFilter {
 
     /// Check if provider is in enabled set (ignoring prefix)
     pub fn is_enabled(&self, provider: ProviderType) -> bool {
-        self.enabled.contains(&provider)
+        self.accept_all || self.enabled.contains(&provider)
     }
 
     /// Get current active prefix if any
@@ -358,15 +366,16 @@ impl ProviderFilter {
         Self {
             enabled,
             active_prefix: None,
+            accept_all: false,
         }
     }
 
-    /// Create a filter that accepts all providers.
+    /// Create a filter that accepts all providers, including any
+    /// dynamically loaded plugin.
     ///
-    /// Internally enables Application, Command, and Dmenu. Plugin providers are
-    /// implicitly accepted because `is_active` will match them when they appear
-    /// in the enabled set. For a true "pass everything" filter, this also
-    /// pre-populates common plugin types.
+    /// Sets `accept_all` so that `is_active`/`is_enabled` return true for
+    /// every `ProviderType` without maintaining a static list of plugin IDs.
+    /// Core types are still placed in `enabled` for UI purposes (tab display).
     ///
     /// The daemon uses this as the default when no modes are specified.
     pub fn all() -> Self {
@@ -374,17 +383,10 @@ impl ProviderFilter {
         enabled.insert(ProviderType::Application);
         enabled.insert(ProviderType::Command);
         enabled.insert(ProviderType::Dmenu);
-        // Common plugin types — the daemon typically has all plugins loaded
-        for id in &[
-            "calc", "clipboard", "emoji", "bookmarks", "ssh", "scripts",
-            "system", "uuctl", "filesearch", "websearch", "weather",
-            "media", "pomodoro",
-        ] {
-            enabled.insert(ProviderType::Plugin(id.to_string()));
-        }
         Self {
             enabled,
             active_prefix: None,
+            accept_all: true,
         }
     }
 
@@ -513,12 +515,44 @@ mod tests {
     }
 
     #[test]
-    fn test_all_includes_common_plugins() {
+    fn test_all_accepts_any_plugin() {
         let filter = ProviderFilter::all();
+        // Known plugins
         assert!(filter.is_enabled(ProviderType::Plugin("calc".to_string())));
         assert!(filter.is_enabled(ProviderType::Plugin("clipboard".to_string())));
-        assert!(filter.is_enabled(ProviderType::Plugin("emoji".to_string())));
-        assert!(filter.is_enabled(ProviderType::Plugin("weather".to_string())));
+        // Arbitrary unknown plugins must also be accepted
+        assert!(filter.is_enabled(ProviderType::Plugin("some-future-plugin".to_string())));
+        assert!(filter.is_enabled(ProviderType::Plugin("custom-user-plugin".to_string())));
+    }
+
+    #[test]
+    fn test_all_is_active_for_any_plugin() {
+        let filter = ProviderFilter::all();
+        assert!(filter.is_active(ProviderType::Application));
+        assert!(filter.is_active(ProviderType::Plugin("unknown-plugin".to_string())));
+    }
+
+    #[test]
+    fn test_all_with_prefix_narrows_scope() {
+        let mut filter = ProviderFilter::all();
+        filter.set_prefix(Some(ProviderType::Application));
+        // Prefix narrows: only Application passes
+        assert!(filter.is_active(ProviderType::Application));
+        assert!(!filter.is_active(ProviderType::Command));
+        assert!(!filter.is_active(ProviderType::Plugin("calc".to_string())));
+    }
+
+    #[test]
+    fn test_explicit_mode_filter_rejects_unknown_plugins() {
+        let filter = ProviderFilter::from_mode_strings(&[
+            "app".to_string(),
+            "cmd".to_string(),
+        ]);
+        assert!(filter.is_active(ProviderType::Application));
+        assert!(filter.is_active(ProviderType::Command));
+        // Plugins not in the explicit list must be rejected
+        assert!(!filter.is_active(ProviderType::Plugin("calc".to_string())));
+        assert!(!filter.is_active(ProviderType::Plugin("unknown".to_string())));
     }
 
     #[test]
