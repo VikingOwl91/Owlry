@@ -6,6 +6,21 @@ use std::process::Command;
 
 use crate::paths;
 
+/// A named profile that selects a set of provider modes.
+///
+/// Defined in config.toml as:
+/// ```toml
+/// [profiles.dev]
+/// modes = ["app", "cmd", "ssh"]
+///
+/// [profiles.media]
+/// modes = ["media", "emoji"]
+/// ```
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct ProfileConfig {
+    pub modes: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
@@ -16,6 +31,8 @@ pub struct Config {
     pub providers: ProvidersConfig,
     #[serde(default)]
     pub plugins: PluginsConfig,
+    #[serde(default)]
+    pub profiles: HashMap<String, ProfileConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

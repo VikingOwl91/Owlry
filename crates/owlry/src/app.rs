@@ -8,7 +8,7 @@ use owlry_core::config::Config;
 use owlry_core::data::FrecencyStore;
 use owlry_core::filter::ProviderFilter;
 use owlry_core::paths;
-use owlry_core::providers::{Provider, ProviderManager};
+use owlry_core::providers::{Provider, ProviderManager, ProviderType};
 use gtk4::prelude::*;
 use gtk4::{gio, Application, CssProvider};
 use gtk4_layer_shell::{Edge, Layer, LayerShell};
@@ -36,7 +36,7 @@ impl OwlryApp {
 
     pub fn run(&self) -> i32 {
         // Use empty args since clap already parsed our CLI arguments.
-        // This prevents GTK from trying to parse --mode, --providers, etc.
+        // This prevents GTK from trying to parse --mode, --profile, etc.
         self.app.run_with_args(&[] as &[&str]).into()
     }
 
@@ -83,12 +83,30 @@ impl OwlryApp {
 
         let backend = Rc::new(RefCell::new(backend));
 
-        // Create filter from CLI args and config
-        let filter = ProviderFilter::new(
-            args.mode.clone(),
-            args.providers.clone(),
-            &config.borrow().providers,
-        );
+        // Create filter from CLI args, profile, and config
+        let resolved_modes = resolve_modes(args, &config.borrow());
+        let filter = if let Some(modes) = resolved_modes {
+            // CLI --mode or --profile specified explicit modes
+            let provider_types: Vec<ProviderType> = modes
+                .iter()
+                .map(|s| ProviderFilter::mode_string_to_provider_type(s))
+                .collect();
+            if provider_types.len() == 1 {
+                ProviderFilter::new(
+                    Some(provider_types[0].clone()),
+                    None,
+                    &config.borrow().providers,
+                )
+            } else {
+                ProviderFilter::new(
+                    None,
+                    Some(provider_types),
+                    &config.borrow().providers,
+                )
+            }
+        } else {
+            ProviderFilter::new(None, None, &config.borrow().providers)
+        };
         let filter = Rc::new(RefCell::new(filter));
 
         let window = MainWindow::new(
@@ -245,4 +263,22 @@ impl OwlryApp {
         );
         debug!("Injected config CSS variables");
     }
+}
+
+/// Resolve which modes to enable based on CLI args and config profiles.
+///
+/// Priority: `--mode` > `--profile` > default (all providers from config).
+/// Returns `None` when no explicit mode selection was made.
+fn resolve_modes(args: &CliArgs, config: &Config) -> Option<Vec<String>> {
+    if let Some(ref mode) = args.mode {
+        return Some(vec![mode.to_string()]);
+    }
+    if let Some(ref profile_name) = args.profile {
+        if let Some(profile) = config.profiles.get(profile_name) {
+            return Some(profile.modes.clone());
+        }
+        eprintln!("Unknown profile: {}", profile_name);
+        std::process::exit(1);
+    }
+    None
 }

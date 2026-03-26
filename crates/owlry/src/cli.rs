@@ -20,15 +20,23 @@ EXAMPLES:
     owlry -m app                    Applications only
     owlry -m cmd                    PATH commands only
     owlry -m dmenu                  dmenu-compatible mode (reads from stdin)
-    owlry -p app,cmd                Multiple providers
+    owlry --profile dev             Use a named profile from config
     owlry -m calc                   Calculator plugin only (if installed)
 
 DMENU MODE:
     Pipe input to owlry for interactive selection:
 
     echo -e \"Option A\\nOption B\" | owlry -m dmenu
-    ls | owlry -m dmenu
+    ls | owlry -m dmenu -p \"checkout:\"
     git branch | owlry -m dmenu --prompt \"checkout:\"
+
+PROFILES:
+    Define profiles in ~/.config/owlry/config.toml:
+
+    [profiles.dev]
+    modes = [\"app\", \"cmd\", \"ssh\"]
+
+    Then launch with: owlry --profile dev
 
 SEARCH PREFIXES:
     :app firefox                    Search applications
@@ -48,17 +56,18 @@ pub struct CliArgs {
     #[arg(long, short = 'm', value_parser = parse_provider, value_name = "MODE")]
     pub mode: Option<ProviderType>,
 
-    /// Comma-separated list of enabled providers
+    /// Use a named profile from config (defines which modes to enable)
     ///
-    /// Examples: -p app,cmd or -p app,calc,emoji
-    #[arg(long, short = 'p', value_delimiter = ',', value_parser = parse_provider, value_name = "PROVIDERS")]
-    pub providers: Option<Vec<ProviderType>>,
+    /// Profiles are defined in config.toml under [profiles.<name>].
+    /// Example: --profile dev (loads modes from [profiles.dev])
+    #[arg(long, value_name = "NAME")]
+    pub profile: Option<String>,
 
     /// Custom prompt text for the search input
     ///
     /// Useful in dmenu mode to indicate what the user is selecting.
-    /// Example: --prompt "Select file:"
-    #[arg(long, value_name = "TEXT")]
+    /// Example: -p "Select file:" or --prompt "Select file:"
+    #[arg(long, short = 'p', value_name = "TEXT")]
     pub prompt: Option<String>,
 
     /// Subcommand to run (if any)
