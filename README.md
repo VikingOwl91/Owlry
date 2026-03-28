@@ -13,7 +13,7 @@ A lightweight, owl-themed application launcher for Wayland, built with GTK4 and 
 - **Client/daemon architecture** — Instant window appearance, providers stay loaded in memory
 - **Modular plugin architecture** — Install only what you need
 - **Fuzzy search with tags** — Fast matching across names, descriptions, and category tags
-- **13 native plugins** — Calculator, clipboard, emoji, weather, media, and more
+- **14 native plugins** — Calculator, clipboard, emoji, weather, media, and more
 - **Widget providers** — Weather, media controls, and pomodoro timer at the top of results
 - **Config profiles** — Named mode presets for different workflows
 - **Filter prefixes** — Scope searches with `:app`, `:cmd`, `:tag:development`, etc.
@@ -35,7 +35,7 @@ yay -S owlry
 yay -S owlry-plugin-calculator owlry-plugin-weather
 
 # Or install bundles:
-yay -S owlry-meta-essentials  # calculator, system, ssh, scripts, bookmarks
+yay -S owlry-meta-essentials  # calculator, converter, system, ssh, scripts, bookmarks
 yay -S owlry-meta-widgets     # weather, media, pomodoro
 yay -S owlry-meta-tools       # clipboard, emoji, websearch, filesearch, systemd
 yay -S owlry-meta-full        # everything
@@ -47,22 +47,42 @@ yay -S owlry-rune  # Rune runtime
 
 ### Available Packages
 
+**Core packages** (this repo):
+
 | Package | Description |
 |---------|-------------|
-| `owlry` | Core: UI client (`owlry`) and daemon (`owlry-core`) |
-| `owlry-plugin-calculator` | Math expressions (`= 5+3`) |
-| `owlry-plugin-system` | Shutdown, reboot, suspend, lock |
-| `owlry-plugin-ssh` | SSH hosts from `~/.ssh/config` |
-| `owlry-plugin-clipboard` | History via cliphist |
-| `owlry-plugin-emoji` | 400+ searchable emoji |
-| `owlry-plugin-scripts` | User scripts |
+| `owlry` | GTK4 UI client |
+| `owlry-core` | Headless daemon (plugin host, IPC server) |
+| `owlry-lua` | Lua 5.4 script runtime for user plugins |
+| `owlry-rune` | Rune script runtime for user plugins |
+
+**Plugin packages** ([owlry-plugins](https://somegit.dev/Owlibou/owlry-plugins) repo):
+
+| Package | Description |
+|---------|-------------|
 | `owlry-plugin-bookmarks` | Firefox, Chrome, Brave, Edge bookmarks |
-| `owlry-plugin-websearch` | Web search (`? query`) |
+| `owlry-plugin-calculator` | Math expressions (`= 5+3`) |
+| `owlry-plugin-clipboard` | History via cliphist |
+| `owlry-plugin-converter` | Unit and currency conversion |
+| `owlry-plugin-emoji` | 400+ searchable emoji |
 | `owlry-plugin-filesearch` | File search (`/ filename`) |
-| `owlry-plugin-systemd` | User services with actions |
-| `owlry-plugin-weather` | Weather widget |
 | `owlry-plugin-media` | MPRIS media controls |
 | `owlry-plugin-pomodoro` | Pomodoro timer widget |
+| `owlry-plugin-scripts` | User scripts |
+| `owlry-plugin-ssh` | SSH hosts from `~/.ssh/config` |
+| `owlry-plugin-system` | Shutdown, reboot, suspend, lock |
+| `owlry-plugin-systemd` | User services with actions |
+| `owlry-plugin-weather` | Weather widget |
+| `owlry-plugin-websearch` | Web search (`? query`) |
+
+**Meta bundles:**
+
+| Package | Includes |
+|---------|----------|
+| `owlry-meta-essentials` | bookmarks, calculator, converter, scripts, ssh, system |
+| `owlry-meta-tools` | clipboard, emoji, filesearch, systemd, websearch |
+| `owlry-meta-widgets` | media, pomodoro, weather |
+| `owlry-meta-full` | All plugins + runtimes |
 
 ### Build from Source
 
@@ -83,14 +103,21 @@ sudo dnf install gtk4-devel gtk4-layer-shell-devel
 git clone https://somegit.dev/Owlibou/owlry.git
 cd owlry
 
-# Build core only (daemon + UI)
+# Build daemon + UI
 cargo build --release -p owlry -p owlry-core
 
-# Build specific plugin
-cargo build --release -p owlry-plugin-calculator
+# Build runtimes (for user plugins)
+cargo build --release -p owlry-lua -p owlry-rune
 
-# Build everything
+# Build everything in this workspace
 cargo build --release --workspace
+```
+
+**Plugins** are in a [separate repo](https://somegit.dev/Owlibou/owlry-plugins):
+```bash
+git clone https://somegit.dev/Owlibou/owlry-plugins.git
+cd owlry-plugins
+cargo build --release -p owlry-plugin-calculator  # or any plugin
 ```
 
 **Install locally:**
@@ -98,7 +125,7 @@ cargo build --release --workspace
 just install-local
 ```
 
-This installs both binaries, all plugins, runtimes, and the systemd service files.
+This installs the UI, daemon, runtimes, and systemd service files.
 
 ## Getting Started
 
@@ -456,8 +483,6 @@ owlry-core (daemon)                    owlry (GTK4 UI client)
 ```
 
 The daemon keeps providers and plugins loaded in memory, so the UI appears instantly when launched. The UI client is a thin GTK4 layer that sends queries and receives results over the socket.
-
-For detailed architecture information, see [CLAUDE.md](CLAUDE.md).
 
 ## License
 
