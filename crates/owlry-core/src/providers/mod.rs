@@ -295,7 +295,27 @@ impl ProviderManager {
             core_providers.push(provider);
         }
 
+        // Built-in dynamic providers
+        let mut builtin_dynamic: Vec<Box<dyn DynamicProvider>> = Vec::new();
+
+        if config.providers.calculator {
+            builtin_dynamic.push(Box::new(calculator::CalculatorProvider));
+            info!("Registered built-in calculator provider");
+        }
+
+        if config.providers.converter {
+            builtin_dynamic.push(Box::new(converter::ConverterProvider::new()));
+            info!("Registered built-in converter provider");
+        }
+
+        // Built-in static providers
+        if config.providers.system {
+            core_providers.push(Box::new(system::SystemProvider::new()));
+            info!("Registered built-in system provider");
+        }
+
         let mut manager = Self::new(core_providers, native_providers);
+        manager.builtin_dynamic = builtin_dynamic;
         manager.runtimes = runtimes;
         manager.runtime_type_ids = runtime_type_ids;
         manager

@@ -162,6 +162,9 @@ pub struct ProvidersConfig {
     /// Enable calculator provider (= expression or calc expression)
     #[serde(default = "default_true")]
     pub calculator: bool,
+    /// Enable converter provider (> expression or auto-detect)
+    #[serde(default = "default_true")]
+    pub converter: bool,
     /// Enable frecency-based result ranking
     #[serde(default = "default_true")]
     pub frecency: bool,
@@ -239,6 +242,7 @@ impl Default for ProvidersConfig {
             commands: true,
             uuctl: true,
             calculator: true,
+            converter: true,
             frecency: true,
             frecency_weight: 0.3,
             websearch: true,
