@@ -1287,43 +1287,6 @@ impl MainWindow {
         });
     }
 
-    fn update_results(&self, query: &str) {
-        let cfg = self.config.borrow();
-        let max_results = cfg.general.max_results;
-        drop(cfg);
-
-        let results = self.backend.borrow_mut().search(
-            query,
-            max_results,
-            &self.filter.borrow(),
-            &self.config.borrow(),
-        );
-
-        // Clear existing results
-        while let Some(child) = self.results_list.first_child() {
-            self.results_list.remove(&child);
-        }
-
-        // Display initial batch only
-        let initial_count = INITIAL_RESULTS.min(results.len());
-
-        for item in results.iter().take(initial_count) {
-            let row = ResultRow::new(item, query);
-            self.results_list.append(&row);
-        }
-
-        if let Some(first_row) = self.results_list.row_at_index(0) {
-            self.results_list.select_row(Some(&first_row));
-        }
-
-        // current_results holds what's currently displayed; store full vec for lazy loading
-        *self.current_results.borrow_mut() = results[..initial_count].to_vec();
-        let mut lazy = self.lazy_state.borrow_mut();
-        lazy.all_results = results;
-        lazy.displayed_count = initial_count;
-        lazy.query = query.to_string();
-    }
-
     /// Set up lazy loading scroll detection
     fn setup_lazy_loading(&self) {
         let vadj = self.scrolled.vadjustment();
