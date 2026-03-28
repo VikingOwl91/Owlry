@@ -1,5 +1,6 @@
 /target
 CLAUDE.md
+.worktrees/
 media.md
 
 # AUR packages (each is its own git repo for aur.archlinux.org)
