@@ -154,12 +154,18 @@ aur-stage pkg:
     dir="aur/{{pkg}}"
     [ -d "$dir" ] || { echo "Error: $dir not found"; exit 1; }
 
+    # Build list of files to stage
+    files=("$dir/PKGBUILD" "$dir/.SRCINFO")
+    for f in "$dir"/*.install; do
+        [ -f "$f" ] && files+=("$f")
+    done
+
     if [ -d "$dir/.git" ]; then
         mv "$dir/.git" "$dir/.git.bak"
-        git add "$dir/PKGBUILD" "$dir/.SRCINFO" "$dir"/*.install 2>/dev/null || true
+        git add "${files[@]}"
         mv "$dir/.git.bak" "$dir/.git"
     else
-        git add "$dir/PKGBUILD" "$dir/.SRCINFO" "$dir"/*.install 2>/dev/null || true
+        git add "${files[@]}"
     fi
 
 # Update a specific AUR package PKGBUILD with correct version + checksum
