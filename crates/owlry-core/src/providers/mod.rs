@@ -202,25 +202,6 @@ impl ProviderManager {
         manager
     }
 
-    /// Get type IDs of built-in providers (for conflict detection with native plugins)
-    fn builtin_type_ids(&self) -> std::collections::HashSet<String> {
-        let mut ids: std::collections::HashSet<String> = self
-            .builtin_dynamic
-            .iter()
-            .filter_map(|p| match p.provider_type() {
-                ProviderType::Plugin(id) => Some(id),
-                _ => None,
-            })
-            .collect();
-        // Also include built-in static providers that use Plugin type
-        for p in &self.providers {
-            if let ProviderType::Plugin(id) = p.provider_type() {
-                ids.insert(id);
-            }
-        }
-        ids
-    }
-
     /// Create a self-contained ProviderManager from config.
     ///
     /// Loads native plugins, creates core providers (Application + Command),
@@ -1236,23 +1217,4 @@ mod tests {
         assert_eq!(results[0].0.name, "Firefox");
     }
 
-    #[test]
-    fn test_builtin_type_ids_includes_dynamic_and_static() {
-        use super::calculator::CalculatorProvider;
-        use super::converter::ConverterProvider;
-        use super::system::SystemProvider;
-
-        let mut pm = ProviderManager::new(
-            vec![Box::new(SystemProvider::new())],
-            vec![],
-        );
-        pm.builtin_dynamic = vec![
-            Box::new(CalculatorProvider),
-            Box::new(ConverterProvider::new()),
-        ];
-        let ids = pm.builtin_type_ids();
-        assert!(ids.contains("calc"));
-        assert!(ids.contains("conv"));
-        assert!(ids.contains("sys"));
-    }
 }
