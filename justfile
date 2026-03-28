@@ -224,7 +224,7 @@ aur-publish-pkg pkg:
 
     cd "$aur_dir"
     ver=$(grep '^pkgver=' PKGBUILD | sed 's/pkgver=//')
-    git add PKGBUILD .SRCINFO *.install 2>/dev/null || true
+    git add -A
     git commit -m "Update to v$ver" || { echo "Nothing to commit"; exit 0; }
     git push origin master
     echo "{{pkg}} v$ver published to AUR!"
