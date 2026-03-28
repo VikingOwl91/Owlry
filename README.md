@@ -247,6 +247,24 @@ The `-p` / `--prompt` flag sets a custom label for the search input.
 | `Shift+Tab` | Cycle filter tabs (reverse) |
 | `Ctrl+1..9` | Toggle tab by position |
 
+### Settings Editor
+
+Type `:config` to browse and modify settings without editing files:
+
+| Command | What it does |
+|---------|-------------|
+| `:config` | Show all setting categories |
+| `:config providers` | Toggle providers on/off |
+| `:config theme` | Select color theme |
+| `:config engine` | Select web search engine |
+| `:config frecency` | Toggle frecency, set weight |
+| `:config fontsize 16` | Set font size (restart to apply) |
+| `:config profiles` | List profiles |
+| `:config profile create dev` | Create a new profile |
+| `:config profile dev modes` | Edit which modes a profile includes |
+
+Changes are saved to `config.toml` immediately. Some settings (theme, frecency) take effect on the next search. Others (font size, dimensions) require a restart.
+
 ### Search Prefixes
 
 | Prefix | Provider | Example |
