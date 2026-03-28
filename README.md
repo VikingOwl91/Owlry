@@ -11,17 +11,18 @@ A lightweight, owl-themed application launcher for Wayland, built with GTK4 and 
 ## Features
 
 - **Client/daemon architecture** — Instant window appearance, providers stay loaded in memory
-- **Modular plugin architecture** — Install only what you need
-- **Fuzzy search with tags** — Fast matching across names, descriptions, and category tags
-- **Built-in calculator, converter, and system actions** — Works out of the box
-- **11 optional plugins** — Clipboard, emoji, weather, media, and more
+- **Built-in providers** — Calculator, unit/currency converter, and system actions out of the box
+- **Built-in settings editor** — Configure everything from within the launcher (`:config`)
+- **11 optional plugins** — Clipboard, emoji, weather, media, bookmarks, and more
 - **Widget providers** — Weather, media controls, and pomodoro timer at the top of results
+- **Fuzzy search with tags** — Fast matching across names, descriptions, and category tags
 - **Config profiles** — Named mode presets for different workflows
-- **Filter prefixes** — Scope searches with `:app`, `:cmd`, `:tag:development`, etc.
+- **Filter prefixes** — Scope searches with `:app`, `:cmd`, `:config`, `:tag:X`, etc.
 - **Frecency ranking** — Frequently/recently used items rank higher
 - **Toggle behavior** — Bind one key to open/close the launcher
-- **GTK4 theming** — System theme by default, with 9 built-in themes
+- **GTK4 theming** — System theme by default, with 10 built-in themes
 - **Wayland native** — Uses Layer Shell for proper overlay behavior
+- **dmenu compatible** — Pipe-based selection mode, no daemon required
 - **Extensible** — Create custom plugins in Lua or Rune
 
 ## Installation
@@ -29,13 +30,13 @@ A lightweight, owl-themed application launcher for Wayland, built with GTK4 and 
 ### Arch Linux (AUR)
 
 ```bash
-# Core (includes calculator, converter, system actions)
+# Core (includes calculator, converter, system actions, settings editor)
 yay -S owlry
 
 # Add individual plugins as needed
 yay -S owlry-plugin-bookmarks owlry-plugin-weather owlry-plugin-clipboard
 
-# For custom Lua/Rune plugins
+# For custom Lua/Rune user plugins
 yay -S owlry-lua   # Lua 5.4 runtime
 yay -S owlry-rune  # Rune runtime
 ```
@@ -47,7 +48,7 @@ yay -S owlry-rune  # Rune runtime
 | Package | Description |
 |---------|-------------|
 | `owlry` | GTK4 UI client |
-| `owlry-core` | Headless daemon with built-in calculator, converter, and system providers |
+| `owlry-core` | Daemon (`owlryd`) with built-in calculator, converter, system, and settings providers |
 | `owlry-lua` | Lua 5.4 script runtime for user plugins |
 | `owlry-rune` | Rune script runtime for user plugins |
 
@@ -67,7 +68,7 @@ yay -S owlry-rune  # Rune runtime
 | `owlry-plugin-weather` | Weather widget |
 | `owlry-plugin-websearch` | Web search (`? query`) |
 
-> **Note:** Calculator, converter, and system actions are built into `owlry-core` and no longer require separate plugin packages.
+> **Note:** Calculator, converter, and system actions are built into `owlry-core` and do not require separate packages.
 
 ### Build from Source
 
@@ -102,7 +103,7 @@ cargo build --release --workspace
 ```bash
 git clone https://somegit.dev/Owlibou/owlry-plugins.git
 cd owlry-plugins
-cargo build --release -p owlry-plugin-calculator  # or any plugin
+cargo build --release -p owlry-plugin-bookmarks  # or any plugin
 ```
 
 **Install locally:**
@@ -110,11 +111,11 @@ cargo build --release -p owlry-plugin-calculator  # or any plugin
 just install-local
 ```
 
-This installs the UI, daemon, runtimes, and systemd service files.
+This installs the UI (`owlry`), daemon (`owlryd`), runtimes, and systemd service files.
 
 ## Getting Started
 
-Owlry uses a client/daemon architecture. The daemon (`owlry-core`) loads providers and plugins into memory. The UI client (`owlry`) connects to the daemon over a Unix socket for instant results.
+Owlry uses a client/daemon architecture. The daemon (`owlryd`) loads providers and plugins into memory. The UI client (`owlry`) connects to the daemon over a Unix socket for instant results.
 
 ### Starting the Daemon
 
@@ -144,7 +145,7 @@ systemctl --user enable --now owlryd.service
 systemctl --user enable owlryd.socket
 ```
 
-The daemon starts automatically when the UI client first connects. No manual startup needed.
+The daemon starts automatically when the UI client first connects.
 
 ### Launching the UI
 
@@ -158,7 +159,7 @@ bind = SUPER, Space, exec, owlry
 bindsym $mod+space exec owlry
 ```
 
-Running `owlry` a second time while it is already open sends a toggle command — the window closes. This means a single keybind acts as open/close.
+Running `owlry` a second time while it is already open sends a toggle command — the window closes. A single keybind acts as open/close.
 
 If the daemon is not running when the UI launches, it will attempt to start it via systemd automatically.
 
@@ -168,7 +169,7 @@ If the daemon is not running when the UI launches, it will attempt to start it v
 owlry                      # Launch with all providers
 owlry -m app               # Applications only
 owlry -m cmd               # PATH commands only
-owlry -m calc              # Calculator plugin only (if installed)
+owlry -m calc              # Calculator only
 owlry --profile dev        # Use a named profile from config
 owlry --help               # Show all options with examples
 ```
@@ -203,14 +204,16 @@ bind = SUPER, D, exec, owlry --profile dev
 bind = SUPER, M, exec, owlry --profile media
 ```
 
+Profiles can also be managed from the launcher itself — see [Settings Editor](#settings-editor).
+
 ### dmenu Mode
 
 Owlry is dmenu-compatible. Pipe input for interactive selection — the selected item is printed to stdout (not executed), so you pipe the output to execute it.
 
-dmenu mode is self-contained: it does not use the daemon and works without `owlry-core` running.
+dmenu mode is self-contained: it does not use the daemon and works without `owlryd` running.
 
 ```bash
-# Screenshot menu (execute selected command)
+# Screenshot menu
 printf '%s\n' \
   "grimblast --notify copy screen" \
   "grimblast --notify copy area" \
@@ -229,9 +232,6 @@ find ~/projects -maxdepth 1 -type d | owlry -m dmenu | xargs code
 
 # Package manager search
 pacman -Ssq | owlry -m dmenu -p "install" | xargs sudo pacman -S
-
-# Open selected file
-ls ~/Documents | owlry -m dmenu | xargs xdg-open
 ```
 
 The `-p` / `--prompt` flag sets a custom label for the search input.
@@ -281,6 +281,7 @@ Changes are saved to `config.toml` immediately. Some settings (theme, frecency) 
 | `:calc` | Calculator | `:calc sqrt(16)` |
 | `:web` | Web search | `:web rust docs` |
 | `:uuctl` | systemd | `:uuctl docker` |
+| `:config` | Settings | `:config theme` |
 | `:tag:X` | Filter by tag | `:tag:development` |
 
 ### Trigger Prefixes
@@ -289,6 +290,7 @@ Changes are saved to `config.toml` immediately. Some settings (theme, frecency) 
 |---------|----------|---------|
 | `=` | Calculator | `= 5+3` |
 | `calc ` | Calculator | `calc sqrt(16)` |
+| `>` | Converter | `> 20 km to mi` |
 | `?` | Web search | `? rust programming` |
 | `web ` | Web search | `web linux tips` |
 | `/` | File search | `/ .bashrc` |
@@ -308,6 +310,7 @@ Owlry follows the [XDG Base Directory Specification](https://specifications.free
 | `~/.local/share/owlry/frecency.json` | Usage history |
 
 System locations:
+
 | Path | Purpose |
 |------|---------|
 | `/usr/lib/owlry/plugins/*.so` | Installed native plugins |
@@ -321,6 +324,8 @@ System locations:
 mkdir -p ~/.config/owlry
 cp /usr/share/doc/owlry/config.example.toml ~/.config/owlry/config.toml
 ```
+
+Or configure from within the launcher: type `:config` to interactively change settings.
 
 ### Example Configuration
 
@@ -345,6 +350,9 @@ disabled = []  # Plugin IDs to disable, e.g., ["emoji", "pomodoro"]
 [providers]
 applications = true    # .desktop files
 commands = true        # PATH executables
+calculator = true      # Built-in math expressions
+converter = true       # Built-in unit/currency conversion
+system = true          # Built-in shutdown/reboot/lock actions
 frecency = true        # Boost frequently used items
 frecency_weight = 0.3  # 0.0-1.0
 
@@ -363,7 +371,7 @@ See `/usr/share/doc/owlry/config.example.toml` for all options with documentatio
 
 ## Plugin System
 
-Owlry uses a modular plugin architecture. Plugins are loaded by the daemon (`owlry-core`) from:
+Owlry uses a modular plugin architecture. Plugins are loaded by the daemon from:
 
 - `/usr/lib/owlry/plugins/*.so` — System plugins (AUR packages)
 - `~/.config/owlry/plugins/` — User plugins (requires `owlry-lua` or `owlry-rune`)
@@ -376,6 +384,8 @@ Add plugin IDs to the disabled list in your config:
 [plugins]
 disabled = ["emoji", "pomodoro"]
 ```
+
+Or toggle providers interactively: type `:config providers` in the launcher.
 
 ### Plugin Management CLI
 
@@ -432,11 +442,14 @@ See [docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) for:
 | `tokyo-night` | Tokyo city lights |
 | `solarized-dark` | Precision colors |
 | `one-dark` | Atom's One Dark |
+| `apex-neon` | Neon cyberpunk |
 
 ```toml
 [appearance]
 theme = "catppuccin-mocha"
 ```
+
+Or select interactively: type `:config theme` in the launcher.
 
 ### Custom Theme
 
@@ -465,18 +478,24 @@ Create `~/.config/owlry/themes/mytheme.css`:
 | `--owlry-text-secondary` | Muted text |
 | `--owlry-accent` | Accent color |
 | `--owlry-accent-bright` | Bright accent |
+| `--owlry-shadow` | Window shadow (default: none) |
 
 ## Architecture
 
 Owlry uses a client/daemon split:
 
 ```
-owlry-core (daemon)                    owlry (GTK4 UI client)
+owlryd (daemon)                        owlry (GTK4 UI client)
 ├── Loads config + plugins             ├── Connects to daemon via Unix socket
-├── Applications provider              ├── Renders results in GTK4 window
-├── Commands provider                  ├── Handles keyboard input
-├── Plugin loader                      ├── Toggle: second launch closes window
-│   ├── /usr/lib/owlry/plugins/*.so    └── dmenu mode (self-contained, no daemon)
+├── Built-in providers                 ├── Renders results in GTK4 window
+│   ├── Applications (.desktop)        ├── Handles keyboard input
+│   ├── Commands (PATH)                ├── Toggle: second launch closes window
+│   ├── Calculator (math)              └── dmenu mode (self-contained, no daemon)
+│   ├── Converter (units/currency)
+│   ├── System (power/session)
+│   └── Config editor (settings)
+├── Plugin loader
+│   ├── /usr/lib/owlry/plugins/*.so
 │   ├── /usr/lib/owlry/runtimes/
 │   └── ~/.config/owlry/plugins/
 ├── Frecency tracking
