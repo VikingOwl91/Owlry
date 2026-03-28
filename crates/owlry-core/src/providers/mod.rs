@@ -196,6 +196,25 @@ impl ProviderManager {
         manager
     }
 
+    /// Get type IDs of built-in providers (for conflict detection with native plugins)
+    fn builtin_type_ids(&self) -> std::collections::HashSet<String> {
+        let mut ids: std::collections::HashSet<String> = self
+            .builtin_dynamic
+            .iter()
+            .filter_map(|p| match p.provider_type() {
+                ProviderType::Plugin(id) => Some(id),
+                _ => None,
+            })
+            .collect();
+        // Also include built-in static providers that use Plugin type
+        for p in &self.providers {
+            if let ProviderType::Plugin(id) = p.provider_type() {
+                ids.insert(id);
+            }
+        }
+        ids
+    }
+
     /// Create a self-contained ProviderManager from config.
     ///
     /// Loads native plugins, creates core providers (Application + Command),
@@ -313,6 +332,42 @@ impl ProviderManager {
             core_providers.push(Box::new(system::SystemProvider::new()));
             info!("Registered built-in system provider");
         }
+
+        // Compute built-in type IDs to detect conflicts with native plugins.
+        // A native plugin whose type_id matches a built-in provider would
+        // produce duplicate results, so we skip it.
+        let builtin_ids: std::collections::HashSet<String> = {
+            let mut ids = std::collections::HashSet::new();
+            // Dynamic built-ins (calculator, converter)
+            for p in &builtin_dynamic {
+                if let ProviderType::Plugin(id) = p.provider_type() {
+                    ids.insert(id);
+                }
+            }
+            // Static built-ins added to core_providers (e.g. system)
+            for p in &core_providers {
+                if let ProviderType::Plugin(id) = p.provider_type() {
+                    ids.insert(id);
+                }
+            }
+            ids
+        };
+
+        let native_providers: Vec<NativeProvider> = native_providers
+            .into_iter()
+            .filter(|provider| {
+                let type_id = provider.type_id();
+                if builtin_ids.contains(type_id) {
+                    info!(
+                        "Skipping native plugin '{}' — built-in provider exists",
+                        type_id
+                    );
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect();
 
         let mut manager = Self::new(core_providers, native_providers);
         manager.builtin_dynamic = builtin_dynamic;
@@ -1160,5 +1215,25 @@ mod tests {
         let results = pm.search("fire", 10);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0.name, "Firefox");
+    }
+
+    #[test]
+    fn test_builtin_type_ids_includes_dynamic_and_static() {
+        use super::calculator::CalculatorProvider;
+        use super::converter::ConverterProvider;
+        use super::system::SystemProvider;
+
+        let mut pm = ProviderManager::new(
+            vec![Box::new(SystemProvider::new())],
+            vec![],
+        );
+        pm.builtin_dynamic = vec![
+            Box::new(CalculatorProvider),
+            Box::new(ConverterProvider::new()),
+        ];
+        let ids = pm.builtin_type_ids();
+        assert!(ids.contains("calc"));
+        assert!(ids.contains("conv"));
+        assert!(ids.contains("sys"));
     }
 }
