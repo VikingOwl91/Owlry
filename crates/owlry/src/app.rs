@@ -188,13 +188,19 @@ impl OwlryApp {
         if let Some(display) = gtk4::gdk::Display::default() {
             let icon_theme = gtk4::IconTheme::for_display(&display);
 
-            // If the system icon theme can't resolve standard icons (e.g., the
-            // configured theme doesn't exist on disk), fall back to Adwaita
-            // which is guaranteed to be installed as a GTK4 dependency.
-            if !icon_theme.has_icon("edit-find-symbolic") {
-                debug!(
-                    "System icon theme '{}' cannot resolve standard icons, falling back to Adwaita",
-                    icon_theme.theme_name()
+            // If the system icon theme doesn't exist on disk (e.g., set in
+            // gsettings but not installed), GTK falls back to hicolor which
+            // has almost no icons. Detect this and use Adwaita instead.
+            let theme_name = icon_theme.theme_name();
+            let theme_exists = icon_theme
+                .search_path()
+                .iter()
+                .any(|p| p.join(theme_name.as_str()).is_dir());
+
+            if !theme_exists && theme_name != "hicolor" && theme_name != "Adwaita" {
+                info!(
+                    "Icon theme '{}' not found on disk, falling back to Adwaita",
+                    theme_name
                 );
                 icon_theme.set_theme_name(Some("Adwaita"));
             }
