@@ -261,6 +261,10 @@ impl ProviderFilter {
             (":systemd ", "uuctl"),
             (":web ", "websearch"),
             (":search ", "websearch"),
+            (":config ", "config"),
+            (":settings ", "config"),
+            (":conv ", "conv"),
+            (":converter ", "conv"),
         ];
 
         // Check core prefixes
@@ -327,6 +331,10 @@ impl ProviderFilter {
             (":systemd", "uuctl"),
             (":web", "websearch"),
             (":search", "websearch"),
+            (":config", "config"),
+            (":settings", "config"),
+            (":conv", "conv"),
+            (":converter", "conv"),
         ];
 
         for (prefix_str, provider) in partial_core {
