@@ -4,6 +4,7 @@ CLAUDE.md
 media.md
 
 # AUR packages (each is its own git repo for aur.archlinux.org)
+# Track PKGBUILD and .SRCINFO, ignore build artifacts and sub-repo .git
 aur/*/.git/
 aur/*/pkg/
 aur/*/src/
@@ -11,6 +12,3 @@ aur/*/*.tar.zst
 aur/*/*.tar.gz
 aur/*/*.tar.xz
 aur/*/*.pkg.tar.*
-# Keep PKGBUILD and .SRCINFO tracked
-.SRCINFO
-aur/
