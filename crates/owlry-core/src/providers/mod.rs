@@ -1,6 +1,7 @@
 // Core providers (no plugin equivalents)
 mod application;
 mod command;
+pub(crate) mod calculator;
 
 // Native plugin bridge
 pub mod native_provider;
