@@ -602,8 +602,20 @@ impl ProviderManager {
                 let dynamic_results = provider.query(query);
                 // Priority comes from plugin-declared priority field
                 let base_score = provider.priority() as i64;
+
+                // Auto-detect plugins (calc, conv) get a grouping bonus so
+                // all their results stay together above generic search results
+                let grouping_bonus: i64 = match provider.provider_type() {
+                    ProviderType::Plugin(ref id)
+                        if matches!(id.as_str(), "calc" | "conv") =>
+                    {
+                        10_000
+                    }
+                    _ => 0,
+                };
+
                 for (idx, item) in dynamic_results.into_iter().enumerate() {
-                    results.push((item, base_score - idx as i64));
+                    results.push((item, base_score + grouping_bonus - idx as i64));
                 }
             }
         }
