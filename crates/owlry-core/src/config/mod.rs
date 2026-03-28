@@ -2,7 +2,6 @@ use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::process::Command;
 
 use crate::paths;
 
@@ -522,12 +521,15 @@ fn detect_de_terminal() -> Option<String> {
     None
 }
 
-/// Check if a command exists in PATH
+/// Check if a command exists in PATH (in-process, no subprocess spawning)
 fn command_exists(cmd: &str) -> bool {
-    Command::new("which")
-        .arg(cmd)
-        .output()
-        .map(|o| o.status.success())
+    std::env::var_os("PATH")
+        .map(|paths| {
+            std::env::split_paths(&paths).any(|dir| {
+                let full = dir.join(cmd);
+                full.is_file()
+            })
+        })
         .unwrap_or(false)
 }
 
@@ -589,5 +591,19 @@ impl Config {
         std::fs::write(&path, content)?;
         info!("Saved config to {:?}", path);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn command_exists_finds_sh() {
+        // /bin/sh exists on every Unix system
+        assert!(super::command_exists("sh"));
+    }
+
+    #[test]
+    fn command_exists_rejects_nonexistent() {
+        assert!(!super::command_exists("owlry_nonexistent_binary_abc123"));
     }
 }
