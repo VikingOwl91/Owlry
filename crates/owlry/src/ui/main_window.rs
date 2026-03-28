@@ -224,7 +224,6 @@ impl MainWindow {
 
         main_window.setup_signals();
         main_window.setup_lazy_loading();
-        main_window.update_results("");
 
         // Ensure search entry has focus when window is shown
         main_window.search_entry.grab_focus();
@@ -1179,6 +1178,54 @@ impl MainWindow {
         mode_label.set_label(filter.borrow().mode_display_name());
         entry.set_placeholder_text(Some(&Self::build_placeholder(&filter.borrow())));
         entry.emit_by_name::<()>("changed", &[]);
+    }
+
+    /// Schedule initial results population via idle callback.
+    /// Call this AFTER `window.present()` so the window appears immediately.
+    pub fn schedule_initial_results(&self) {
+        let backend = self.backend.clone();
+        let results_list = self.results_list.clone();
+        let config = self.config.clone();
+        let filter = self.filter.clone();
+        let current_results = self.current_results.clone();
+        let lazy_state = self.lazy_state.clone();
+
+        gtk4::glib::idle_add_local_once(move || {
+            let cfg = config.borrow();
+            let max_results = cfg.general.max_results;
+            drop(cfg);
+
+            let results = backend.borrow_mut().search(
+                "",
+                max_results,
+                &filter.borrow(),
+                &config.borrow(),
+            );
+
+            // Clear existing results
+            while let Some(child) = results_list.first_child() {
+                results_list.remove(&child);
+            }
+
+            let initial_count = INITIAL_RESULTS.min(results.len());
+            {
+                let mut lazy = lazy_state.borrow_mut();
+                lazy.all_results = results.clone();
+                lazy.displayed_count = initial_count;
+            }
+
+            for item in results.iter().take(initial_count) {
+                let row = ResultRow::new(item);
+                results_list.append(&row);
+            }
+
+            if let Some(first_row) = results_list.row_at_index(0) {
+                results_list.select_row(Some(&first_row));
+            }
+
+            *current_results.borrow_mut() =
+                results.into_iter().take(initial_count).collect();
+        });
     }
 
     fn update_results(&self, query: &str) {

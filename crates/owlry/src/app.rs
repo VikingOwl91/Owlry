@@ -135,6 +135,9 @@ impl OwlryApp {
         Self::load_css(&config.borrow());
 
         window.present();
+
+        // Populate results AFTER present() so the window appears immediately
+        window.schedule_initial_results();
     }
 
     /// Create a local backend as fallback when daemon is unavailable.
