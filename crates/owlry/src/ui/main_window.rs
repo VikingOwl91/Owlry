@@ -42,6 +42,8 @@ struct LazyLoadState {
     all_results: Vec<LaunchItem>,
     /// Number of items currently displayed
     displayed_count: usize,
+    /// The query that produced these results (for highlighting in lazy-loaded batches)
+    query: String,
 }
 
 /// Number of items to display initially and per batch
@@ -528,7 +530,7 @@ impl MainWindow {
         }
 
         for item in &actions {
-            let row = ResultRow::new(item);
+            let row = ResultRow::new(item, "");
             results_list.append(&row);
         }
 
@@ -610,7 +612,7 @@ impl MainWindow {
                 }
 
                 for item in &filtered {
-                    let row = ResultRow::new(item);
+                    let row = ResultRow::new(item, "");
                     results_list.append(&row);
                 }
 
@@ -709,6 +711,7 @@ impl MainWindow {
                         let results_list_cb = results_list.clone();
                         let current_results_cb = current_results.clone();
                         let lazy_state_cb = lazy_state.clone();
+                        let query_for_highlight = query_str.clone();
 
                         gtk4::glib::spawn_future_local(async move {
                             if let Ok(result) = rx.await {
@@ -726,7 +729,7 @@ impl MainWindow {
                                     INITIAL_RESULTS.min(items.len());
 
                                 for item in items.iter().take(initial_count) {
-                                    let row = ResultRow::new(item);
+                                    let row = ResultRow::new(item, &query_for_highlight);
                                     results_list_cb.append(&row);
                                 }
 
@@ -741,6 +744,7 @@ impl MainWindow {
                                 let mut lazy = lazy_state_cb.borrow_mut();
                                 lazy.all_results = items;
                                 lazy.displayed_count = initial_count;
+                                lazy.query = query_for_highlight;
                             }
                         });
                     } else {
@@ -760,7 +764,7 @@ impl MainWindow {
                         let initial_count = INITIAL_RESULTS.min(results.len());
 
                         for item in results.iter().take(initial_count) {
-                            let row = ResultRow::new(item);
+                            let row = ResultRow::new(item, &query_str);
                             results_list.append(&row);
                         }
 
@@ -772,6 +776,7 @@ impl MainWindow {
                             results[..initial_count].to_vec();
                         let mut lazy = lazy_state.borrow_mut();
                         lazy.all_results = results;
+                        lazy.query = query_str;
                         lazy.displayed_count = initial_count;
                     }
                 },
@@ -1267,7 +1272,7 @@ impl MainWindow {
             let initial_count = INITIAL_RESULTS.min(results.len());
 
             for item in results.iter().take(initial_count) {
-                let row = ResultRow::new(item);
+                let row = ResultRow::new(item, "");
                 results_list.append(&row);
             }
 
@@ -1303,7 +1308,7 @@ impl MainWindow {
         let initial_count = INITIAL_RESULTS.min(results.len());
 
         for item in results.iter().take(initial_count) {
-            let row = ResultRow::new(item);
+            let row = ResultRow::new(item, query);
             self.results_list.append(&row);
         }
 
@@ -1316,6 +1321,7 @@ impl MainWindow {
         let mut lazy = self.lazy_state.borrow_mut();
         lazy.all_results = results;
         lazy.displayed_count = initial_count;
+        lazy.query = query.to_string();
     }
 
     /// Set up lazy loading scroll detection
@@ -1372,8 +1378,9 @@ impl MainWindow {
         if displayed < all_count {
             // Load next batch
             let new_end = (displayed + LOAD_MORE_BATCH).min(all_count);
+            let query = lazy.query.clone();
             for item in lazy.all_results[displayed..new_end].iter() {
-                let row = ResultRow::new(item);
+                let row = ResultRow::new(item, &query);
                 results_list.append(&row);
             }
             lazy.displayed_count = new_end;

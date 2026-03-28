@@ -77,8 +77,6 @@
 .owlry-main {
     background-color: rgba(5, 5, 5, 0.98);
     border: 1px solid rgba(38, 38, 38, 0.8);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8),
-                0 0 0 1px rgba(255, 0, 68, 0.1);
 }
 
 .owlry-search {

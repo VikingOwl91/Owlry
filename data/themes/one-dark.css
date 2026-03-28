@@ -24,8 +24,6 @@
 .owlry-main {
     background-color: rgba(40, 44, 52, 0.95);
     border: 1px solid rgba(24, 26, 31, 0.6);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5),
-                0 0 0 1px rgba(97, 175, 239, 0.1);
 }
 
 .owlry-search {

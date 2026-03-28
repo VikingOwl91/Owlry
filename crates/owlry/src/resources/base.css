@@ -14,6 +14,7 @@
     background-color: var(--owlry-bg, @theme_bg_color);
     border-radius: var(--owlry-border-radius, 12px);
     border: 1px solid var(--owlry-border, @borders);
+    box-shadow: var(--owlry-shadow, none);
     padding: 12px;
 }
 
@@ -54,6 +55,16 @@
 .owlry-result-row:selected {
     background-color: var(--owlry-accent, @theme_selected_bg_color);
     color: var(--owlry-accent-bright, @theme_selected_fg_color);
+}
+
+/* Highlighted result row (exact match or auto-detected plugin result) */
+.owlry-result-highlight {
+    background-color: alpha(var(--owlry-accent, @theme_selected_bg_color), 0.08);
+    border-left: 3px solid var(--owlry-accent, @theme_selected_bg_color);
+}
+
+.owlry-result-highlight:selected {
+    border-left: 3px solid var(--owlry-accent-bright, @theme_selected_fg_color);
 }
 
 /* Result icon */

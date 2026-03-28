@@ -686,7 +686,18 @@ impl ProviderManager {
             base_score.map(|s| {
                 let frecency_score = frecency.get_score_at(&item.id, now);
                 let frecency_boost = (frecency_score * frecency_weight * 10.0) as i64;
-                (item.clone(), s + frecency_boost)
+
+                // Exact name match bonus — apps get a higher boost
+                let exact_match_boost = if item.name.eq_ignore_ascii_case(query) {
+                    match &item.provider {
+                        ProviderType::Application => 50_000,
+                        _ => 30_000,
+                    }
+                } else {
+                    0
+                };
+
+                (item.clone(), s + frecency_boost + exact_match_boost)
             })
         };
 

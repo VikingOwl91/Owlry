@@ -1,6 +1,6 @@
 use gtk4::prelude::*;
 use gtk4::{Box as GtkBox, Image, Label, ListBoxRow, Orientation, Widget};
-use owlry_core::providers::LaunchItem;
+use owlry_core::providers::{LaunchItem, ProviderType};
 
 #[allow(dead_code)]
 pub struct ResultRow {
@@ -18,15 +18,41 @@ fn is_emoji_icon(s: &str) -> bool {
     !first_char.is_ascii() && s.chars().count() <= 8
 }
 
+/// Check if this item should be highlighted based on the query.
+/// Highlighted when:
+/// - Item is from a dynamic plugin (calculator, converter, websearch, filesearch)
+///   and the query is non-empty (auto-detect triggered)
+/// - Item name exactly matches the query (case-insensitive)
+fn should_highlight(item: &LaunchItem, query: &str) -> bool {
+    if query.is_empty() {
+        return false;
+    }
+
+    // Exact name match (case-insensitive)
+    if item.name.eq_ignore_ascii_case(query) {
+        return true;
+    }
+
+    // Dynamic plugin auto-detect results
+    matches!(
+        &item.provider,
+        ProviderType::Plugin(id) if matches!(id.as_str(), "calc" | "conv" | "websearch" | "filesearch")
+    )
+}
+
 impl ResultRow {
     #[allow(clippy::new_ret_no_self)]
-    pub fn new(item: &LaunchItem) -> ListBoxRow {
+    pub fn new(item: &LaunchItem, query: &str) -> ListBoxRow {
         let row = ListBoxRow::builder()
             .selectable(true)
             .activatable(true)
             .build();
 
         row.add_css_class("owlry-result-row");
+
+        if should_highlight(item, query) {
+            row.add_css_class("owlry-result-highlight");
+        }
 
         let hbox = GtkBox::builder()
             .orientation(Orientation::Horizontal)
