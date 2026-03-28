@@ -458,7 +458,12 @@ impl MainWindow {
     }
 
     /// Scroll the given row into view within the scrolled window
-    fn scroll_to_row(scrolled: &ScrolledWindow, results_list: &ListBox, row: &ListBoxRow) {
+    fn scroll_to_row(
+        scrolled: &ScrolledWindow,
+        results_list: &ListBox,
+        row: &ListBoxRow,
+        lazy_state: &Rc<RefCell<LazyLoadState>>,
+    ) {
         let vadj = scrolled.vadjustment();
 
         let row_index = row.index();
@@ -470,15 +475,7 @@ impl MainWindow {
         let current_scroll = vadj.value();
 
         let list_height = results_list.height() as f64;
-        let row_count = {
-            let mut count = 0;
-            let mut child = results_list.first_child();
-            while child.is_some() {
-                count += 1;
-                child = child.and_then(|c| c.next_sibling());
-            }
-            count.max(1) as f64
-        };
+        let row_count = lazy_state.borrow().displayed_count.max(1) as f64;
 
         let row_height = list_height / row_count;
         let row_top = row_index as f64 * row_height;
@@ -856,6 +853,7 @@ impl MainWindow {
         let submenu_state = self.submenu_state.clone();
         let tab_order = self.tab_order.clone();
         let is_dmenu_mode = self.is_dmenu_mode;
+        let lazy_state_for_keys = self.lazy_state.clone();
 
         key_controller.connect_key_pressed(move |_, key, _, modifiers| {
             let ctrl = modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK);
@@ -919,7 +917,7 @@ impl MainWindow {
                         let next_index = current.index() + 1;
                         if let Some(next_row) = results_list.row_at_index(next_index) {
                             results_list.select_row(Some(&next_row));
-                            Self::scroll_to_row(&scrolled, &results_list, &next_row);
+                            Self::scroll_to_row(&scrolled, &results_list, &next_row, &lazy_state_for_keys);
                         }
                     }
                     gtk4::glib::Propagation::Stop
@@ -931,7 +929,7 @@ impl MainWindow {
                             && let Some(prev_row) = results_list.row_at_index(prev_index)
                         {
                             results_list.select_row(Some(&prev_row));
-                            Self::scroll_to_row(&scrolled, &results_list, &prev_row);
+                            Self::scroll_to_row(&scrolled, &results_list, &prev_row, &lazy_state_for_keys);
                         }
                     }
                     gtk4::glib::Propagation::Stop
