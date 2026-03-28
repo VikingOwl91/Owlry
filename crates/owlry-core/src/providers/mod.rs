@@ -104,10 +104,24 @@ pub trait Provider: Send + Sync {
     fn items(&self) -> &[LaunchItem];
 }
 
+/// Trait for built-in providers that produce results per-keystroke.
+/// Unlike static `Provider`s which cache items via `refresh()`/`items()`,
+/// dynamic providers generate results on every query.
+pub(crate) trait DynamicProvider: Send + Sync {
+    #[allow(dead_code)]
+    fn name(&self) -> &str;
+    fn provider_type(&self) -> ProviderType;
+    fn query(&self, query: &str) -> Vec<LaunchItem>;
+    fn priority(&self) -> u32;
+}
+
 /// Manages all providers and handles searching
 pub struct ProviderManager {
     /// Core static providers (apps, commands, dmenu)
     providers: Vec<Box<dyn Provider>>,
+    /// Built-in dynamic providers (calculator, converter)
+    /// These are queried per-keystroke, like native dynamic plugins
+    builtin_dynamic: Vec<Box<dyn DynamicProvider>>,
     /// Static native plugin providers (need query() for submenu support)
     static_native_providers: Vec<NativeProvider>,
     /// Dynamic providers from native plugins (calculator, websearch, filesearch)
@@ -136,6 +150,7 @@ impl ProviderManager {
     ) -> Self {
         let mut manager = Self {
             providers: core_providers,
+            builtin_dynamic: Vec::new(),
             static_native_providers: Vec::new(),
             dynamic_providers: Vec::new(),
             widget_providers: Vec::new(),
@@ -605,6 +620,28 @@ impl ProviderManager {
 
                 // Auto-detect plugins (calc, conv) get a grouping bonus so
                 // all their results stay together above generic search results
+                let grouping_bonus: i64 = match provider.provider_type() {
+                    ProviderType::Plugin(ref id)
+                        if matches!(id.as_str(), "calc" | "conv") =>
+                    {
+                        10_000
+                    }
+                    _ => 0,
+                };
+
+                for (idx, item) in dynamic_results.into_iter().enumerate() {
+                    results.push((item, base_score + grouping_bonus - idx as i64));
+                }
+            }
+
+            // Built-in dynamic providers (calculator, converter)
+            for provider in &self.builtin_dynamic {
+                if !filter.is_active(provider.provider_type()) {
+                    continue;
+                }
+                let dynamic_results = provider.query(query);
+                let base_score = provider.priority() as i64;
+
                 let grouping_bonus: i64 = match provider.provider_type() {
                     ProviderType::Plugin(ref id)
                         if matches!(id.as_str(), "calc" | "conv") =>

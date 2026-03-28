@@ -48,15 +48,17 @@ log = "0.4"
 env_logger = "0.11"
 notify-rust = "4"
 
+# Built-in providers
+meval = "0.2"
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "blocking"] }
+
 # Optional: embedded Lua runtime
 mlua = { version = "0.11", features = ["lua54", "vendored", "send", "serialize"], optional = true }
-meval = { version = "0.2", optional = true }
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "blocking"], optional = true }
 
 [dev-dependencies]
 tempfile = "3"
 
 [features]
 default = []
-lua = ["dep:mlua", "dep:meval", "dep:reqwest"]
+lua = ["dep:mlua"]
 dev-logging = []
