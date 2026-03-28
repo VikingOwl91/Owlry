@@ -671,6 +671,11 @@ impl MainWindow {
             let filter = filter.clone();
             let lazy_state = lazy_state.clone();
             let debounce_source_for_closure = debounce_source.clone();
+            let query_str = parsed.query.clone();
+            let tag = parsed.tag_filter.clone();
+            // Capture the raw entry text at dispatch time for staleness detection.
+            let raw_text_at_dispatch = entry.text().to_string();
+            let search_entry_for_stale = search_entry_for_change.clone();
 
             // Schedule debounced search
             let source_id = gtk4::glib::timeout_add_local_once(
@@ -683,40 +688,98 @@ impl MainWindow {
                     let max_results = cfg.general.max_results;
                     drop(cfg);
 
-                    let results = backend.borrow_mut().search_with_tag(
-                        &parsed.query,
-                        max_results,
-                        &filter.borrow(),
-                        &config.borrow(),
-                        parsed.tag_filter.as_deref(),
-                    );
+                    // Try async path (daemon mode)
+                    let receiver = {
+                        let be = backend.borrow();
+                        let f = filter.borrow();
+                        let c = config.borrow();
+                        be.query_async(
+                            &query_str,
+                            max_results,
+                            &f,
+                            &c,
+                            tag.as_deref(),
+                        )
+                    };
 
-                    // Clear existing results
-                    while let Some(child) = results_list.first_child() {
-                        results_list.remove(&child);
+                    if let Some(rx) = receiver {
+                        // Daemon mode: results arrive asynchronously on the main loop.
+                        // spawn_future_local runs the async block on the GTK main
+                        // thread, so non-Send types (Rc, GTK widgets) are fine.
+                        let results_list_cb = results_list.clone();
+                        let current_results_cb = current_results.clone();
+                        let lazy_state_cb = lazy_state.clone();
+
+                        gtk4::glib::spawn_future_local(async move {
+                            if let Ok(result) = rx.await {
+                                // Discard stale results: the user has typed something new
+                                // since this query was dispatched.
+                                if search_entry_for_stale.text().as_str() != raw_text_at_dispatch {
+                                    return;
+                                }
+                                while let Some(child) = results_list_cb.first_child() {
+                                    results_list_cb.remove(&child);
+                                }
+
+                                let initial_count =
+                                    INITIAL_RESULTS.min(result.items.len());
+                                {
+                                    let mut lazy = lazy_state_cb.borrow_mut();
+                                    lazy.all_results = result.items.clone();
+                                    lazy.displayed_count = initial_count;
+                                }
+
+                                for item in result.items.iter().take(initial_count) {
+                                    let row = ResultRow::new(item);
+                                    results_list_cb.append(&row);
+                                }
+
+                                if let Some(first_row) =
+                                    results_list_cb.row_at_index(0)
+                                {
+                                    results_list_cb.select_row(Some(&first_row));
+                                }
+
+                                *current_results_cb.borrow_mut() = result
+                                    .items
+                                    .into_iter()
+                                    .take(initial_count)
+                                    .collect();
+                            }
+                        });
+                    } else {
+                        // Local mode (dmenu): synchronous search
+                        let results = backend.borrow_mut().search_with_tag(
+                            &query_str,
+                            max_results,
+                            &filter.borrow(),
+                            &config.borrow(),
+                            tag.as_deref(),
+                        );
+
+                        while let Some(child) = results_list.first_child() {
+                            results_list.remove(&child);
+                        }
+
+                        let initial_count = INITIAL_RESULTS.min(results.len());
+                        {
+                            let mut lazy = lazy_state.borrow_mut();
+                            lazy.all_results = results.clone();
+                            lazy.displayed_count = initial_count;
+                        }
+
+                        for item in results.iter().take(initial_count) {
+                            let row = ResultRow::new(item);
+                            results_list.append(&row);
+                        }
+
+                        if let Some(first_row) = results_list.row_at_index(0) {
+                            results_list.select_row(Some(&first_row));
+                        }
+
+                        *current_results.borrow_mut() =
+                            results.into_iter().take(initial_count).collect();
                     }
-
-                    // Lazy loading: store all results but only display initial batch
-                    let initial_count = INITIAL_RESULTS.min(results.len());
-                    {
-                        let mut lazy = lazy_state.borrow_mut();
-                        lazy.all_results = results.clone();
-                        lazy.displayed_count = initial_count;
-                    }
-
-                    // Display only initial batch
-                    for item in results.iter().take(initial_count) {
-                        let row = ResultRow::new(item);
-                        results_list.append(&row);
-                    }
-
-                    if let Some(first_row) = results_list.row_at_index(0) {
-                        results_list.select_row(Some(&first_row));
-                    }
-
-                    // current_results holds only what's displayed (for selection/activation)
-                    *current_results.borrow_mut() =
-                        results.into_iter().take(initial_count).collect();
                 },
             );
 

@@ -2542,6 +2542,7 @@ dependencies = [
  "clap",
  "dirs",
  "env_logger",
+ "futures-channel",
  "glib-build-tools",
  "gtk4",
  "gtk4-layer-shell",

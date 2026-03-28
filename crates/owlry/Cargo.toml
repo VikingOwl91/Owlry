@@ -46,6 +46,9 @@ dirs = "5"
 # Semantic versioning (needed by plugin commands)
 semver = "1"
 
+# Async oneshot channel (background thread -> main loop)
+futures-channel = "0.3"
+
 [build-dependencies]
 # GResource compilation for bundled icons
 glib-build-tools = "0.20"

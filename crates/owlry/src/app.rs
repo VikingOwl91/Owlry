@@ -69,7 +69,7 @@ impl OwlryApp {
             match CoreClient::connect_or_start() {
                 Ok(client) => {
                     info!("Connected to owlry-core daemon");
-                    SearchBackend::Daemon(client)
+                    SearchBackend::Daemon(crate::backend::DaemonHandle::new(client))
                 }
                 Err(e) => {
                     warn!(
