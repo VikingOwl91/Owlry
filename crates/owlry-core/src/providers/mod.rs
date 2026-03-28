@@ -117,6 +117,11 @@ pub(crate) trait DynamicProvider: Send + Sync {
     fn provider_type(&self) -> ProviderType;
     fn query(&self, query: &str) -> Vec<LaunchItem>;
     fn priority(&self) -> u32;
+
+    /// Handle a plugin action command. Returns true if handled.
+    fn execute_action(&self, _command: &str) -> bool {
+        false
+    }
 }
 
 /// Manages all providers and handles searching
@@ -328,6 +333,11 @@ impl ProviderManager {
             info!("Registered built-in converter provider");
         }
 
+        // Config editor — always enabled
+        let config_arc = std::sync::Arc::new(std::sync::RwLock::new(config.clone()));
+        builtin_dynamic.push(Box::new(config_editor::ConfigProvider::new(config_arc)));
+        info!("Registered built-in config editor provider");
+
         // Built-in static providers
         if config.providers.system {
             core_providers.push(Box::new(system::SystemProvider::new()));
@@ -530,6 +540,14 @@ impl ProviderManager {
                 return true;
             }
         }
+
+        // Check built-in dynamic providers
+        for provider in &self.builtin_dynamic {
+            if provider.execute_action(command) {
+                return true;
+            }
+        }
+
         false
     }
 

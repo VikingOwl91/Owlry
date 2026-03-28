@@ -55,7 +55,7 @@ impl ConfigProvider {
     }
 
     /// Execute a `CONFIG:*` action command. Returns `true` if handled.
-    pub fn execute_action(&self, command: &str) -> bool {
+    fn handle_config_action(&self, command: &str) -> bool {
         let Some(rest) = command.strip_prefix("CONFIG:") else {
             return false;
         };
@@ -644,6 +644,10 @@ impl DynamicProvider for ConfigProvider {
 
     fn priority(&self) -> u32 {
         8000
+    }
+
+    fn execute_action(&self, command: &str) -> bool {
+        self.handle_config_action(command)
     }
 
     fn query(&self, query: &str) -> Vec<LaunchItem> {
