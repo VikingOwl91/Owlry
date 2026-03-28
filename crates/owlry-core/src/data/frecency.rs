@@ -131,23 +131,36 @@ impl FrecencyStore {
         }
     }
 
+    /// Calculate frecency score using a pre-sampled timestamp.
+    /// Use this in hot loops to avoid repeated Utc::now() syscalls.
+    pub fn get_score_at(&self, item_id: &str, now: DateTime<Utc>) -> f64 {
+        match self.data.entries.get(item_id) {
+            Some(entry) => Self::calculate_frecency_at(entry.launch_count, entry.last_launch, now),
+            None => 0.0,
+        }
+    }
+
     /// Calculate frecency using Firefox-style algorithm
     fn calculate_frecency(launch_count: u32, last_launch: DateTime<Utc>) -> f64 {
         let now = Utc::now();
+        Self::calculate_frecency_at(launch_count, last_launch, now)
+    }
+
+    /// Calculate frecency using a caller-provided timestamp.
+    fn calculate_frecency_at(launch_count: u32, last_launch: DateTime<Utc>, now: DateTime<Utc>) -> f64 {
         let age = now.signed_duration_since(last_launch);
         let age_days = age.num_hours() as f64 / 24.0;
 
-        // Recency weight based on how recently the item was used
         let recency_weight = if age_days < 1.0 {
-            100.0 // Today
+            100.0
         } else if age_days < 7.0 {
-            70.0 // This week
+            70.0
         } else if age_days < 30.0 {
-            50.0 // This month
+            50.0
         } else if age_days < 90.0 {
-            30.0 // This quarter
+            30.0
         } else {
-            10.0 // Older
+            10.0
         };
 
         launch_count as f64 * recency_weight
@@ -204,6 +217,32 @@ mod tests {
         let month_ago = now - chrono::Duration::days(45);
         let score_month = FrecencyStore::calculate_frecency(10, month_ago);
         assert!(score_month < score_week);
+    }
+
+    #[test]
+    fn get_score_at_matches_get_score() {
+        let mut store = FrecencyStore {
+            data: FrecencyData {
+                version: 1,
+                entries: HashMap::new(),
+            },
+            path: PathBuf::from("/dev/null"),
+            dirty: false,
+        };
+        store.data.entries.insert(
+            "test".to_string(),
+            FrecencyEntry {
+                launch_count: 5,
+                last_launch: Utc::now(),
+            },
+        );
+
+        let now = Utc::now();
+        let score_at = store.get_score_at("test", now);
+        let score = store.get_score("test");
+
+        // Both should be very close (same timestamp, within rounding)
+        assert!((score_at - score).abs() < 1.0);
     }
 
     #[test]

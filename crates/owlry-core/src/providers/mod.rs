@@ -16,6 +16,7 @@ pub use command::CommandProvider;
 // Re-export native provider for plugin loading
 pub use native_provider::NativeProvider;
 
+use chrono::Utc;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use log::info;
@@ -570,6 +571,7 @@ impl ProviderManager {
             query, max_results, frecency_weight
         );
 
+        let now = Utc::now();
         let mut results: Vec<(LaunchItem, i64)> = Vec::new();
 
         // Add widget items first (highest priority) - only when:
@@ -633,7 +635,7 @@ impl ProviderManager {
                     }
                 })
                 .map(|item| {
-                    let frecency_score = frecency.get_score(&item.id);
+                    let frecency_score = frecency.get_score_at(&item.id, now);
                     let boosted = (frecency_score * frecency_weight * 100.0) as i64;
                     (item, boosted)
                 })
@@ -682,7 +684,7 @@ impl ProviderManager {
             };
 
             base_score.map(|s| {
-                let frecency_score = frecency.get_score(&item.id);
+                let frecency_score = frecency.get_score_at(&item.id, now);
                 let frecency_boost = (frecency_score * frecency_weight * 10.0) as i64;
                 (item.clone(), s + frecency_boost)
             })
