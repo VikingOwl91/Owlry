@@ -33,9 +33,9 @@ check() {
 
 package() {
     cd "owlry"
-    install -Dm755 "target/release/owlry-core" "$pkgdir/usr/bin/owlry-core"
-    install -Dm644 "systemd/owlry-core.service" "$pkgdir/usr/lib/systemd/user/owlry-core.service"
-    install -Dm644 "systemd/owlry-core.socket" "$pkgdir/usr/lib/systemd/user/owlry-core.socket"
+    install -Dm755 "target/release/owlryd" "$pkgdir/usr/bin/owlryd"
+    install -Dm644 "systemd/owlryd.service" "$pkgdir/usr/lib/systemd/user/owlryd.service"
+    install -Dm644 "systemd/owlryd.socket" "$pkgdir/usr/lib/systemd/user/owlryd.socket"
     install -dm755 "$pkgdir/usr/lib/owlry/plugins"
     install -dm755 "$pkgdir/usr/lib/owlry/runtimes"
 }

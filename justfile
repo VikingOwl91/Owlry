@@ -60,17 +60,17 @@ install-local:
 
     echo "Installing binaries..."
     sudo install -Dm755 target/release/owlry /usr/bin/owlry
-    sudo install -Dm755 target/release/owlry-core /usr/bin/owlry-core
+    sudo install -Dm755 target/release/owlryd /usr/bin/owlryd
 
     echo "Installing runtimes..."
     [ -f target/release/libowlry_lua.so ] && sudo install -Dm755 target/release/libowlry_lua.so /usr/lib/owlry/runtimes/liblua.so
     [ -f target/release/libowlry_rune.so ] && sudo install -Dm755 target/release/libowlry_rune.so /usr/lib/owlry/runtimes/librune.so
 
     echo "Installing systemd service files..."
-    [ -f systemd/owlry-core.service ] && sudo install -Dm644 systemd/owlry-core.service /usr/lib/systemd/user/owlry-core.service
-    [ -f systemd/owlry-core.socket ] && sudo install -Dm644 systemd/owlry-core.socket /usr/lib/systemd/user/owlry-core.socket
+    [ -f systemd/owlryd.service ] && sudo install -Dm644 systemd/owlryd.service /usr/lib/systemd/user/owlryd.service
+    [ -f systemd/owlryd.socket ] && sudo install -Dm644 systemd/owlryd.socket /usr/lib/systemd/user/owlryd.socket
 
-    echo "Done. Start daemon: systemctl --user enable --now owlry-core.service"
+    echo "Done. Start daemon: systemctl --user enable --now owlryd.service"
 
 # === Version Management ===
 

@@ -126,22 +126,22 @@ Add to your compositor config:
 
 ```bash
 # Hyprland (~/.config/hypr/hyprland.conf)
-exec-once = owlry-core
+exec-once = owlryd
 
 # Sway (~/.config/sway/config)
-exec owlry-core
+exec owlryd
 ```
 
 **2. Systemd user service**
 
 ```bash
-systemctl --user enable --now owlry-core.service
+systemctl --user enable --now owlryd.service
 ```
 
 **3. Socket activation (auto-start on first use)**
 
 ```bash
-systemctl --user enable owlry-core.socket
+systemctl --user enable owlryd.socket
 ```
 
 The daemon starts automatically when the UI client first connects. No manual startup needed.

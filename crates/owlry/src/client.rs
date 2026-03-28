@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use owlry_core::ipc::{ProviderDesc, Request, Response, ResultItem};
 
-/// IPC client that connects to the owlry-core daemon Unix socket
+/// IPC client that connects to the owlryd daemon Unix socket
 /// and provides typed methods for all IPC operations.
 pub struct CoreClient {
     stream: UnixStream,
@@ -38,15 +38,15 @@ impl CoreClient {
 
         // Socket not available — try to start the daemon.
         let status = std::process::Command::new("systemctl")
-            .args(["--user", "start", "owlry-core"])
+            .args(["--user", "start", "owlryd"])
             .status()
             .map_err(|e| {
-                io::Error::other(format!("failed to start owlry-core via systemd: {e}"))
+                io::Error::other(format!("failed to start owlryd via systemd: {e}"))
             })?;
 
         if !status.success() {
             return Err(io::Error::other(format!(
-                "systemctl --user start owlry-core exited with status {}",
+                "systemctl --user start owlryd exited with status {}",
                 status
             )));
         }

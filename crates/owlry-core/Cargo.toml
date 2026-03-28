@@ -12,7 +12,7 @@ name = "owlry_core"
 path = "src/lib.rs"
 
 [[bin]]
-name = "owlry-core"
+name = "owlryd"
 path = "src/main.rs"
 
 [dependencies]

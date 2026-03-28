@@ -7,7 +7,7 @@ fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
     let sock = paths::socket_path();
-    info!("Starting owlry-core daemon...");
+    info!("Starting owlryd daemon...");
 
     // Ensure the socket parent directory exists
     if let Err(e) = paths::ensure_parent_dir(&sock) {
@@ -18,7 +18,7 @@ fn main() {
     let server = match Server::bind(&sock) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("Failed to start owlry-core: {e}");
+            eprintln!("Failed to start owlryd: {e}");
             std::process::exit(1);
         }
     };
