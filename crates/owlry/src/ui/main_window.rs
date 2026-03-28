@@ -241,36 +241,18 @@ impl MainWindow {
             search_entry_for_refresh.emit_by_name::<()>("changed", &[]);
         });
 
-        // Set up periodic widget auto-refresh (every 5 seconds) — local backend only
-        // In daemon mode, the daemon handles widget refresh and results come via IPC
-        if main_window.is_dmenu_mode {
-            // dmenu typically has no widgets, but this is harmless
+        // Periodic widget refresh — local backend only.
+        // In daemon mode, the daemon handles widget refresh internally;
+        // the UI gets updated data on the next user-initiated search.
+        // We do NOT re-query in daemon mode because it resets the user's
+        // scroll position and selection.
+        if !matches!(&*main_window.backend.borrow(), SearchBackend::Daemon(_)) {
+            let backend_for_auto = main_window.backend.clone();
+            gtk4::glib::timeout_add_local(std::time::Duration::from_secs(5), move || {
+                backend_for_auto.borrow_mut().refresh_widgets();
+                gtk4::glib::ControlFlow::Continue
+            });
         }
-        let backend_for_auto = main_window.backend.clone();
-        let current_results_for_auto = main_window.current_results.clone();
-        let submenu_state_for_auto = main_window.submenu_state.clone();
-        let search_entry_for_auto = main_window.search_entry.clone();
-        gtk4::glib::timeout_add_local(std::time::Duration::from_secs(5), move || {
-            let in_submenu = submenu_state_for_auto.borrow().active;
-
-            // For local backend: refresh widgets (daemon handles this itself)
-            backend_for_auto.borrow_mut().refresh_widgets();
-
-            // For daemon backend: re-query to get updated widget data
-            if !in_submenu {
-                if let SearchBackend::Daemon(_) = &*backend_for_auto.borrow() {
-                    // Trigger a re-search to pick up updated widget items from daemon
-                    search_entry_for_auto.emit_by_name::<()>("changed", &[]);
-                } else {
-                    // Local backend: update widget items in-place (legacy behavior)
-                    // This path is only hit in dmenu mode which doesn't have widgets,
-                    // but keep it for completeness.
-                    let _results = current_results_for_auto.borrow();
-                    // No-op for local mode without widget access
-                }
-            }
-            gtk4::glib::ControlFlow::Continue
-        });
 
         main_window
     }
