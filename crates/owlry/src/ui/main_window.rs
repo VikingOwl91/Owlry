@@ -721,15 +721,11 @@ impl MainWindow {
                                     results_list_cb.remove(&child);
                                 }
 
+                                let items = result.items;
                                 let initial_count =
-                                    INITIAL_RESULTS.min(result.items.len());
-                                {
-                                    let mut lazy = lazy_state_cb.borrow_mut();
-                                    lazy.all_results = result.items.clone();
-                                    lazy.displayed_count = initial_count;
-                                }
+                                    INITIAL_RESULTS.min(items.len());
 
-                                for item in result.items.iter().take(initial_count) {
+                                for item in items.iter().take(initial_count) {
                                     let row = ResultRow::new(item);
                                     results_list_cb.append(&row);
                                 }
@@ -740,11 +736,11 @@ impl MainWindow {
                                     results_list_cb.select_row(Some(&first_row));
                                 }
 
-                                *current_results_cb.borrow_mut() = result
-                                    .items
-                                    .into_iter()
-                                    .take(initial_count)
-                                    .collect();
+                                *current_results_cb.borrow_mut() =
+                                    items[..initial_count].to_vec();
+                                let mut lazy = lazy_state_cb.borrow_mut();
+                                lazy.all_results = items;
+                                lazy.displayed_count = initial_count;
                             }
                         });
                     } else {
@@ -762,11 +758,6 @@ impl MainWindow {
                         }
 
                         let initial_count = INITIAL_RESULTS.min(results.len());
-                        {
-                            let mut lazy = lazy_state.borrow_mut();
-                            lazy.all_results = results.clone();
-                            lazy.displayed_count = initial_count;
-                        }
 
                         for item in results.iter().take(initial_count) {
                             let row = ResultRow::new(item);
@@ -778,7 +769,10 @@ impl MainWindow {
                         }
 
                         *current_results.borrow_mut() =
-                            results.into_iter().take(initial_count).collect();
+                            results[..initial_count].to_vec();
+                        let mut lazy = lazy_state.borrow_mut();
+                        lazy.all_results = results;
+                        lazy.displayed_count = initial_count;
                     }
                 },
             );
@@ -1271,11 +1265,6 @@ impl MainWindow {
             }
 
             let initial_count = INITIAL_RESULTS.min(results.len());
-            {
-                let mut lazy = lazy_state.borrow_mut();
-                lazy.all_results = results.clone();
-                lazy.displayed_count = initial_count;
-            }
 
             for item in results.iter().take(initial_count) {
                 let row = ResultRow::new(item);
@@ -1286,8 +1275,10 @@ impl MainWindow {
                 results_list.select_row(Some(&first_row));
             }
 
-            *current_results.borrow_mut() =
-                results.into_iter().take(initial_count).collect();
+            *current_results.borrow_mut() = results[..initial_count].to_vec();
+            let mut lazy = lazy_state.borrow_mut();
+            lazy.all_results = results;
+            lazy.displayed_count = initial_count;
         });
     }
 
@@ -1308,15 +1299,9 @@ impl MainWindow {
             self.results_list.remove(&child);
         }
 
-        // Store all results for lazy loading
-        let initial_count = INITIAL_RESULTS.min(results.len());
-        {
-            let mut lazy = self.lazy_state.borrow_mut();
-            lazy.all_results = results.clone();
-            lazy.displayed_count = initial_count;
-        }
-
         // Display initial batch only
+        let initial_count = INITIAL_RESULTS.min(results.len());
+
         for item in results.iter().take(initial_count) {
             let row = ResultRow::new(item);
             self.results_list.append(&row);
@@ -1326,8 +1311,11 @@ impl MainWindow {
             self.results_list.select_row(Some(&first_row));
         }
 
-        // current_results holds what's currently displayed
-        *self.current_results.borrow_mut() = results.into_iter().take(initial_count).collect();
+        // current_results holds what's currently displayed; store full vec for lazy loading
+        *self.current_results.borrow_mut() = results[..initial_count].to_vec();
+        let mut lazy = self.lazy_state.borrow_mut();
+        lazy.all_results = results;
+        lazy.displayed_count = initial_count;
     }
 
     /// Set up lazy loading scroll detection
