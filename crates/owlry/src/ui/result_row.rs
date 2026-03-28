@@ -20,8 +20,8 @@ fn is_emoji_icon(s: &str) -> bool {
 
 /// Check if this item should be highlighted based on the query.
 /// Highlighted when:
-/// - Item is from a dynamic plugin (calculator, converter, websearch, filesearch)
-///   and the query is non-empty (auto-detect triggered)
+/// - Item is from an auto-detecting plugin (calculator, converter) that parsed
+///   the query into a result — these produce direct answers, not search results
 /// - Item name exactly matches the query (case-insensitive)
 fn should_highlight(item: &LaunchItem, query: &str) -> bool {
     if query.is_empty() {
@@ -33,10 +33,10 @@ fn should_highlight(item: &LaunchItem, query: &str) -> bool {
         return true;
     }
 
-    // Dynamic plugin auto-detect results
+    // Auto-detect plugins that produce direct answers (not search tools)
     matches!(
         &item.provider,
-        ProviderType::Plugin(id) if matches!(id.as_str(), "calc" | "conv" | "websearch" | "filesearch")
+        ProviderType::Plugin(id) if matches!(id.as_str(), "calc" | "conv")
     )
 }
 
