@@ -185,16 +185,19 @@ impl OwlryApp {
     }
 
     fn setup_icon_theme() {
-        // Ensure we have icon fallbacks for weather/media icons
-        // These may not exist in all icon themes
         if let Some(display) = gtk4::gdk::Display::default() {
             let icon_theme = gtk4::IconTheme::for_display(&display);
 
-            // Add Adwaita as fallback search path (has weather and media icons)
-            icon_theme.add_search_path("/usr/share/icons/Adwaita");
-            icon_theme.add_search_path("/usr/share/icons/breeze");
-
-            debug!("Icon theme search paths configured with Adwaita/breeze fallbacks");
+            // If the system icon theme can't resolve standard icons (e.g., the
+            // configured theme doesn't exist on disk), fall back to Adwaita
+            // which is guaranteed to be installed as a GTK4 dependency.
+            if !icon_theme.has_icon("edit-find-symbolic") {
+                debug!(
+                    "System icon theme '{}' cannot resolve standard icons, falling back to Adwaita",
+                    icon_theme.theme_name()
+                );
+                icon_theme.set_theme_name(Some("Adwaita"));
+            }
         }
     }
 
