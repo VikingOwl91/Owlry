@@ -13,7 +13,8 @@ A lightweight, owl-themed application launcher for Wayland, built with GTK4 and 
 - **Client/daemon architecture** — Instant window appearance, providers stay loaded in memory
 - **Modular plugin architecture** — Install only what you need
 - **Fuzzy search with tags** — Fast matching across names, descriptions, and category tags
-- **14 native plugins** — Calculator, clipboard, emoji, weather, media, and more
+- **Built-in calculator, converter, and system actions** — Works out of the box
+- **11 optional plugins** — Clipboard, emoji, weather, media, and more
 - **Widget providers** — Weather, media controls, and pomodoro timer at the top of results
 - **Config profiles** — Named mode presets for different workflows
 - **Filter prefixes** — Scope searches with `:app`, `:cmd`, `:tag:development`, etc.
@@ -28,17 +29,11 @@ A lightweight, owl-themed application launcher for Wayland, built with GTK4 and 
 ### Arch Linux (AUR)
 
 ```bash
-# Minimal core (applications + commands only)
+# Core (includes calculator, converter, system actions)
 yay -S owlry
 
-# Add individual plugins
-yay -S owlry-plugin-calculator owlry-plugin-weather
-
-# Or install bundles:
-yay -S owlry-meta-essentials  # calculator, converter, system, ssh, scripts, bookmarks
-yay -S owlry-meta-widgets     # weather, media, pomodoro
-yay -S owlry-meta-tools       # clipboard, emoji, websearch, filesearch, systemd
-yay -S owlry-meta-full        # everything
+# Add individual plugins as needed
+yay -S owlry-plugin-bookmarks owlry-plugin-weather owlry-plugin-clipboard
 
 # For custom Lua/Rune plugins
 yay -S owlry-lua   # Lua 5.4 runtime
@@ -52,7 +47,7 @@ yay -S owlry-rune  # Rune runtime
 | Package | Description |
 |---------|-------------|
 | `owlry` | GTK4 UI client |
-| `owlry-core` | Headless daemon (plugin host, IPC server) |
+| `owlry-core` | Headless daemon with built-in calculator, converter, and system providers |
 | `owlry-lua` | Lua 5.4 script runtime for user plugins |
 | `owlry-rune` | Rune script runtime for user plugins |
 
@@ -61,28 +56,18 @@ yay -S owlry-rune  # Rune runtime
 | Package | Description |
 |---------|-------------|
 | `owlry-plugin-bookmarks` | Firefox, Chrome, Brave, Edge bookmarks |
-| `owlry-plugin-calculator` | Math expressions (`= 5+3`) |
 | `owlry-plugin-clipboard` | History via cliphist |
-| `owlry-plugin-converter` | Unit and currency conversion |
 | `owlry-plugin-emoji` | 400+ searchable emoji |
 | `owlry-plugin-filesearch` | File search (`/ filename`) |
 | `owlry-plugin-media` | MPRIS media controls |
 | `owlry-plugin-pomodoro` | Pomodoro timer widget |
 | `owlry-plugin-scripts` | User scripts |
 | `owlry-plugin-ssh` | SSH hosts from `~/.ssh/config` |
-| `owlry-plugin-system` | Shutdown, reboot, suspend, lock |
 | `owlry-plugin-systemd` | User services with actions |
 | `owlry-plugin-weather` | Weather widget |
 | `owlry-plugin-websearch` | Web search (`? query`) |
 
-**Meta bundles:**
-
-| Package | Includes |
-|---------|----------|
-| `owlry-meta-essentials` | bookmarks, calculator, converter, scripts, ssh, system |
-| `owlry-meta-tools` | clipboard, emoji, filesearch, systemd, websearch |
-| `owlry-meta-widgets` | media, pomodoro, weather |
-| `owlry-meta-full` | All plugins + runtimes |
+> **Note:** Calculator, converter, and system actions are built into `owlry-core` and no longer require separate plugin packages.
 
 ### Build from Source
 
