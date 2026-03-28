@@ -2,6 +2,7 @@
 mod application;
 mod command;
 pub(crate) mod calculator;
+pub(crate) mod config_editor;
 pub(crate) mod converter;
 pub(crate) mod system;
 
