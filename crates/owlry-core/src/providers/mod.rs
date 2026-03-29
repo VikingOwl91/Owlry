@@ -737,22 +737,17 @@ impl ProviderManager {
 
         // Empty query (after checking special providers) - return frecency-sorted items
         if query.is_empty() {
-            // Collect items from core providers
-            let core_items = self
+            let mut scored_refs: Vec<(&LaunchItem, i64)> = self
                 .providers
                 .iter()
                 .filter(|p| filter.is_active(p.provider_type()))
-                .flat_map(|p| p.items().iter().cloned());
-
-            // Collect items from static native providers
-            let native_items = self
-                .static_native_providers
-                .iter()
-                .filter(|p| filter.is_active(p.provider_type()))
-                .flat_map(|p| p.items().iter().cloned());
-
-            let items: Vec<(LaunchItem, i64)> = core_items
-                .chain(native_items)
+                .flat_map(|p| p.items().iter())
+                .chain(
+                    self.static_native_providers
+                        .iter()
+                        .filter(|p| filter.is_active(p.provider_type()))
+                        .flat_map(|p| p.items().iter()),
+                )
                 .filter(|item| {
                     // Apply tag filter if present
                     if let Some(tag) = tag_filter {
@@ -768,8 +763,15 @@ impl ProviderManager {
                 })
                 .collect();
 
-            // Combine widgets (already in results) with frecency items
-            results.extend(items);
+            // Partial sort: O(n) average to find top max_results, then O(k log k) to order them
+            if scored_refs.len() > max_results {
+                scored_refs.select_nth_unstable_by(max_results, |a, b| b.1.cmp(&a.1));
+                scored_refs.truncate(max_results);
+            }
+            scored_refs.sort_by(|a, b| b.1.cmp(&a.1));
+
+            // Clone only the survivors
+            results.extend(scored_refs.into_iter().map(|(item, score)| (item.clone(), score)));
             results.sort_by(|a, b| b.1.cmp(&a.1));
             results.truncate(max_results);
             return results;
@@ -777,7 +779,7 @@ impl ProviderManager {
 
         // Regular search with frecency boost and tag matching
         // Helper closure for scoring items
-        let score_item = |item: &LaunchItem| -> Option<(LaunchItem, i64)> {
+        let score_item = |item: &LaunchItem| -> Option<i64> {
             // Apply tag filter if present
             if let Some(tag) = tag_filter
                 && !item.tags.iter().any(|t| t.to_lowercase().contains(tag))
@@ -824,33 +826,46 @@ impl ProviderManager {
                     0
                 };
 
-                (item.clone(), s + frecency_boost + exact_match_boost)
+                s + frecency_boost + exact_match_boost
             })
         };
 
-        // Search core providers
+        // Score static items by reference (no cloning)
+        let mut scored_refs: Vec<(&LaunchItem, i64)> = Vec::new();
+
         for provider in &self.providers {
             if !filter.is_active(provider.provider_type()) {
                 continue;
             }
             for item in provider.items() {
-                if let Some(scored) = score_item(item) {
-                    results.push(scored);
+                if let Some(score) = score_item(item) {
+                    scored_refs.push((item, score));
                 }
             }
         }
 
-        // Search static native providers
         for provider in &self.static_native_providers {
             if !filter.is_active(provider.provider_type()) {
                 continue;
             }
             for item in provider.items() {
-                if let Some(scored) = score_item(item) {
-                    results.push(scored);
+                if let Some(score) = score_item(item) {
+                    scored_refs.push((item, score));
                 }
             }
         }
+
+        // Partial sort: O(n) average to find top max_results, then O(k log k) to order them
+        if scored_refs.len() > max_results {
+            scored_refs.select_nth_unstable_by(max_results, |a, b| b.1.cmp(&a.1));
+            scored_refs.truncate(max_results);
+        }
+        scored_refs.sort_by(|a, b| b.1.cmp(&a.1));
+
+        // Clone only the survivors
+        results.extend(scored_refs.into_iter().map(|(item, score)| (item.clone(), score)));
+
+        // Final sort merges dynamic results (already in `results`) with static top-N
         results.sort_by(|a, b| b.1.cmp(&a.1));
         results.truncate(max_results);
 
