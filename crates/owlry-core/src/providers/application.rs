@@ -58,9 +58,19 @@ fn clean_desktop_exec_field(cmd: &str) -> String {
     }
 
     // Clean up any double spaces that may have resulted from removing field codes
-    let mut cleaned = result.trim().to_string();
-    while cleaned.contains("  ") {
-        cleaned = cleaned.replace("  ", " ");
+    let trimmed = result.trim();
+    let mut cleaned = String::with_capacity(trimmed.len());
+    let mut prev_space = false;
+    for c in trimmed.chars() {
+        if c == ' ' {
+            if !prev_space {
+                cleaned.push(' ');
+            }
+            prev_space = true;
+        } else {
+            cleaned.push(c);
+            prev_space = false;
+        }
     }
 
     cleaned
@@ -270,5 +280,12 @@ mod tests {
             clean_desktop_exec_field("env FOO=bar BAZ=qux myapp %u"),
             "env FOO=bar BAZ=qux myapp"
         );
+    }
+
+    #[test]
+    fn test_clean_desktop_exec_collapses_spaces() {
+        assert_eq!(clean_desktop_exec_field("app   --flag    arg"), "app --flag arg");
+        let input = format!("app{}arg", " ".repeat(100));
+        assert_eq!(clean_desktop_exec_field(&input), "app arg");
     }
 }
