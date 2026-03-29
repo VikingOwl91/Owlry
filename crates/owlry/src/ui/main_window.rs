@@ -507,9 +507,7 @@ impl MainWindow {
         search_entry.set_placeholder_text(Some(&format!("Filter {} actions...", display_name)));
 
         // Display actions
-        while let Some(child) = results_list.first_child() {
-            results_list.remove(&child);
-        }
+        results_list.remove_all();
 
         for item in &actions {
             let row = ResultRow::new(item, "");
@@ -589,9 +587,7 @@ impl MainWindow {
                     .collect();
 
                 // Clear and repopulate
-                while let Some(child) = results_list.first_child() {
-                    results_list.remove(&child);
-                }
+                results_list.remove_all();
 
                 for item in &filtered {
                     let row = ResultRow::new(item, "");
@@ -702,9 +698,7 @@ impl MainWindow {
                                 if search_entry_for_stale.text().as_str() != raw_text_at_dispatch {
                                     return;
                                 }
-                                while let Some(child) = results_list_cb.first_child() {
-                                    results_list_cb.remove(&child);
-                                }
+                                results_list_cb.remove_all();
 
                                 let items = result.items;
                                 let initial_count =
@@ -739,9 +733,7 @@ impl MainWindow {
                             tag.as_deref(),
                         );
 
-                        while let Some(child) = results_list.first_child() {
-                            results_list.remove(&child);
-                        }
+                        results_list.remove_all();
 
                         let initial_count = INITIAL_RESULTS.min(results.len());
 
@@ -1247,9 +1239,7 @@ impl MainWindow {
             );
 
             // Clear existing results
-            while let Some(child) = results_list.first_child() {
-                results_list.remove(&child);
-            }
+            results_list.remove_all();
 
             let initial_count = INITIAL_RESULTS.min(results.len());
 
