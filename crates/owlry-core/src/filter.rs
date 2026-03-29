@@ -229,47 +229,48 @@ impl ProviderFilter {
             }
         }
 
-        // Core provider prefixes
+        // Core prefixes — each entry is tried as ":name " (full) and ":name" (partial)
         let core_prefixes: &[(&str, ProviderType)] = &[
-            (":app ", ProviderType::Application),
-            (":apps ", ProviderType::Application),
-            (":cmd ", ProviderType::Command),
-            (":command ", ProviderType::Command),
+            ("app", ProviderType::Application),
+            ("apps", ProviderType::Application),
+            ("cmd", ProviderType::Command),
+            ("command", ProviderType::Command),
         ];
 
-        // Plugin provider prefixes - mapped to Plugin(type_id)
+        // Plugin prefixes — each entry maps to a plugin type_id
         let plugin_prefixes: &[(&str, &str)] = &[
-            (":bm ", "bookmarks"),
-            (":bookmark ", "bookmarks"),
-            (":bookmarks ", "bookmarks"),
-            (":calc ", "calc"),
-            (":calculator ", "calc"),
-            (":clip ", "clipboard"),
-            (":clipboard ", "clipboard"),
-            (":emoji ", "emoji"),
-            (":emojis ", "emoji"),
-            (":file ", "filesearch"),
-            (":files ", "filesearch"),
-            (":find ", "filesearch"),
-            (":script ", "scripts"),
-            (":scripts ", "scripts"),
-            (":ssh ", "ssh"),
-            (":sys ", "system"),
-            (":system ", "system"),
-            (":power ", "system"),
-            (":uuctl ", "uuctl"),
-            (":systemd ", "uuctl"),
-            (":web ", "websearch"),
-            (":search ", "websearch"),
-            (":config ", "config"),
-            (":settings ", "config"),
-            (":conv ", "conv"),
-            (":converter ", "conv"),
+            ("bm", "bookmarks"),
+            ("bookmark", "bookmarks"),
+            ("bookmarks", "bookmarks"),
+            ("calc", "calc"),
+            ("calculator", "calc"),
+            ("clip", "clipboard"),
+            ("clipboard", "clipboard"),
+            ("emoji", "emoji"),
+            ("emojis", "emoji"),
+            ("file", "filesearch"),
+            ("files", "filesearch"),
+            ("find", "filesearch"),
+            ("script", "scripts"),
+            ("scripts", "scripts"),
+            ("ssh", "ssh"),
+            ("sys", "system"),
+            ("system", "system"),
+            ("power", "system"),
+            ("uuctl", "uuctl"),
+            ("systemd", "uuctl"),
+            ("web", "websearch"),
+            ("search", "websearch"),
+            ("config", "config"),
+            ("settings", "config"),
+            ("conv", "conv"),
+            ("converter", "conv"),
         ];
 
-        // Check core prefixes
-        for (prefix_str, provider) in core_prefixes {
-            if let Some(rest) = trimmed.strip_prefix(prefix_str) {
+        // Single-pass: try each core prefix as both full (":name query") and partial (":name")
+        for (name, provider) in core_prefixes {
+            let with_space = format!(":{} ", name);
+            if let Some(rest) = trimmed.strip_prefix(with_space.as_str()) {
                 #[cfg(feature = "dev-logging")]
                 debug!(
                     "[Filter] parse_query({:?}) -> prefix={:?}, query={:?}",
@@ -281,64 +282,8 @@ impl ProviderFilter {
                     query: rest.to_string(),
                 };
             }
-        }
-
-        // Check plugin prefixes
-        for (prefix_str, type_id) in plugin_prefixes {
-            if let Some(rest) = trimmed.strip_prefix(prefix_str) {
-                let provider = ProviderType::Plugin(type_id.to_string());
-                #[cfg(feature = "dev-logging")]
-                debug!(
-                    "[Filter] parse_query({:?}) -> prefix={:?}, query={:?}",
-                    query, provider, rest
-                );
-                return ParsedQuery {
-                    prefix: Some(provider),
-                    tag_filter: None,
-                    query: rest.to_string(),
-                };
-            }
-        }
-
-        // Handle partial prefixes (still typing)
-        let partial_core: &[(&str, ProviderType)] = &[
-            (":app", ProviderType::Application),
-            (":apps", ProviderType::Application),
-            (":cmd", ProviderType::Command),
-            (":command", ProviderType::Command),
-        ];
-
-        let partial_plugin: &[(&str, &str)] = &[
-            (":bm", "bookmarks"),
-            (":bookmark", "bookmarks"),
-            (":bookmarks", "bookmarks"),
-            (":calc", "calc"),
-            (":calculator", "calc"),
-            (":clip", "clipboard"),
-            (":clipboard", "clipboard"),
-            (":emoji", "emoji"),
-            (":emojis", "emoji"),
-            (":file", "filesearch"),
-            (":files", "filesearch"),
-            (":find", "filesearch"),
-            (":script", "scripts"),
-            (":scripts", "scripts"),
-            (":ssh", "ssh"),
-            (":sys", "system"),
-            (":system", "system"),
-            (":power", "system"),
-            (":uuctl", "uuctl"),
-            (":systemd", "uuctl"),
-            (":web", "websearch"),
-            (":search", "websearch"),
-            (":config", "config"),
-            (":settings", "config"),
-            (":conv", "conv"),
-            (":converter", "conv"),
-        ];
-
-        for (prefix_str, provider) in partial_core {
-            if trimmed == *prefix_str {
+            let exact = format!(":{}", name);
+            if trimmed == exact {
                 #[cfg(feature = "dev-logging")]
                 debug!(
                     "[Filter] parse_query({:?}) -> partial prefix {:?}",
@@ -352,8 +297,24 @@ impl ProviderFilter {
             }
         }
 
-        for (prefix_str, type_id) in partial_plugin {
-            if trimmed == *prefix_str {
+        // Single-pass: try each plugin prefix as both full and partial
+        for (name, type_id) in plugin_prefixes {
+            let with_space = format!(":{} ", name);
+            if let Some(rest) = trimmed.strip_prefix(with_space.as_str()) {
+                let provider = ProviderType::Plugin(type_id.to_string());
+                #[cfg(feature = "dev-logging")]
+                debug!(
+                    "[Filter] parse_query({:?}) -> prefix={:?}, query={:?}",
+                    query, provider, rest
+                );
+                return ParsedQuery {
+                    prefix: Some(provider),
+                    tag_filter: None,
+                    query: rest.to_string(),
+                };
+            }
+            let exact = format!(":{}", name);
+            if trimmed == exact {
                 let provider = ProviderType::Plugin(type_id.to_string());
                 #[cfg(feature = "dev-logging")]
                 debug!(
