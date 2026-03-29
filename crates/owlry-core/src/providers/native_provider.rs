@@ -6,7 +6,7 @@
 //! Native plugins are loaded from `/usr/lib/owlry/plugins/` as `.so` files
 //! and provide search providers via an ABI-stable interface.
 
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use log::debug;
 use owlry_plugin_api::{
@@ -28,7 +28,7 @@ pub struct NativeProvider {
     /// Handle to the provider state in the plugin
     handle: ProviderHandle,
     /// Cached items (for static providers)
-    items: RwLock<Vec<LaunchItem>>,
+    items: Vec<LaunchItem>,
 }
 
 impl NativeProvider {
@@ -40,7 +40,7 @@ impl NativeProvider {
             plugin,
             info,
             handle,
-            items: RwLock::new(Vec::new()),
+            items: Vec::new(),
         }
     }
 
@@ -74,7 +74,7 @@ impl NativeProvider {
         let is_special_query = query.starts_with("?SUBMENU:") || query.starts_with("!");
 
         if self.info.provider_type != ProviderKind::Dynamic && !is_special_query {
-            return self.items.read().unwrap().clone();
+            return self.items.clone();
         }
 
         let api_items = self.plugin.query_provider(self.handle, query);
@@ -171,22 +171,11 @@ impl Provider for NativeProvider {
             items.len()
         );
 
-        *self.items.write().unwrap() = items;
+        self.items = items;
     }
 
     fn items(&self) -> &[LaunchItem] {
-        // This is tricky with RwLock - we need to return a reference but can't
-        // hold the lock across the return. We use a raw pointer approach.
-        //
-        // SAFETY: The items Vec is only modified during refresh() which takes
-        // &mut self, so no concurrent modification can occur while this
-        // reference is live.
-        unsafe {
-            let guard = self.items.read().unwrap();
-            let ptr = guard.as_ptr();
-            let len = guard.len();
-            std::slice::from_raw_parts(ptr, len)
-        }
+        &self.items
     }
 }
 
