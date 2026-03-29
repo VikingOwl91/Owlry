@@ -115,11 +115,6 @@ impl FrecencyStore {
             "Recorded launch for '{}': count={}, last={}",
             item_id, entry.launch_count, entry.last_launch
         );
-
-        // Auto-save after recording
-        if let Err(e) = self.save() {
-            warn!("Failed to save frecency data: {}", e);
-        }
     }
 
     /// Calculate frecency score for an item
@@ -254,5 +249,19 @@ mod tests {
 
         assert!(score_many > score_few);
         assert!((score_many / score_few - 10.0).abs() < 0.1); // Should be ~10x
+    }
+
+    #[test]
+    fn record_launch_sets_dirty_without_saving() {
+        let mut store = FrecencyStore {
+            data: FrecencyData::default(),
+            path: PathBuf::from("/dev/null"),
+            dirty: false,
+        };
+
+        store.record_launch("test-item");
+
+        assert!(store.dirty, "record_launch should set dirty flag");
+        assert_eq!(store.data.entries["test-item"].launch_count, 1);
     }
 }
