@@ -91,17 +91,20 @@ impl OwlryApp {
                 .iter()
                 .map(|s| ProviderFilter::mode_string_to_provider_type(s))
                 .collect();
+            let tabs = &config.borrow().general.tabs.clone();
             if provider_types.len() == 1 {
                 ProviderFilter::new(
                     Some(provider_types[0].clone()),
                     None,
                     &config.borrow().providers,
+                    tabs,
                 )
             } else {
-                ProviderFilter::new(None, Some(provider_types), &config.borrow().providers)
+                ProviderFilter::new(None, Some(provider_types), &config.borrow().providers, tabs)
             }
         } else {
-            ProviderFilter::new(None, None, &config.borrow().providers)
+            let tabs = config.borrow().general.tabs.clone();
+            ProviderFilter::new(None, None, &config.borrow().providers, &tabs)
         };
         let filter = Rc::new(RefCell::new(filter));
 

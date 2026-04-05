@@ -26,11 +26,17 @@ pub struct ParsedQuery {
 }
 
 impl ProviderFilter {
-    /// Create filter from CLI args and config
+    /// Create filter from CLI args and config.
+    ///
+    /// `tabs` is `general.tabs` from config and drives which provider tabs are
+    /// shown in the UI when no explicit CLI mode is active. It has no effect on
+    /// query routing: when no CLI mode is set, `accept_all=true` causes
+    /// `is_active()` to return `true` for every provider regardless.
     pub fn new(
         cli_mode: Option<ProviderType>,
         cli_providers: Option<Vec<ProviderType>>,
         config_providers: &ProvidersConfig,
+        tabs: &[String],
     ) -> Self {
         let accept_all = cli_mode.is_none() && cli_providers.is_none();
 
@@ -41,50 +47,23 @@ impl ProviderFilter {
             // --providers overrides config
             providers.into_iter().collect()
         } else {
-            // Use config file settings, default to apps only
-            let mut set = HashSet::new();
-            // Core providers
-            if config_providers.applications {
-                set.insert(ProviderType::Application);
-            }
-            if config_providers.commands {
-                set.insert(ProviderType::Command);
-            }
-            // Plugin providers - use Plugin(type_id) for all
-            if config_providers.uuctl {
-                set.insert(ProviderType::Plugin("uuctl".to_string()));
-            }
-            if config_providers.system {
-                set.insert(ProviderType::Plugin("system".to_string()));
-            }
-            if config_providers.ssh {
-                set.insert(ProviderType::Plugin("ssh".to_string()));
-            }
-            if config_providers.clipboard {
-                set.insert(ProviderType::Plugin("clipboard".to_string()));
-            }
-            if config_providers.bookmarks {
-                set.insert(ProviderType::Plugin("bookmarks".to_string()));
-            }
-            if config_providers.emoji {
-                set.insert(ProviderType::Plugin("emoji".to_string()));
-            }
-            if config_providers.scripts {
-                set.insert(ProviderType::Plugin("scripts".to_string()));
-            }
-            // Dynamic providers
-            if config_providers.files {
-                set.insert(ProviderType::Plugin("filesearch".to_string()));
-            }
-            if config_providers.calculator {
-                set.insert(ProviderType::Plugin("calc".to_string()));
-            }
-            if config_providers.websearch {
-                set.insert(ProviderType::Plugin("websearch".to_string()));
-            }
-            // Default to apps if nothing enabled
+            // No CLI restriction: accept_all=true, so is_active() returns true for
+            // everything. Build the enabled set only for UI tab display, driven by
+            // general.tabs. Falls back to Application + Command if tabs is empty.
+            let mut set: HashSet<ProviderType> = tabs
+                .iter()
+                .map(|s| Self::mode_string_to_provider_type(s))
+                .collect();
             if set.is_empty() {
-                set.insert(ProviderType::Application);
+                if config_providers.applications {
+                    set.insert(ProviderType::Application);
+                }
+                if config_providers.commands {
+                    set.insert(ProviderType::Command);
+                }
+                if set.is_empty() {
+                    set.insert(ProviderType::Application);
+                }
             }
             set
         };
@@ -114,7 +93,8 @@ impl ProviderFilter {
         }
     }
 
-    /// Toggle a provider on/off
+    /// Toggle a provider on/off. Clears accept_all so the enabled set is
+    /// actually used for routing — use restore_all_mode() to go back to All.
     pub fn toggle(&mut self, provider: ProviderType) {
         if self.enabled.contains(&provider) {
             self.enabled.remove(&provider);
@@ -137,6 +117,7 @@ impl ProviderFilter {
                 provider_debug, self.enabled
             );
         }
+        self.accept_all = false;
     }
 
     /// Enable a specific provider
@@ -156,6 +137,12 @@ impl ProviderFilter {
     pub fn set_single_mode(&mut self, provider: ProviderType) {
         self.enabled.clear();
         self.enabled.insert(provider);
+        self.accept_all = false;
+    }
+
+    /// Restore accept-all mode (used when cycling back to the "All" tab).
+    pub fn restore_all_mode(&mut self) {
+        self.accept_all = true;
     }
 
     /// Set prefix mode (from :app, :cmd, etc.)

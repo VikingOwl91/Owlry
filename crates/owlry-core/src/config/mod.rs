@@ -2,6 +2,7 @@ use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use toml_edit::{DocumentMut, Item};
 
 use crate::paths;
 
@@ -157,82 +158,26 @@ pub struct ProvidersConfig {
     pub applications: bool,
     #[serde(default = "default_true")]
     pub commands: bool,
-    #[serde(default = "default_true")]
-    pub uuctl: bool,
-    /// Enable calculator provider (= expression or calc expression)
+    /// Enable built-in calculator provider (= or calc trigger)
     #[serde(default = "default_true")]
     pub calculator: bool,
-    /// Enable converter provider (> expression or auto-detect)
+    /// Enable built-in unit/currency converter (> trigger)
     #[serde(default = "default_true")]
     pub converter: bool,
+    /// Enable built-in system actions (shutdown, reboot, lock, etc.)
+    #[serde(default = "default_true")]
+    pub system: bool,
     /// Enable frecency-based result ranking
     #[serde(default = "default_true")]
     pub frecency: bool,
     /// Weight for frecency boost (0.0 = disabled, 1.0 = strong boost)
     #[serde(default = "default_frecency_weight")]
     pub frecency_weight: f64,
-    /// Enable web search provider (? query or web query)
-    #[serde(default = "default_true")]
-    pub websearch: bool,
-    /// Search engine for web search
+    /// Search engine for web search (used by owlry-plugin-websearch)
     /// Options: google, duckduckgo, bing, startpage, searxng, brave, ecosia
-    /// Or custom URL with {query} placeholder
+    /// Or a custom URL with a {query} placeholder
     #[serde(default = "default_search_engine")]
     pub search_engine: String,
-    /// Enable system commands (shutdown, reboot, etc.)
-    #[serde(default = "default_true")]
-    pub system: bool,
-    /// Enable SSH connections from ~/.ssh/config
-    #[serde(default = "default_true")]
-    pub ssh: bool,
-    /// Enable clipboard history (requires cliphist)
-    #[serde(default = "default_true")]
-    pub clipboard: bool,
-    /// Enable browser bookmarks
-    #[serde(default = "default_true")]
-    pub bookmarks: bool,
-    /// Enable emoji picker
-    #[serde(default = "default_true")]
-    pub emoji: bool,
-    /// Enable custom scripts from ~/.config/owlry/scripts/
-    #[serde(default = "default_true")]
-    pub scripts: bool,
-    /// Enable file search (requires fd or locate)
-    #[serde(default = "default_true")]
-    pub files: bool,
-
-    // ─── Widget Providers ───────────────────────────────────────────────
-    /// Enable MPRIS media player widget
-    #[serde(default = "default_true")]
-    pub media: bool,
-
-    /// Enable weather widget
-    #[serde(default)]
-    pub weather: bool,
-
-    /// Weather provider: wttr.in (default), openweathermap, open-meteo
-    #[serde(default = "default_weather_provider")]
-    pub weather_provider: String,
-
-    /// API key for weather services that require it (e.g., OpenWeatherMap)
-    #[serde(default)]
-    pub weather_api_key: Option<String>,
-
-    /// Location for weather (city name or coordinates)
-    #[serde(default)]
-    pub weather_location: Option<String>,
-
-    /// Enable pomodoro timer widget
-    #[serde(default)]
-    pub pomodoro: bool,
-
-    /// Pomodoro work duration in minutes
-    #[serde(default = "default_pomodoro_work")]
-    pub pomodoro_work_mins: u32,
-
-    /// Pomodoro break duration in minutes
-    #[serde(default = "default_pomodoro_break")]
-    pub pomodoro_break_mins: u32,
 }
 
 impl Default for ProvidersConfig {
@@ -240,28 +185,12 @@ impl Default for ProvidersConfig {
         Self {
             applications: true,
             commands: true,
-            uuctl: true,
             calculator: true,
             converter: true,
+            system: true,
             frecency: true,
             frecency_weight: 0.3,
-            websearch: true,
             search_engine: "duckduckgo".to_string(),
-            system: true,
-            ssh: true,
-            clipboard: true,
-            bookmarks: true,
-            emoji: true,
-            scripts: true,
-            files: true,
-            media: true,
-            weather: false,
-            weather_provider: "wttr.in".to_string(),
-            weather_api_key: None,
-            weather_location: Some("Berlin".to_string()),
-            pomodoro: false,
-            pomodoro_work_mins: 25,
-            pomodoro_break_mins: 5,
         }
     }
 }
@@ -399,18 +328,6 @@ fn default_frecency_weight() -> f64 {
     0.3
 }
 
-fn default_weather_provider() -> String {
-    "wttr.in".to_string()
-}
-
-fn default_pomodoro_work() -> u32 {
-    25
-}
-
-fn default_pomodoro_break() -> u32 {
-    5
-}
-
 /// Detect the best available terminal emulator
 /// Fallback chain:
 /// 1. $TERMINAL env var (user's explicit preference)
@@ -539,6 +456,38 @@ fn command_exists(cmd: &str) -> bool {
 
 // Note: Config derives Default via #[derive(Default)] - all sub-structs have impl Default
 
+/// Merge `new` into `existing`, updating values while preserving comments and unknown keys.
+///
+/// Tables are recursed into so that section-level comments survive. For leaf values
+/// (scalars, arrays) the item is replaced but the surrounding table structure — and
+/// any keys in `existing` that are absent from `new` — are left untouched.
+fn merge_toml_doc(existing: &mut DocumentMut, new: &DocumentMut) {
+    for (key, new_item) in new.iter() {
+        match existing.get_mut(key) {
+            Some(existing_item) => merge_item(existing_item, new_item),
+            None => {
+                existing.insert(key, new_item.clone());
+            }
+        }
+    }
+}
+
+fn merge_item(existing: &mut Item, new: &Item) {
+    match (existing.as_table_mut(), new.as_table()) {
+        (Some(e), Some(n)) => {
+            for (key, new_child) in n.iter() {
+                match e.get_mut(key) {
+                    Some(existing_child) => merge_item(existing_child, new_child),
+                    None => {
+                        e.insert(key, new_child.clone());
+                    }
+                }
+            }
+        }
+        _ => *existing = new.clone(),
+    }
+}
+
 impl Config {
     pub fn config_path() -> Option<PathBuf> {
         paths::config_file()
@@ -585,13 +534,34 @@ impl Config {
         Ok(config)
     }
 
-    #[allow(dead_code)]
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
         let path = Self::config_path().ok_or("Could not determine config path")?;
 
         paths::ensure_parent_dir(&path)?;
 
-        let content = toml::to_string_pretty(self)?;
+        let new_content = toml::to_string_pretty(self)?;
+
+        // If a config file already exists, merge into it to preserve comments and
+        // any keys the user has added that are not part of the Config struct.
+        let content = if path.exists() {
+            let existing = std::fs::read_to_string(&path)?;
+            match existing.parse::<toml_edit::DocumentMut>() {
+                Ok(mut doc) => {
+                    if let Ok(new_doc) = new_content.parse::<toml_edit::DocumentMut>() {
+                        merge_toml_doc(&mut doc, &new_doc);
+                    }
+                    doc.to_string()
+                }
+                Err(_) => {
+                    // Existing file is malformed — fall back to full rewrite.
+                    warn!("Existing config is malformed; overwriting with current settings");
+                    new_content
+                }
+            }
+        } else {
+            new_content
+        };
+
         std::fs::write(&path, content)?;
         info!("Saved config to {:?}", path);
         Ok(())

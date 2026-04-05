@@ -394,7 +394,9 @@ impl MainWindow {
         format!("Search {}...", active.join(", "))
     }
 
-    /// Build dynamic hints based on enabled providers
+    /// Build hints string for the status bar based on enabled built-in providers.
+    /// Plugin trigger hints (? web, / files, etc.) are not included here since
+    /// plugin availability is not tracked in ProvidersConfig.
     fn build_hints(config: &owlry_core::config::ProvidersConfig) -> String {
         let mut parts: Vec<String> = vec![
             "Tab: cycle".to_string(),
@@ -403,38 +405,14 @@ impl MainWindow {
             "Esc: close".to_string(),
         ];
 
-        // Add trigger hints for enabled dynamic providers
         if config.calculator {
             parts.push("= calc".to_string());
         }
-        if config.websearch {
-            parts.push("? web".to_string());
+        if config.converter {
+            parts.push("> conv".to_string());
         }
-        if config.files {
-            parts.push("/ files".to_string());
-        }
-
-        // Add prefix hints for static providers
-        let mut prefixes = Vec::new();
         if config.system {
-            prefixes.push(":sys");
-        }
-        if config.emoji {
-            prefixes.push(":emoji");
-        }
-        if config.ssh {
-            prefixes.push(":ssh");
-        }
-        if config.clipboard {
-            prefixes.push(":clip");
-        }
-        if config.bookmarks {
-            prefixes.push(":bm");
-        }
-
-        // Only show first few prefixes to avoid overflow
-        if !prefixes.is_empty() {
-            parts.push(prefixes[..prefixes.len().min(4)].join(" "));
+            parts.push(":sys".to_string());
         }
 
         parts.join("  ")
@@ -1159,6 +1137,7 @@ impl MainWindow {
                     for provider in tab_order {
                         f.enable(provider.clone());
                     }
+                    f.restore_all_mode();
                 }
                 for (_, button) in buttons.borrow().iter() {
                     button.set_active(true);

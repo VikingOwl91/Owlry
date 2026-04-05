@@ -23,24 +23,15 @@ const SEARCH_ENGINES: &[&str] = &[
 const BUILTIN_THEMES: &[&str] = &["owl"];
 
 /// Boolean provider fields that can be toggled via CONFIG:toggle:providers.*.
+/// Only built-in providers are listed here; plugins are enabled/disabled via
+/// [plugins] disabled_plugins in config.toml or `owlry plugin enable/disable`.
 const PROVIDER_TOGGLES: &[(&str, &str)] = &[
     ("applications", "Applications"),
     ("commands", "Commands"),
-    ("uuctl", "Systemd Units"),
     ("calculator", "Calculator"),
     ("converter", "Unit Converter"),
-    ("frecency", "Frecency Ranking"),
-    ("websearch", "Web Search"),
     ("system", "System Actions"),
-    ("ssh", "SSH Connections"),
-    ("clipboard", "Clipboard History"),
-    ("bookmarks", "Bookmarks"),
-    ("emoji", "Emoji Picker"),
-    ("scripts", "Scripts"),
-    ("files", "File Search"),
-    ("media", "Media Widget"),
-    ("weather", "Weather Widget"),
-    ("pomodoro", "Pomodoro Widget"),
+    ("frecency", "Frecency Ranking"),
 ];
 
 /// Built-in config editor provider. Interprets query text as a navigation path
@@ -70,12 +61,8 @@ impl ConfigProvider {
             false
         };
 
-        if result {
-            if let Ok(cfg) = self.config.read() {
-                if let Err(e) = cfg.save() {
-                    warn!("Failed to save config: {}", e);
-                }
-            }
+        if result && let Ok(cfg) = self.config.read() && let Err(e) = cfg.save() {
+            warn!("Failed to save config: {}", e);
         }
 
         result
@@ -98,10 +85,6 @@ impl ConfigProvider {
                 cfg.providers.commands = !cfg.providers.commands;
                 true
             }
-            "providers.uuctl" => {
-                cfg.providers.uuctl = !cfg.providers.uuctl;
-                true
-            }
             "providers.calculator" => {
                 cfg.providers.calculator = !cfg.providers.calculator;
                 true
@@ -110,52 +93,12 @@ impl ConfigProvider {
                 cfg.providers.converter = !cfg.providers.converter;
                 true
             }
-            "providers.frecency" => {
-                cfg.providers.frecency = !cfg.providers.frecency;
-                true
-            }
-            "providers.websearch" => {
-                cfg.providers.websearch = !cfg.providers.websearch;
-                true
-            }
             "providers.system" => {
                 cfg.providers.system = !cfg.providers.system;
                 true
             }
-            "providers.ssh" => {
-                cfg.providers.ssh = !cfg.providers.ssh;
-                true
-            }
-            "providers.clipboard" => {
-                cfg.providers.clipboard = !cfg.providers.clipboard;
-                true
-            }
-            "providers.bookmarks" => {
-                cfg.providers.bookmarks = !cfg.providers.bookmarks;
-                true
-            }
-            "providers.emoji" => {
-                cfg.providers.emoji = !cfg.providers.emoji;
-                true
-            }
-            "providers.scripts" => {
-                cfg.providers.scripts = !cfg.providers.scripts;
-                true
-            }
-            "providers.files" => {
-                cfg.providers.files = !cfg.providers.files;
-                true
-            }
-            "providers.media" => {
-                cfg.providers.media = !cfg.providers.media;
-                true
-            }
-            "providers.weather" => {
-                cfg.providers.weather = !cfg.providers.weather;
-                true
-            }
-            "providers.pomodoro" => {
-                cfg.providers.pomodoro = !cfg.providers.pomodoro;
+            "providers.frecency" => {
+                cfg.providers.frecency = !cfg.providers.frecency;
                 true
             }
             "general.show_icons" => {
@@ -762,21 +705,10 @@ fn get_provider_bool(cfg: &Config, field: &str) -> bool {
     match field {
         "applications" => cfg.providers.applications,
         "commands" => cfg.providers.commands,
-        "uuctl" => cfg.providers.uuctl,
         "calculator" => cfg.providers.calculator,
         "converter" => cfg.providers.converter,
-        "frecency" => cfg.providers.frecency,
-        "websearch" => cfg.providers.websearch,
         "system" => cfg.providers.system,
-        "ssh" => cfg.providers.ssh,
-        "clipboard" => cfg.providers.clipboard,
-        "bookmarks" => cfg.providers.bookmarks,
-        "emoji" => cfg.providers.emoji,
-        "scripts" => cfg.providers.scripts,
-        "files" => cfg.providers.files,
-        "media" => cfg.providers.media,
-        "weather" => cfg.providers.weather,
-        "pomodoro" => cfg.providers.pomodoro,
+        "frecency" => cfg.providers.frecency,
         _ => false,
     }
 }
