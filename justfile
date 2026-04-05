@@ -328,7 +328,7 @@ bump-meta new_version:
 
 # === Testing ===
 
-# Test a specific AUR package build locally
+# Quick local build test (no chroot, uses host deps)
 aur-test-pkg pkg:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -337,3 +337,14 @@ aur-test-pkg pkg:
     makepkg -sf
     echo "Package built successfully!"
     ls -lh *.pkg.tar.zst
+
+# Build AUR packages from the local working tree in a clean chroot.
+# Packages current source (incl. uncommitted changes), patches PKGBUILD,
+# builds in dep order, injects local artifacts, restores PKGBUILD on exit.
+#
+# Examples:
+#   just aur-local-test owlry-core
+#   just aur-local-test -c owlry-core owlry-rune
+#   just aur-local-test --all --reset
+aur-local-test *args:
+    scripts/aur-local-test {{args}}

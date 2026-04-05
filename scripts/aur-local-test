@@ -1,0 +1,329 @@
+#!/usr/bin/env bash
+# scripts/aur-local-test
+#
+# Build AUR packages from the local working tree in a clean extra chroot.
+#
+# Packages the current working tree (including uncommitted changes) into a
+# tarball, temporarily patches each PKGBUILD to use it, runs
+# extra-x86_64-build, then restores the PKGBUILD on exit regardless of
+# success or failure.
+#
+# Packages with local AUR deps (e.g. owlry-rune depends on owlry-core) are
+# built in topological order and their artifacts injected automatically.
+#
+# Usage: scripts/aur-local-test [OPTIONS] [PKG...]
+# See --help for details.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
+REPO_NAME="$(basename "$REPO_ROOT")"
+AUR_DIR="$REPO_ROOT/aur"
+
+# State tracked for cleanup
+TMP_TARBALL=""
+declare -a PKGBUILD_BACKUPS=()
+declare -a PLACED_FILES=()
+
+# Build config
+RESET_CHROOT=0
+declare -a INPUT_PKGS=()
+declare -a EXTRA_INJECT=()  # --inject paths (external AUR deps)
+
+# ─── Output helpers ──────────────────────────────────────────────────────────
+
+die()  { echo "error: $*" >&2; exit 1; }
+info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
+ok()   { printf '\033[1;32m  ->\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m  !\033[0m  %s\n' "$*" >&2; }
+fail() { printf '\033[1;31mFAIL\033[0m %s\n' "$*" >&2; }
+
+# ─── Cleanup ─────────────────────────────────────────────────────────────────
+
+cleanup() {
+    local code=$?
+    local f pkgbuild
+
+    # Remove tarballs placed in aur/ dirs
+    for f in "${PLACED_FILES[@]+"${PLACED_FILES[@]}"}"; do
+        [[ -f "$f" ]] && rm -f "$f"
+    done
+
+    # Restore patched PKGBUILDs from backups
+    for f in "${PKGBUILD_BACKUPS[@]+"${PKGBUILD_BACKUPS[@]}"}"; do
+        pkgbuild="${f%.bak}"
+        [[ -f "$f" ]] && mv "$f" "$pkgbuild"
+    done
+
+    [[ -n "$TMP_TARBALL" && -f "$TMP_TARBALL" ]] && rm -f "$TMP_TARBALL"
+
+    exit "$code"
+}
+trap cleanup EXIT INT TERM
+
+# ─── Usage ───────────────────────────────────────────────────────────────────
+
+usage() {
+    cat >&2 <<EOF
+Usage: $(basename "$0") [OPTIONS] [PKG...]
+
+Build AUR packages from the local working tree in a clean chroot.
+Packages current working tree (incl. uncommitted changes), patches PKGBUILD
+source + checksum, runs extra-x86_64-build, then restores on exit.
+
+Packages with local AUR deps are built in topological order and their
+.pkg.tar.zst artifacts are injected into dependent builds automatically.
+
+OPTIONS
+  -c, --reset           Reset chroot matrix (passes -c to extra-x86_64-build).
+                        Only applied to the first package; subsequent builds
+                        reuse the already-fresh chroot.
+  -a, --all             Build all packages in aur/ (respects dep order).
+  -I, --inject FILE     Inject FILE (.pkg.tar.zst) into the chroot before
+                        building. For AUR deps not in the official repos
+                        (e.g. owlry-core when testing owlry-plugins).
+                        Can be repeated.
+  -h, --help            Show this help.
+
+EXAMPLES
+  # Single package
+  $(basename "$0") owlry-core
+
+  # Multiple packages with chroot reset
+  $(basename "$0") -c owlry-core owlry-rune
+
+  # All packages in dependency order
+  $(basename "$0") --all --reset
+
+  # owlry-plugins: inject owlry-core from sibling repo
+  $(basename "$0") -I ../owlry/aur/owlry-core/owlry-core-*.pkg.tar.zst --all
+EOF
+    exit 1
+}
+
+# ─── Argument parsing ────────────────────────────────────────────────────────
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -c|--reset)
+            RESET_CHROOT=1
+            shift ;;
+        -a|--all)
+            for dir in "$AUR_DIR"/*/; do
+                pkg=$(basename "$dir")
+                [[ -f "$dir/PKGBUILD" ]] && INPUT_PKGS+=("$pkg")
+            done
+            shift ;;
+        -I|--inject)
+            [[ $# -ge 2 ]] || die "--inject requires an argument"
+            [[ -f "$2" ]]  || die "inject file not found: $2"
+            EXTRA_INJECT+=("$(realpath "$2")")
+            shift 2 ;;
+        -h|--help) usage ;;
+        -*) die "unknown option: $1" ;;
+        *)
+            if [[ "$1" == *.pkg.tar.zst ]]; then
+                [[ -f "$1" ]] || die "inject file not found: $1"
+                EXTRA_INJECT+=("$(realpath "$1")")
+            else
+                INPUT_PKGS+=("$1")
+            fi
+            shift ;;
+    esac
+done
+
+[[ ${#INPUT_PKGS[@]} -eq 0 ]] && usage
+
+# ─── Dependency resolution ───────────────────────────────────────────────────
+
+# Return the names of local AUR packages that PKG depends on.
+local_deps_of() {
+    local pkg="$1"
+    local pkgbuild="$AUR_DIR/$pkg/PKGBUILD"
+    [[ -f "$pkgbuild" ]] || return 0
+
+    local dep_line bare
+    dep_line=$(grep '^depends=' "$pkgbuild" 2>/dev/null | head -1 || true)
+    [[ -z "$dep_line" ]] && return 0
+
+    # Strip depends=, parens, and quotes; split on whitespace
+    echo "$dep_line" \
+        | sed "s/^depends=//; s/[()\"']/ /g" \
+        | tr ' ' '\n' \
+        | while IFS= read -r dep; do
+            [[ -z "$dep" ]] && continue
+            bare="${dep%%[><=]*}"     # strip version constraints
+            [[ -d "$AUR_DIR/$bare" ]] && echo "$bare"
+          done
+}
+
+# Topological sort (DFS) — deps before dependents.
+declare -A TOPO_VISITED=()
+declare -a TOPO_ORDER=()
+
+topo_visit() {
+    local pkg="$1"
+    [[ -v "TOPO_VISITED[$pkg]" ]] && return 0
+    TOPO_VISITED[$pkg]=1
+    local dep
+    while IFS= read -r dep; do
+        topo_visit "$dep"
+    done < <(local_deps_of "$pkg")
+    TOPO_ORDER+=("$pkg")
+}
+
+resolve_order() {
+    TOPO_VISITED=()
+    TOPO_ORDER=()
+    local pkg
+    for pkg in "$@"; do
+        topo_visit "$pkg"
+    done
+}
+
+# ─── Tarball creation ────────────────────────────────────────────────────────
+
+make_tarball() {
+    TMP_TARBALL=$(mktemp /tmp/aur-local-XXXXXX.tar.gz)
+    info "Packaging ${REPO_NAME} working tree (incl. uncommitted changes)..."
+    tar czf "$TMP_TARBALL" \
+        --exclude='.git'    \
+        --exclude='target'  \
+        --transform "s|^\.|${REPO_NAME}|" \
+        -C "$REPO_ROOT" .
+    ok "Tarball ready: $(du -b "$TMP_TARBALL" | cut -f1 | numfmt --to=iec 2>/dev/null || wc -c < "$TMP_TARBALL") bytes"
+}
+
+# ─── PKGBUILD patching ───────────────────────────────────────────────────────
+
+# Patch a package's PKGBUILD to use the local tarball.
+# Backs up the original; cleanup() restores it on exit.
+patch_pkgbuild() {
+    local pkg="$1"
+    local pkgbuild="$AUR_DIR/$pkg/PKGBUILD"
+    local pkgdir="$AUR_DIR/$pkg"
+
+    # Skip packages with no remote source (meta/group packages)
+    if ! grep -q '^source=' "$pkgbuild" || grep -qE '^source=\(\s*\)' "$pkgbuild"; then
+        ok "No source URL to patch — skipping tarball injection for $pkg"
+        return 0
+    fi
+
+    local pkgname pkgver filename hash
+    pkgname=$(grep '^pkgname=' "$pkgbuild" | cut -d= -f2- | tr -d "\"'")
+    pkgver=$(grep  '^pkgver=' "$pkgbuild"  | cut -d= -f2- | tr -d "\"'")
+    filename="${pkgname}-${pkgver}.tar.gz"
+    hash=$(b2sum "$TMP_TARBALL" | cut -d' ' -f1)
+
+    # Backup original PKGBUILD
+    cp "$pkgbuild" "${pkgbuild}.bak"
+    PKGBUILD_BACKUPS+=("${pkgbuild}.bak")
+
+    # Place local tarball where makepkg looks for it
+    cp "$TMP_TARBALL" "$pkgdir/$filename"
+    PLACED_FILES+=("$pkgdir/$filename")
+
+    # Patch source and checksum lines in-place
+    sed -i "s|^source=.*|source=(\"${filename}\")|" "$pkgbuild"
+    sed -i "s|^b2sums=.*|b2sums=('${hash}')|"       "$pkgbuild"
+
+    ok "Patched PKGBUILD: source=${filename}, b2sum=${hash:0:12}…"
+}
+
+# ─── Build ───────────────────────────────────────────────────────────────────
+
+# built_artifacts[pkg] = path to the .pkg.tar.zst produced in this run.
+# Used to inject pkg artifacts into dependent builds.
+declare -A BUILT_ARTIFACTS=()
+
+find_artifact() {
+    local pkg="$1"
+    local pkgver
+    # pkgver is the same in patched and original PKGBUILD
+    pkgver=$(grep '^pkgver=' "$AUR_DIR/$pkg/PKGBUILD" | cut -d= -f2- | tr -d "\"'" \
+             || grep '^pkgver=' "$AUR_DIR/$pkg/PKGBUILD.bak" | cut -d= -f2- | tr -d "\"'")
+    ls "$AUR_DIR/$pkg/${pkg}-${pkgver}-"*".pkg.tar.zst" 2>/dev/null \
+        | grep -v -- '-debug-' | sort -V | tail -1 || true
+}
+
+build_one() {
+    local pkg="$1"
+    local pkgdir="$AUR_DIR/$pkg"
+
+    info "[$pkg] Patching PKGBUILD..."
+    patch_pkgbuild "$pkg"
+
+    # Collect inject args: extra (external) + artifacts of local deps built earlier
+    local inject=()
+    for f in "${EXTRA_INJECT[@]+"${EXTRA_INJECT[@]}"}"; do
+        inject+=("-I" "$f")
+    done
+    while IFS= read -r dep; do
+        if [[ -v "BUILT_ARTIFACTS[$dep]" ]]; then
+            inject+=("-I" "${BUILT_ARTIFACTS[$dep]}")
+        else
+            warn "$pkg depends on $dep (local AUR) which was not built in this run"
+            warn "  → Build $dep first or pass: -I path/to/${dep}-*.pkg.tar.zst"
+        fi
+    done < <(local_deps_of "$pkg")
+
+    # Build args: -c only on the first package, then cleared
+    local build_args=()
+    if [[ $RESET_CHROOT -eq 1 ]]; then
+        build_args+=("-c")
+        RESET_CHROOT=0
+    fi
+
+    info "[$pkg] Running extra-x86_64-build..."
+    (
+        cd "$pkgdir"
+        if [[ ${#inject[@]} -gt 0 ]]; then
+            extra-x86_64-build "${build_args[@]+"${build_args[@]}"}" -- "${inject[@]}"
+        else
+            extra-x86_64-build "${build_args[@]+"${build_args[@]}"}"
+        fi
+    )
+
+    # Record artifact for potential injection into dependents
+    local artifact
+    artifact=$(find_artifact "$pkg")
+    if [[ -n "$artifact" ]]; then
+        BUILT_ARTIFACTS[$pkg]="$artifact"
+        ok "[$pkg] artifact: $(basename "$artifact")"
+    fi
+}
+
+# ─── Main ────────────────────────────────────────────────────────────────────
+
+# Validate all requested packages exist
+for pkg in "${INPUT_PKGS[@]}"; do
+    [[ -d "$AUR_DIR/$pkg" && -f "$AUR_DIR/$pkg/PKGBUILD" ]] \
+        || die "package not found: aur/$pkg/PKGBUILD"
+done
+
+# Sort into build order (deps before dependents)
+resolve_order "${INPUT_PKGS[@]}"
+
+# Create one tarball, reused for all packages in this run
+make_tarball
+
+declare -a FAILED=()
+
+for pkg in "${TOPO_ORDER[@]}"; do
+    echo ""
+    if build_one "$pkg"; then
+        :
+    else
+        fail "[$pkg]"
+        FAILED+=("$pkg")
+    fi
+done
+
+echo ""
+if [[ ${#FAILED[@]} -gt 0 ]]; then
+    fail "packages failed: ${FAILED[*]}"
+    exit 1
+fi
+
+info "All packages built successfully!"
