@@ -252,6 +252,7 @@ aur-publish-all:
     for dir in aur/*/; do
         pkg=$(basename "$dir")
         [ -d "$dir/.git" ] || continue
+        [ -f "$dir/PKGBUILD" ] || continue
         echo "=== $pkg ==="
         just aur-publish-pkg "$pkg"
         echo ""
