@@ -59,8 +59,10 @@ max_results = 100
 # Requires: uwsm to be installed
 # use_uwsm = true
 
-# Header tabs - providers shown as toggle buttons (Ctrl+1, Ctrl+2, etc.)
-# Values: app, cmd, uuctl, bookmark, calc, clip, dmenu, emoji, file, script, ssh, sys, web
+# Header tabs — provider tabs shown in the UI bar (Ctrl+1..9 to toggle)
+# Core values: app, cmd, dmenu
+# Plugin values: uuctl, calc, clip, emoji, file, script, ssh, sys, web, bm
+# Any installed plugin's type_id is valid (e.g. "weather", "media")
 tabs = ["app", "cmd", "uuctl"]
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -140,55 +142,25 @@ disabled_plugins = []
 # PROVIDERS
 # ═══════════════════════════════════════════════════════════════════════
 #
-# Enable/disable providers and configure their settings.
-# Core providers (applications, commands) are built into the binary.
-# Plugin providers require their .so to be installed.
+# Controls built-in providers only. Plugins are enabled/disabled via
+# [plugins] disabled_plugins or `owlry plugin enable/disable <name>`.
 
 [providers]
-# Core providers (always available)
+# Core providers
 applications = true      # .desktop applications from XDG dirs
 commands = true          # Executables from $PATH
 
-# Frecency - boost frequently/recently used items
+# Built-in providers (compiled into owlry-core)
+calculator = true        # Math expressions (= or calc trigger)
+converter = true         # Unit/currency conversion (> trigger)
+system = true            # System actions: shutdown, reboot, lock, etc.
+
+# Frecency — boost frequently/recently used items
 # Data stored in: ~/.local/share/owlry/frecency.json
 frecency = true
 frecency_weight = 0.3    # 0.0 = disabled, 1.0 = strong boost
 
-# ─────────────────────────────────────────────────────────────────────────
-# Plugin provider toggles (require corresponding plugin installed)
-# ─────────────────────────────────────────────────────────────────────────
-uuctl = true             # systemd user units
-system = true            # System commands (shutdown, reboot, etc.)
-ssh = true               # SSH hosts from ~/.ssh/config
-clipboard = true         # Clipboard history (requires cliphist)
-bookmarks = true         # Browser bookmarks
-emoji = true             # Emoji picker
-scripts = true           # Custom scripts from ~/.local/share/owlry/scripts/
-files = true             # File search (requires fd or mlocate)
-calculator = true        # Calculator (= expression)
-websearch = true         # Web search (? query)
-
-# ─────────────────────────────────────────────────────────────────────────
-# Widget providers (displayed at top of results)
-# ─────────────────────────────────────────────────────────────────────────
-media = true                 # MPRIS media player controls
-weather = false              # Weather widget (disabled by default)
-pomodoro = false             # Pomodoro timer (disabled by default)
-
-# ─────────────────────────────────────────────────────────────────────────
-# Provider settings
-# ─────────────────────────────────────────────────────────────────────────
-
-# Web search engine
+# Web search engine (used by owlry-plugin-websearch)
 # Options: google, duckduckgo, bing, startpage, searxng, brave, ecosia
-# Or custom URL: "https://search.example.com/?q={query}"
+# Or a custom URL: "https://search.example.com/?q={query}"
 search_engine = "duckduckgo"
-
-# Weather settings (when weather = true)
-# weather_provider = "wttr.in"     # Options: wttr.in, openweathermap, open-meteo
-# weather_location = "Berlin"       # City name or coordinates
-# weather_api_key = ""              # Required for openweathermap
-
-# Pomodoro settings (when pomodoro = true)
-# pomodoro_work_mins = 25           # Work session duration
-# pomodoro_break_mins = 5           # Break duration

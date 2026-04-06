@@ -254,7 +254,7 @@ Type `:config` to browse and modify settings without editing files:
 | Command | What it does |
 |---------|-------------|
 | `:config` | Show all setting categories |
-| `:config providers` | Toggle providers on/off |
+| `:config providers` | Toggle built-in providers on/off (calculator, converter, system, frecency) |
 | `:config theme` | Select color theme |
 | `:config engine` | Select web search engine |
 | `:config frecency` | Toggle frecency, set weight |
@@ -264,6 +264,8 @@ Type `:config` to browse and modify settings without editing files:
 | `:config profile dev modes` | Edit which modes a profile includes |
 
 Changes are saved to `config.toml` immediately. Some settings (theme, frecency) take effect on the next search. Others (font size, dimensions) require a restart.
+
+> **Note:** `:config providers` only covers built-in providers. To enable or disable plugins, use `owlry plugin enable/disable <name>` or set `disabled_plugins` in `[plugins]`.
 
 ### Search Prefixes
 
@@ -332,32 +334,53 @@ Or configure from within the launcher: type `:config` to interactively change se
 ```toml
 [general]
 show_icons = true
-max_results = 10
-tabs = ["app", "cmd", "uuctl"]
-# terminal_command = "kitty"  # Auto-detected
-# use_uwsm = false            # Enable for systemd session integration
+max_results = 100
+tabs = ["app", "cmd", "uuctl"]  # Provider tabs shown in the header bar
+# terminal_command = "kitty"    # Auto-detected; overrides $TERMINAL and xdg-terminal-exec
+# use_uwsm = false              # Enable for systemd session integration (uwsm app --)
 
 [appearance]
 width = 850
 height = 650
 font_size = 14
 border_radius = 12
-# theme = "owl"  # Or: catppuccin-mocha, nord, dracula, etc.
+# theme = "owl"  # Or: catppuccin-mocha, nord, dracula, etc. (see Theming section)
 
-[plugins]
-disabled = []  # Plugin IDs to disable, e.g., ["emoji", "pomodoro"]
+# Optional per-element color overrides — all fields are optional, unset inherits from theme
+# [appearance.colors]
+# background = "#1e1e2e"
+# background_secondary = "#313244"
+# border = "#45475a"
+# text = "#cdd6f4"
+# accent = "#cba6f7"
+# badge_app = "#a6e3a1"     # All badge_* keys: app, cmd, clip, ssh, emoji, file,
+# badge_web = "#89dceb"     #   script, sys, uuctl, web, calc, bm, dmenu,
+# badge_media = "#f38ba8"   #   media, weather, pomo
 
 [providers]
 applications = true    # .desktop files
 commands = true        # PATH executables
-calculator = true      # Built-in math expressions
-converter = true       # Built-in unit/currency conversion
+calculator = true      # Built-in math expressions (= or calc trigger)
+converter = true       # Built-in unit/currency converter (> trigger)
 system = true          # Built-in shutdown/reboot/lock actions
 frecency = true        # Boost frequently used items
-frecency_weight = 0.3  # 0.0-1.0
+frecency_weight = 0.3  # 0.0 = disabled, 1.0 = strong boost
 
-# Web search engine: google, duckduckgo, bing, startpage, brave, ecosia
+# Web search engine: google, duckduckgo, bing, startpage, searxng, brave, ecosia
+# Or a custom URL with a {query} placeholder: "https://example.com/search?q={query}"
 search_engine = "duckduckgo"
+
+[plugins]
+# disabled_plugins = ["emoji", "pomodoro"]  # Plugin IDs to disable
+# enabled_plugins = []                       # Empty = all discovered plugins are loaded
+# registry_url = "https://..."              # Custom plugin registry URL
+
+# Sandboxing for Lua/Rune user plugins (~/.config/owlry/plugins/)
+# [plugins.sandbox]
+# allow_filesystem = false   # Allow access outside plugin directory
+# allow_network = false      # Allow outbound network requests
+# allow_commands = false     # Allow shell command execution
+# memory_limit = 67108864    # Lua memory cap in bytes (default: 64 MB)
 
 # Profiles: named sets of modes
 [profiles.dev]
@@ -382,10 +405,17 @@ Add plugin IDs to the disabled list in your config:
 
 ```toml
 [plugins]
-disabled = ["emoji", "pomodoro"]
+disabled_plugins = ["emoji", "pomodoro"]
 ```
 
-Or toggle providers interactively: type `:config providers` in the launcher.
+Or use the CLI:
+
+```bash
+owlry plugin disable emoji
+owlry plugin enable emoji
+```
+
+> **Note:** `:config providers` in the launcher only manages built-in providers (calculator, converter, system). Use `disabled_plugins` or `owlry plugin disable` for plugins.
 
 ### Plugin Management CLI
 
