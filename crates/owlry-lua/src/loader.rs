@@ -186,6 +186,10 @@ pub fn discover_plugins(
 
         match PluginManifest::load(&manifest_path) {
             Ok(manifest) => {
+                // Skip plugins whose entry point is not a Lua file
+                if !manifest.plugin.entry.ends_with(".lua") {
+                    continue;
+                }
                 let id = manifest.plugin.id.clone();
                 if plugins.contains_key(&id) {
                     eprintln!(

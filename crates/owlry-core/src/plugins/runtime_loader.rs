@@ -10,6 +10,7 @@
 //! Note: This module is infrastructure for the runtime architecture. Full integration
 //! is pending Phase 5 (AUR Packaging) when runtime packages will be available.
 
+use std::mem::ManuallyDrop;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -69,8 +70,11 @@ pub struct ScriptRuntimeVTable {
 pub struct LoadedRuntime {
     /// Runtime name (for logging)
     name: &'static str,
-    /// Keep library alive
-    _library: Arc<Library>,
+    /// Keep library alive — wrapped in ManuallyDrop so we never call dlclose().
+    /// dlclose() unmaps the library code; any thread-local destructors inside the
+    /// library then SIGSEGV when they try to run against the unmapped addresses.
+    /// Runtime libraries live for the process lifetime, so leaking the handle is safe.
+    _library: ManuallyDrop<Arc<Library>>,
     /// Runtime vtable
     vtable: &'static ScriptRuntimeVTable,
     /// Runtime handle (state)
@@ -138,7 +142,7 @@ impl LoadedRuntime {
 
         Ok(Self {
             name,
-            _library: library,
+            _library: ManuallyDrop::new(library),
             vtable,
             handle,
             providers,
@@ -166,6 +170,8 @@ impl LoadedRuntime {
 impl Drop for LoadedRuntime {
     fn drop(&mut self) {
         (self.vtable.drop)(self.handle);
+        // Do NOT drop _library: ManuallyDrop ensures dlclose() is never called.
+        // See field comment for rationale.
     }
 }
 
