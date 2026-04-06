@@ -754,9 +754,15 @@ fn cmd_create(
     let desc = description.unwrap_or("A custom owlry plugin");
 
     let (entry_file, entry_ext) = match runtime {
-        PluginRuntime::Lua => ("init.lua", "lua"),
-        PluginRuntime::Rune => ("init.rn", "rn"),
+        PluginRuntime::Lua => ("main.lua", "lua"),
+        PluginRuntime::Rune => ("main.rn", "rn"),
     };
+
+    // Derive a short type_id from the plugin name (strip common prefixes)
+    let type_id = name
+        .strip_prefix("owlry-")
+        .unwrap_or(name)
+        .replace('-', "_");
 
     // Create plugin.toml
     let manifest = format!(
@@ -765,25 +771,21 @@ id = "{name}"
 name = "{display}"
 version = "0.1.0"
 description = "{desc}"
-author = ""
-owlry_version = ">=0.3.0"
-entry = "{entry_file}"
+entry_point = "{entry_file}"
 
-[provides]
-providers = ["{name}"]
-actions = false
-themes = []
-hooks = false
-
-[permissions]
-network = false
-filesystem = []
-run_commands = []
+[[providers]]
+id = "{name}"
+name = "{display}"
+type = "static"
+type_id = "{type_id}"
+icon = "application-x-addon"
+# prefix = ":{type_id}"
 "#,
         name = name,
         display = display,
         desc = desc,
         entry_file = entry_file,
+        type_id = type_id,
     );
 
     fs::write(plugin_dir.join("plugin.toml"), manifest)
@@ -792,91 +794,51 @@ run_commands = []
     // Create entry point template based on runtime
     match runtime {
         PluginRuntime::Lua => {
-            let init_lua = format!(
+            let main_lua = format!(
                 r#"-- {display} Plugin for Owlry
 -- {desc}
 
--- Register the provider
-owlry.provider.register({{
-    name = "{name}",
-    display_name = "{display}",
-    type_id = "{name}",
-    default_icon = "application-x-executable",
-
-    refresh = function()
-        -- Return a list of items
-        return {{
-            {{
-                id = "{name}:example",
-                name = "Example Item",
-                description = "This is an example item from {display}",
-                icon = "dialog-information",
-                command = "echo 'Hello from {name}!'",
-                terminal = false,
-                tags = {{}}
-            }}
-        }}
-    end
-}})
-
-owlry.log.info("{display} plugin loaded")
+function refresh()
+    return {{
+        {{
+            id = "{name}:example",
+            name = "Example Item",
+            description = "This is an example item from {display}",
+            icon = "dialog-information",
+            command = "echo 'Hello from {name}!'",
+            tags = {{}},
+        }},
+    }}
+end
 "#,
                 name = name,
                 display = display,
                 desc = desc,
             );
-            fs::write(plugin_dir.join(entry_file), init_lua)
+            fs::write(plugin_dir.join(entry_file), main_lua)
                 .map_err(|e| format!("Failed to write {}: {}", entry_file, e))?;
         }
         PluginRuntime::Rune => {
-            // Note: Rune uses #{{ for object literals, so we build manually
-            let init_rn = format!(
-                r#"//! {display} Plugin for Owlry
-//! {desc}
+            let main_rn = format!(
+                r#"use owlry::Item;
 
-/// Plugin item structure
-struct Item {{{{
-    id: String,
-    name: String,
-    description: String,
-    icon: String,
-    command: String,
-    terminal: bool,
-    tags: Vec<String>,
-}}}}
+pub fn refresh() {{
+    let items = [];
 
-/// Provider registration
-pub fn register(owlry) {{{{
-    owlry.provider.register(#{{{{
-        name: "{name}",
-        display_name: "{display}",
-        type_id: "{name}",
-        default_icon: "application-x-executable",
+    items.push(
+        Item::new("{name}:example", "Example Item", "echo 'Hello from {name}!'")
+            .description("This is an example item from {display}")
+            .icon("dialog-information")
+            .keywords(["example"]),
+    );
 
-        refresh: || {{{{
-            // Return a list of items
-            [
-                Item {{{{
-                    id: "{name}:example",
-                    name: "Example Item",
-                    description: "This is an example item from {display}",
-                    icon: "dialog-information",
-                    command: "echo 'Hello from {name}!'",
-                    terminal: false,
-                    tags: [],
-                }}}},
-            ]
-        }}}},
-    }}}});
-
-    owlry.log.info("{display} plugin loaded");
-}}}}
+    items
+}}
 "#,
                 name = name,
                 display = display,
-                desc = desc,
             );
-            fs::write(plugin_dir.join(entry_file), init_rn)
+            fs::write(plugin_dir.join(entry_file), main_rn)
                 .map_err(|e| format!("Failed to write {}: {}", entry_file, e))?;
         }
     }
@@ -955,13 +917,14 @@ fn cmd_validate(path: Option<&str>) -> CommandResult {
                         ));
                     }
 
-                    // Check for empty provides
-                    if manifest.provides.providers.is_empty()
-                        && !manifest.provides.actions
-                        && manifest.provides.themes.is_empty()
-                        && !manifest.provides.hooks
-                    {
-                        warnings.push("Plugin does not provide any features".to_string());
+                    // Check for empty provides (accept either [[providers]] or [provides])
+                    let has_providers = !manifest.providers.is_empty()
+                        || !manifest.provides.providers.is_empty()
+                        || manifest.provides.actions
+                        || !manifest.provides.themes.is_empty()
+                        || manifest.provides.hooks;
+                    if !has_providers {
+                        warnings.push("Plugin does not declare any providers".to_string());
                     }
 
                     println!("  Plugin ID: {}", manifest.plugin.id);

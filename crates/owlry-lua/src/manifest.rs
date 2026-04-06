@@ -8,12 +8,36 @@ use std::path::Path;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginManifest {
     pub plugin: PluginInfo,
+    /// Provider declarations from [[providers]] sections (new-style)
+    #[serde(default)]
+    pub providers: Vec<ProviderDecl>,
+    /// Legacy provides block (old-style)
     #[serde(default)]
     pub provides: PluginProvides,
     #[serde(default)]
     pub permissions: PluginPermissions,
     #[serde(default)]
     pub settings: HashMap<String, toml::Value>,
+}
+
+/// A provider declared in a [[providers]] section
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderDecl {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub prefix: Option<String>,
+    #[serde(default)]
+    pub icon: Option<String>,
+    /// "static" (default) or "dynamic"
+    #[serde(default = "default_provider_type", rename = "type")]
+    pub provider_type: String,
+    #[serde(default)]
+    pub type_id: Option<String>,
+}
+
+fn default_provider_type() -> String {
+    "static".to_string()
 }
 
 /// Core plugin information

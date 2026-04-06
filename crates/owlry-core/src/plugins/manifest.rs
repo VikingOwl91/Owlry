@@ -10,6 +10,10 @@ use super::error::{PluginError, PluginResult};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginManifest {
     pub plugin: PluginInfo,
+    /// Provider declarations from [[providers]] sections (new-style)
+    #[serde(default)]
+    pub providers: Vec<ProviderSpec>,
+    /// Legacy provides block (old-style)
     #[serde(default)]
     pub provides: PluginProvides,
     #[serde(default)]
@@ -43,7 +47,7 @@ pub struct PluginInfo {
     #[serde(default = "default_owlry_version")]
     pub owlry_version: String,
     /// Entry point file (relative to plugin directory)
-    #[serde(default = "default_entry")]
+    #[serde(default = "default_entry", alias = "entry_point")]
     pub entry: String,
 }
 
@@ -52,7 +56,27 @@ fn default_owlry_version() -> String {
 }
 
 fn default_entry() -> String {
-    "init.lua".to_string()
+    "main.lua".to_string()
+}
+
+/// A provider declared in a [[providers]] section
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderSpec {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub prefix: Option<String>,
+    #[serde(default)]
+    pub icon: Option<String>,
+    /// "static" (default) or "dynamic"
+    #[serde(default = "default_provider_type", rename = "type")]
+    pub provider_type: String,
+    #[serde(default)]
+    pub type_id: Option<String>,
+}
+
+fn default_provider_type() -> String {
+    "static".to_string()
 }
 
 /// What the plugin provides
@@ -278,7 +302,7 @@ version = "1.0.0"
         assert_eq!(manifest.plugin.id, "test-plugin");
         assert_eq!(manifest.plugin.name, "Test Plugin");
         assert_eq!(manifest.plugin.version, "1.0.0");
-        assert_eq!(manifest.plugin.entry, "init.lua");
+        assert_eq!(manifest.plugin.entry, "main.lua");
     }
 
     #[test]

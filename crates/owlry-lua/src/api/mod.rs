@@ -50,3 +50,8 @@ pub fn call_refresh(lua: &Lua, provider_name: &str) -> LuaResult<Vec<PluginItem>
 pub fn call_query(lua: &Lua, provider_name: &str, query: &str) -> LuaResult<Vec<PluginItem>> {
     provider::call_query(lua, provider_name, query)
 }
+
+/// Call the global `refresh()` function (for manifest-declared providers)
+pub fn call_global_refresh(lua: &Lua) -> LuaResult<Vec<PluginItem>> {
+    provider::call_global_refresh(lua)
+}

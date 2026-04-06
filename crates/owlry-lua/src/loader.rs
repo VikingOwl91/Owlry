@@ -96,8 +96,28 @@ impl LoadedPlugin {
             .as_ref()
             .ok_or_else(|| "Plugin not initialized".to_string())?;
 
-        api::get_provider_registrations(lua)
-            .map_err(|e| format!("Failed to get registrations: {}", e))
+        let mut regs = api::get_provider_registrations(lua)
+            .map_err(|e| format!("Failed to get registrations: {}", e))?;
+
+        // Fall back to manifest [[providers]] declarations when the script
+        // doesn't call owlry.provider.register() (new-style plugins)
+        if regs.is_empty() {
+            for decl in &self.manifest.providers {
+                regs.push(ProviderRegistration {
+                    name: decl.id.clone(),
+                    display_name: decl.name.clone(),
+                    type_id: decl.type_id.clone().unwrap_or_else(|| decl.id.clone()),
+                    default_icon: decl
+                        .icon
+                        .clone()
+                        .unwrap_or_else(|| "application-x-addon".to_string()),
+                    prefix: decl.prefix.clone(),
+                    is_dynamic: decl.provider_type == "dynamic",
+                });
+            }
+        }
+
+        Ok(regs)
     }
 
     /// Call a provider's refresh function
@@ -107,7 +127,17 @@ impl LoadedPlugin {
             .as_ref()
             .ok_or_else(|| "Plugin not initialized".to_string())?;
 
-        api::call_refresh(lua, provider_name).map_err(|e| format!("Refresh failed: {}", e))
+        let items = api::call_refresh(lua, provider_name)
+            .map_err(|e| format!("Refresh failed: {}", e))?;
+
+        // If the API path returned nothing, try calling the global refresh()
+        // function directly (new-style plugins with manifest [[providers]])
+        if items.is_empty() {
+            return api::call_global_refresh(lua)
+                .map_err(|e| format!("Refresh failed: {}", e));
+        }
+
+        Ok(items)
     }
 
     /// Call a provider's query function

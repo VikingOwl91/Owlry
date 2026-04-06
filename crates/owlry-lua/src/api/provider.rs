@@ -76,6 +76,15 @@ fn register_provider(lua: &Lua, config: Table) -> LuaResult<()> {
     Ok(())
 }
 
+/// Call the top-level `refresh()` global function (for manifest-declared providers)
+pub fn call_global_refresh(lua: &Lua) -> LuaResult<Vec<PluginItem>> {
+    let globals = lua.globals();
+    match globals.get::<Function>("refresh") {
+        Ok(refresh_fn) => parse_items_result(refresh_fn.call(())?),
+        Err(_) => Ok(Vec::new()),
+    }
+}
+
 /// Get all registered providers
 pub fn get_registrations(lua: &Lua) -> LuaResult<Vec<ProviderRegistration>> {
     // Suppress unused warning
