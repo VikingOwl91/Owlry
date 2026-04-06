@@ -188,11 +188,16 @@ pub fn discover_plugins(
             Ok(manifest) => {
                 // Skip plugins whose entry point is not a Lua file
                 if !manifest.plugin.entry.ends_with(".lua") {
+                    log::debug!(
+                        "owlry-lua: Skipping non-Lua plugin at {} (entry: {})",
+                        path.display(),
+                        manifest.plugin.entry
+                    );
                     continue;
                 }
                 let id = manifest.plugin.id.clone();
                 if plugins.contains_key(&id) {
-                    eprintln!(
+                    log::warn!(
                         "owlry-lua: Duplicate plugin ID '{}', skipping {}",
                         id,
                         path.display()
@@ -202,7 +207,7 @@ pub fn discover_plugins(
                 plugins.insert(id, (manifest, path));
             }
             Err(e) => {
-                eprintln!(
+                log::warn!(
                     "owlry-lua: Failed to load plugin at {}: {}",
                     path.display(),
                     e
@@ -262,5 +267,80 @@ version = "1.0.0"
     fn test_discover_plugins_nonexistent_dir() {
         let plugins = discover_plugins(Path::new("/nonexistent/path")).unwrap();
         assert!(plugins.is_empty());
+    }
+
+    #[test]
+    fn test_discover_skips_non_lua_plugins() {
+        let temp = TempDir::new().unwrap();
+        let plugins_dir = temp.path();
+
+        // Rune plugin — should be skipped by the Lua runtime
+        let rune_dir = plugins_dir.join("rune-plugin");
+        fs::create_dir_all(&rune_dir).unwrap();
+        fs::write(
+            rune_dir.join("plugin.toml"),
+            r#"
+[plugin]
+id = "rune-plugin"
+name = "Rune Plugin"
+version = "1.0.0"
+entry_point = "main.rn"
+
+[[providers]]
+id = "rune-plugin"
+name = "Rune Plugin"
+"#,
+        )
+        .unwrap();
+        fs::write(rune_dir.join("main.rn"), "pub fn refresh() { [] }").unwrap();
+
+        // Lua plugin — should be discovered
+        create_test_plugin(plugins_dir, "lua-plugin");
+
+        let plugins = discover_plugins(plugins_dir).unwrap();
+        assert_eq!(plugins.len(), 1);
+        assert!(plugins.contains_key("lua-plugin"));
+        assert!(!plugins.contains_key("rune-plugin"));
+    }
+
+    #[test]
+    fn test_manifest_provider_fallback() {
+        let temp = TempDir::new().unwrap();
+        let plugin_dir = temp.path().join("test-plugin");
+        fs::create_dir_all(&plugin_dir).unwrap();
+
+        fs::write(
+            plugin_dir.join("plugin.toml"),
+            r#"
+[plugin]
+id = "test-plugin"
+name = "Test Plugin"
+version = "1.0.0"
+entry_point = "main.lua"
+
+[[providers]]
+id = "test-plugin"
+name = "Test Plugin"
+type = "static"
+type_id = "testplugin"
+icon = "system-run"
+prefix = ":tp"
+"#,
+        )
+        .unwrap();
+        // Script that does NOT call owlry.provider.register()
+        fs::write(plugin_dir.join("main.lua"), "function refresh() return {} end").unwrap();
+
+        let manifest =
+            crate::manifest::PluginManifest::load(&plugin_dir.join("plugin.toml")).unwrap();
+        let mut plugin = LoadedPlugin::new(manifest, plugin_dir);
+        plugin.initialize().unwrap();
+
+        let regs = plugin.get_provider_registrations().unwrap();
+        assert_eq!(regs.len(), 1, "should fall back to [[providers]] declaration");
+        assert_eq!(regs[0].name, "test-plugin");
+        assert_eq!(regs[0].type_id, "testplugin");
+        assert_eq!(regs[0].prefix.as_deref(), Some(":tp"));
+        assert!(!regs[0].is_dynamic);
     }
 }

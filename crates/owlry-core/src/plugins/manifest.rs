@@ -342,6 +342,70 @@ api_url = "https://api.example.com"
     }
 
     #[test]
+    fn test_parse_new_format_with_providers_array() {
+        let toml_str = r#"
+[plugin]
+id = "my-plugin"
+name = "My Plugin"
+version = "0.1.0"
+description = "Test"
+entry_point = "main.rn"
+
+[[providers]]
+id = "my-plugin"
+name = "My Plugin"
+type = "static"
+type_id = "myplugin"
+icon = "system-run"
+prefix = ":mp"
+"#;
+        let manifest: PluginManifest = toml::from_str(toml_str).unwrap();
+        assert_eq!(manifest.plugin.entry, "main.rn");
+        assert_eq!(manifest.providers.len(), 1);
+        let p = &manifest.providers[0];
+        assert_eq!(p.id, "my-plugin");
+        assert_eq!(p.name, "My Plugin");
+        assert_eq!(p.provider_type, "static");
+        assert_eq!(p.type_id.as_deref(), Some("myplugin"));
+        assert_eq!(p.icon.as_deref(), Some("system-run"));
+        assert_eq!(p.prefix.as_deref(), Some(":mp"));
+    }
+
+    #[test]
+    fn test_parse_new_format_entry_point_alias() {
+        let toml_str = r#"
+[plugin]
+id = "test"
+name = "Test"
+version = "1.0.0"
+entry_point = "main.lua"
+"#;
+        let manifest: PluginManifest = toml::from_str(toml_str).unwrap();
+        assert_eq!(manifest.plugin.entry, "main.lua");
+    }
+
+    #[test]
+    fn test_provider_spec_defaults() {
+        let toml_str = r#"
+[plugin]
+id = "test"
+name = "Test"
+version = "1.0.0"
+
+[[providers]]
+id = "test"
+name = "Test"
+"#;
+        let manifest: PluginManifest = toml::from_str(toml_str).unwrap();
+        assert_eq!(manifest.providers.len(), 1);
+        let p = &manifest.providers[0];
+        assert_eq!(p.provider_type, "static");  // default
+        assert!(p.prefix.is_none());
+        assert!(p.icon.is_none());
+        assert!(p.type_id.is_none());
+    }
+
+    #[test]
     fn test_version_compatibility() {
         let toml_str = r#"
 [plugin]

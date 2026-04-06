@@ -151,6 +151,11 @@ impl PluginManifest {
             ));
         }
 
+        // Lua plugins must have a .lua entry point
+        if !self.plugin.entry.ends_with(".lua") {
+            return Err("Entry point must be a .lua file for Lua plugins".to_string());
+        }
+
         Ok(())
     }
 

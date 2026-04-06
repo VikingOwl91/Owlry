@@ -30,6 +30,9 @@ serde_json = "1.0"
 # Version compatibility
 semver = "1"
 
+# Logging
+log = "0.4"
+
 # HTTP client for plugins
 reqwest = { version = "0.13", default-features = false, features = ["native-tls", "blocking", "json"] }
 

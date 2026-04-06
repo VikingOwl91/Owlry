@@ -366,6 +366,14 @@ fn cmd_info_installed(name: &str, json_output: bool) -> CommandResult {
             "runtime": runtime.to_string(),
             "runtime_available": runtime_available,
             "path": plugin_path.display().to_string(),
+            "providers": manifest.providers.iter().map(|p| serde_json::json!({
+                "id": p.id,
+                "name": p.name,
+                "type": p.provider_type,
+                "type_id": p.type_id,
+                "prefix": p.prefix,
+                "icon": p.icon,
+            })).collect::<Vec<_>>(),
             "provides": {
                 "providers": manifest.provides.providers,
                 "actions": manifest.provides.actions,
@@ -406,9 +414,13 @@ fn cmd_info_installed(name: &str, json_output: bool) -> CommandResult {
         );
         println!("Path: {}", plugin_path.display());
         println!();
-        println!("Provides:");
+        println!("Providers:");
+        for p in &manifest.providers {
+            let prefix = p.prefix.as_deref().map(|s| format!(" ({})", s)).unwrap_or_default();
+            println!("  {} [{}]{}", p.name, p.provider_type, prefix);
+        }
         if !manifest.provides.providers.is_empty() {
-            println!("  Providers: {}", manifest.provides.providers.join(", "));
+            println!("  {}", manifest.provides.providers.join(", "));
         }
         if manifest.provides.actions {
             println!("  Actions: yes");
@@ -976,11 +988,11 @@ fn cmd_runtimes() -> CommandResult {
     if lua_available {
         println!("  ✓ Lua    - Installed");
         println!("              Package: owlry-lua");
-        println!("              Entry point: init.lua");
+        println!("              Entry point: main.lua");
     } else {
         println!("  ✗ Lua    - Not installed");
         println!("              Install: yay -S owlry-lua");
-        println!("              Entry point: init.lua");
+        println!("              Entry point: main.lua");
     }
 
     println!();
@@ -989,11 +1001,11 @@ fn cmd_runtimes() -> CommandResult {
     if rune_available {
         println!("  ✓ Rune   - Installed");
         println!("              Package: owlry-rune");
-        println!("              Entry point: init.rn");
+        println!("              Entry point: main.rn");
     } else {
         println!("  ✗ Rune   - Not installed");
         println!("              Install: yay -S owlry-rune");
-        println!("              Entry point: init.rn");
+        println!("              Entry point: main.rn");
     }
 
     println!();
