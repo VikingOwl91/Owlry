@@ -135,6 +135,45 @@ done
 
 [[ ${#INPUT_PKGS[@]} -eq 0 ]] && usage
 
+# ─── Inject deduplication ────────────────────────────────────────────────────
+
+# Extract the package name from a .pkg.tar.zst filename.
+# Arch package filenames follow: {pkgname}-{pkgver}-{pkgrel}-{arch}.pkg.tar.zst
+# pkgver is guaranteed to have no dashes, so stripping the last three
+# dash-separated segments leaves pkgname.
+pkg_name_from_file() {
+    local base
+    base=$(basename "$1" .pkg.tar.zst)
+    base="${base%-*}"   # strip arch
+    base="${base%-*}"   # strip pkgrel
+    base="${base%-*}"   # strip pkgver (no dashes in pkgver by Arch policy)
+    echo "$base"
+}
+
+# Deduplicate a list of .pkg.tar.zst paths by package name.
+# When the same package name appears more than once, keep the highest version
+# (determined by sort -V on the filenames) and warn about the dropped ones.
+dedup_inject_files() {
+    [[ $# -eq 0 ]] && return 0
+    local -A best=()
+    local f name winner
+    for f in "$@"; do
+        name=$(pkg_name_from_file "$f")
+        if [[ -v "best[$name]" ]]; then
+            winner=$(printf '%s\n%s\n' "${best[$name]}" "$f" | sort -V | tail -1)
+            if [[ "$winner" == "$f" ]]; then
+                warn "Dropping duplicate inject (older): $(basename "${best[$name]}")"
+                best[$name]="$f"
+            else
+                warn "Dropping duplicate inject (older): $(basename "$f")"
+            fi
+        else
+            best[$name]="$f"
+        fi
+    done
+    printf '%s\n' "${best[@]}"
+}
+
 # ─── Dependency resolution ───────────────────────────────────────────────────
 
 # Return the names of local AUR packages that PKG depends on.
@@ -295,6 +334,11 @@ build_one() {
 }
 
 # ─── Main ────────────────────────────────────────────────────────────────────
+
+# Deduplicate external inject files by package name (keep highest version)
+if [[ ${#EXTRA_INJECT[@]} -gt 1 ]]; then
+    mapfile -t EXTRA_INJECT < <(dedup_inject_files "${EXTRA_INJECT[@]}")
+fi
 
 # Validate all requested packages exist
 for pkg in "${INPUT_PKGS[@]}"; do
