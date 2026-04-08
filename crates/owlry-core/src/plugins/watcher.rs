@@ -89,8 +89,13 @@ fn watch_loop(
 
                 if has_relevant_change {
                     info!("Plugin file change detected, reloading runtimes...");
-                    let mut pm_guard = pm.write().unwrap_or_else(|e| e.into_inner());
-                    pm_guard.reload_runtimes();
+                    match pm.write() {
+                        Ok(mut pm_guard) => pm_guard.reload_runtimes(),
+                        Err(_) => {
+                            log::error!("Plugin watcher: provider lock poisoned; stopping watcher");
+                            return Err(Box::from("provider lock poisoned"));
+                        }
+                    }
                 }
             }
             Ok(Err(error)) => {

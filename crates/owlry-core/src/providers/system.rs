@@ -1,4 +1,4 @@
-use super::{LaunchItem, Provider, ProviderType};
+use super::{ItemSource, LaunchItem, Provider, ProviderType};
 
 /// Built-in system provider. Returns a fixed set of power and session management actions.
 ///
@@ -72,6 +72,7 @@ impl SystemProvider {
                 command: command.to_string(),
                 terminal: false,
                 tags: vec!["system".into()],
+                source: ItemSource::Core,
             })
             .collect();
 

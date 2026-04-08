@@ -7,6 +7,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use crate::cli::{PluginCommand as CliPluginCommand, PluginRuntime};
+use crate::client::CoreClient;
 use owlry_core::config::Config;
 use owlry_core::paths;
 use owlry_core::plugins::manifest::{PluginManifest, discover_plugins};
@@ -135,48 +136,53 @@ fn cmd_list_installed(
     json_output: bool,
 ) -> CommandResult {
     let plugins_dir = paths::plugins_dir().ok_or("Could not determine plugins directory")?;
-
-    if !plugins_dir.exists() {
-        if json_output {
-            println!("[]");
-        } else {
-            println!("No plugins installed.");
-        }
-        return Ok(());
-    }
-
-    let discovered = discover_plugins(&plugins_dir).map_err(|e| e.to_string())?;
     let config = Config::load().unwrap_or_default();
     let disabled_list = &config.plugins.disabled_plugins;
-
     let lua_available = lua_runtime_available();
     let rune_available = rune_runtime_available();
 
-    let mut plugins: Vec<_> = discovered
-        .iter()
-        .map(|(id, (manifest, _path))| {
-            let is_disabled = disabled_list.contains(id);
-            let runtime = detect_runtime(manifest);
-            (id.clone(), manifest.clone(), is_disabled, runtime)
-        })
-        .collect();
+    // ── Script plugins (from filesystem) ────────────────────────────────
+    let mut script_plugins: Vec<_> = if plugins_dir.exists() {
+        let discovered = discover_plugins(&plugins_dir).map_err(|e| e.to_string())?;
+        discovered
+            .into_iter()
+            .map(|(id, (manifest, _path))| {
+                let is_disabled = disabled_list.contains(&id);
+                let runtime = detect_runtime(&manifest);
+                (id, manifest, is_disabled, runtime)
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
 
-    // Apply filters
+    // Apply filters to script plugins
     if only_enabled {
-        plugins.retain(|(_, _, is_disabled, _)| !*is_disabled);
+        script_plugins.retain(|(_, _, is_disabled, _)| !*is_disabled);
     }
     if only_disabled {
-        plugins.retain(|(_, _, is_disabled, _)| *is_disabled);
+        script_plugins.retain(|(_, _, is_disabled, _)| *is_disabled);
     }
-    if let Some(rt) = runtime_filter {
-        plugins.retain(|(_, _, _, runtime)| *runtime == rt);
+    if let Some(ref rt) = runtime_filter {
+        let rt_clone = *rt;
+        script_plugins.retain(|(_, _, _, runtime)| *runtime == rt_clone);
     }
+    script_plugins.sort_by(|a, b| a.0.cmp(&b.0));
 
-    // Sort by ID
-    plugins.sort_by(|a, b| a.0.cmp(&b.0));
+    // ── Native plugins (from daemon, if running) ─────────────────────────
+    // Skip native plugins if a runtime filter is active (they have no script runtime).
+    let native_entries = if runtime_filter.is_none() {
+        CoreClient::connect(&CoreClient::socket_path())
+            .ok()
+            .and_then(|mut client| client.plugin_list().ok())
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
 
+    // ── Output ───────────────────────────────────────────────────────────
     if json_output {
-        let json_list: Vec<_> = plugins
+        let mut json_list: Vec<_> = script_plugins
             .iter()
             .map(|(id, manifest, is_disabled, runtime)| {
                 let runtime_available = match runtime {
@@ -191,39 +197,82 @@ fn cmd_list_installed(
                     "enabled": !is_disabled,
                     "runtime": runtime.to_string(),
                     "runtime_available": runtime_available,
+                    "source": "script",
                 })
             })
             .collect();
-        println!("{}", serde_json::to_string_pretty(&json_list).unwrap());
-    } else if plugins.is_empty() {
-        println!("No plugins found.");
-    } else {
-        println!("Installed plugins:\n");
-        for (id, manifest, is_disabled, runtime) in &plugins {
-            let status = if *is_disabled { " (disabled)" } else { "" };
-            let runtime_available = match runtime {
-                PluginRuntime::Lua => lua_available,
-                PluginRuntime::Rune => rune_available,
-            };
-            let runtime_status = if !runtime_available {
-                format!(" [{} - NOT INSTALLED]", runtime)
-            } else {
-                format!(" [{}]", runtime)
-            };
-            println!(
-                "  {} v{}{}{}\n    {}",
-                id,
-                manifest.plugin.version,
-                status,
-                runtime_status,
-                if manifest.plugin.description.is_empty() {
-                    "No description"
-                } else {
-                    &manifest.plugin.description
-                }
-            );
+        for entry in &native_entries {
+            json_list.push(serde_json::json!({
+                "id": entry.id,
+                "name": entry.name,
+                "version": entry.version,
+                "status": entry.status,
+                "status_detail": entry.status_detail,
+                "runtime": entry.runtime,
+                "providers": entry.providers,
+                "source": "native",
+            }));
         }
-        println!("\n{} plugin(s) installed.", plugins.len());
+        println!("{}", serde_json::to_string_pretty(&json_list).unwrap());
+    } else {
+        let total = script_plugins.len() + native_entries.len();
+        if total == 0 {
+            println!("No plugins found.");
+            return Ok(());
+        }
+
+        if !script_plugins.is_empty() {
+            println!("Script plugins:\n");
+            for (id, manifest, is_disabled, runtime) in &script_plugins {
+                let status = if *is_disabled { " (disabled)" } else { "" };
+                let runtime_available = match runtime {
+                    PluginRuntime::Lua => lua_available,
+                    PluginRuntime::Rune => rune_available,
+                };
+                let runtime_status = if !runtime_available {
+                    format!(" [{} - NOT INSTALLED]", runtime)
+                } else {
+                    format!(" [{}]", runtime)
+                };
+                println!(
+                    "  {} v{}{}{}\n    {}",
+                    id,
+                    manifest.plugin.version,
+                    status,
+                    runtime_status,
+                    if manifest.plugin.description.is_empty() {
+                        "No description"
+                    } else {
+                        &manifest.plugin.description
+                    }
+                );
+            }
+        }
+
+        if !native_entries.is_empty() {
+            if !script_plugins.is_empty() {
+                println!();
+            }
+            println!("Native plugins:\n");
+            for entry in &native_entries {
+                let status_label = if entry.status == "suppressed" {
+                    format!(" (suppressed: {})", entry.status_detail)
+                } else {
+                    String::new()
+                };
+                let providers_label = if entry.providers.is_empty() {
+                    String::new()
+                } else {
+                    format!(" [{}]", entry.providers.join(", "))
+                };
+                println!("  {} v{}{}{}", entry.id, entry.version, status_label, providers_label);
+                if !entry.name.is_empty() && entry.name != entry.id {
+                    println!("    {}", entry.name);
+                }
+            }
+        }
+
+        println!("\n{} plugin(s) total.", total);
     }
 
     Ok(())

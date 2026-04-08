@@ -33,7 +33,8 @@ pub use abi_stable::std_types::{ROption, RStr, RString, RVec};
 /// Current plugin API version - plugins must match this
 /// v2: Added ProviderPosition for widget support
 /// v3: Added priority field for plugin-declared result ordering
-pub const API_VERSION: u32 = 3;
+/// v4: Added get_config_string/int/bool to HostAPI for plugin config access
+pub const API_VERSION: u32 = 4;
 
 /// Plugin metadata returned by the info function
 #[repr(C)]
@@ -295,6 +296,18 @@ pub struct HostAPI {
 
     /// Log a message at error level
     pub log_error: extern "C" fn(message: RStr<'_>),
+
+    /// Read a string value from this plugin's config section.
+    /// Parameters: plugin_id (the calling plugin's ID), key
+    /// Returns RSome(value) if set, RNone otherwise.
+    pub get_config_string:
+        extern "C" fn(plugin_id: RStr<'_>, key: RStr<'_>) -> ROption<RString>,
+
+    /// Read an integer value from this plugin's config section.
+    pub get_config_int: extern "C" fn(plugin_id: RStr<'_>, key: RStr<'_>) -> ROption<i64>,
+
+    /// Read a boolean value from this plugin's config section.
+    pub get_config_bool: extern "C" fn(plugin_id: RStr<'_>, key: RStr<'_>) -> ROption<bool>,
 }
 
 use std::sync::OnceLock;
@@ -376,6 +389,30 @@ pub fn log_error(message: &str) {
     if let Some(api) = host_api() {
         (api.log_error)(RStr::from_str(message));
     }
+}
+
+/// Read a string value from this plugin's config section (convenience wrapper).
+/// `plugin_id` must match the ID the plugin declares in its `PluginInfo`.
+pub fn get_config_string(plugin_id: &str, key: &str) -> Option<String> {
+    host_api().and_then(|api| {
+        (api.get_config_string)(RStr::from_str(plugin_id), RStr::from_str(key))
+            .into_option()
+            .map(|s| s.into_string())
+    })
+}
+
+/// Read an integer value from this plugin's config section (convenience wrapper).
+pub fn get_config_int(plugin_id: &str, key: &str) -> Option<i64> {
+    host_api().and_then(|api| {
+        (api.get_config_int)(RStr::from_str(plugin_id), RStr::from_str(key)).into_option()
+    })
+}
+
+/// Read a boolean value from this plugin's config section (convenience wrapper).
+pub fn get_config_bool(plugin_id: &str, key: &str) -> Option<bool> {
+    host_api().and_then(|api| {
+        (api.get_config_bool)(RStr::from_str(plugin_id), RStr::from_str(key)).into_option()
+    })
 }
 
 /// Helper macro for defining plugin vtables

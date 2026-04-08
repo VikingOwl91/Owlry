@@ -1,8 +1,8 @@
+use fs2::FileExt;
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use toml_edit::{DocumentMut, Item};
 
 use crate::paths;
 
@@ -33,6 +33,10 @@ pub struct Config {
     pub plugins: PluginsConfig,
     #[serde(default)]
     pub profiles: HashMap<String, ProfileConfig>,
+    /// Per-plugin configuration tables.
+    /// Defined as `[plugin_config.<plugin_name>]` in config.toml.
+    #[serde(default)]
+    pub plugin_config: HashMap<String, toml::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -216,10 +220,6 @@ pub struct PluginsConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
 
-    /// List of plugin IDs to enable (empty = all discovered plugins)
-    #[serde(default)]
-    pub enabled_plugins: Vec<String>,
-
     /// List of plugin IDs to explicitly disable
     #[serde(default)]
     pub disabled_plugins: Vec<String>,
@@ -233,11 +233,6 @@ pub struct PluginsConfig {
     #[serde(default)]
     pub registry_url: Option<String>,
 
-    /// Per-plugin configuration tables
-    /// Accessed via `[plugins.<plugin_name>]` sections in config.toml
-    /// Each plugin can define its own config schema
-    #[serde(flatten)]
-    pub plugin_configs: HashMap<String, toml::Value>,
 }
 
 /// Sandbox settings for plugin security
@@ -264,40 +259,10 @@ impl Default for PluginsConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            enabled_plugins: Vec::new(),
             disabled_plugins: Vec::new(),
             sandbox: SandboxConfig::default(),
             registry_url: None,
-            plugin_configs: HashMap::new(),
         }
-    }
-}
-
-impl PluginsConfig {
-    /// Get configuration for a specific plugin by name
-    ///
-    /// Returns the plugin's config table if it exists in `[plugins.<name>]`
-    #[allow(dead_code)]
-    pub fn get_plugin_config(&self, plugin_name: &str) -> Option<&toml::Value> {
-        self.plugin_configs.get(plugin_name)
-    }
-
-    /// Get a string value from a plugin's config
-    #[allow(dead_code)]
-    pub fn get_plugin_string(&self, plugin_name: &str, key: &str) -> Option<&str> {
-        self.plugin_configs.get(plugin_name)?.get(key)?.as_str()
-    }
-
-    /// Get an integer value from a plugin's config
-    #[allow(dead_code)]
-    pub fn get_plugin_int(&self, plugin_name: &str, key: &str) -> Option<i64> {
-        self.plugin_configs.get(plugin_name)?.get(key)?.as_integer()
-    }
-
-    /// Get a boolean value from a plugin's config
-    #[allow(dead_code)]
-    pub fn get_plugin_bool(&self, plugin_name: &str, key: &str) -> Option<bool> {
-        self.plugin_configs.get(plugin_name)?.get(key)?.as_bool()
     }
 }
 
@@ -456,41 +421,49 @@ fn command_exists(cmd: &str) -> bool {
 
 // Note: Config derives Default via #[derive(Default)] - all sub-structs have impl Default
 
-/// Merge `new` into `existing`, updating values while preserving comments and unknown keys.
-///
-/// Tables are recursed into so that section-level comments survive. For leaf values
-/// (scalars, arrays) the item is replaced but the surrounding table structure — and
-/// any keys in `existing` that are absent from `new` — are left untouched.
-fn merge_toml_doc(existing: &mut DocumentMut, new: &DocumentMut) {
-    for (key, new_item) in new.iter() {
-        match existing.get_mut(key) {
-            Some(existing_item) => merge_item(existing_item, new_item),
-            None => {
-                existing.insert(key, new_item.clone());
-            }
+/// Extract leading comment lines (lines beginning with `#`) from a TOML file's content.
+/// Stops at the first non-comment, non-empty line.
+fn extract_header_comments(content: &str) -> String {
+    let mut header = String::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') || trimmed.is_empty() {
+            header.push_str(line);
+            header.push('\n');
+        } else {
+            break;
         }
     }
-}
-
-fn merge_item(existing: &mut Item, new: &Item) {
-    match (existing.as_table_mut(), new.as_table()) {
-        (Some(e), Some(n)) => {
-            for (key, new_child) in n.iter() {
-                match e.get_mut(key) {
-                    Some(existing_child) => merge_item(existing_child, new_child),
-                    None => {
-                        e.insert(key, new_child.clone());
-                    }
-                }
-            }
-        }
-        _ => *existing = new.clone(),
-    }
+    header
 }
 
 impl Config {
     pub fn config_path() -> Option<PathBuf> {
         paths::config_file()
+    }
+
+    /// Get configuration table for a plugin by name.
+    #[allow(dead_code)]
+    pub fn get_plugin_config(&self, plugin_name: &str) -> Option<&toml::Value> {
+        self.plugin_config.get(plugin_name)
+    }
+
+    /// Get a string value from a plugin's config.
+    #[allow(dead_code)]
+    pub fn get_plugin_string(&self, plugin_name: &str, key: &str) -> Option<&str> {
+        self.plugin_config.get(plugin_name)?.get(key)?.as_str()
+    }
+
+    /// Get an integer value from a plugin's config.
+    #[allow(dead_code)]
+    pub fn get_plugin_int(&self, plugin_name: &str, key: &str) -> Option<i64> {
+        self.plugin_config.get(plugin_name)?.get(key)?.as_integer()
+    }
+
+    /// Get a boolean value from a plugin's config.
+    #[allow(dead_code)]
+    pub fn get_plugin_bool(&self, plugin_name: &str, key: &str) -> Option<bool> {
+        self.plugin_config.get(plugin_name)?.get(key)?.as_bool()
     }
 
     pub fn load_or_default() -> Self {
@@ -508,8 +481,27 @@ impl Config {
             Self::default()
         } else {
             let content = std::fs::read_to_string(&path)?;
-            let config: Config = toml::from_str(&content)?;
+            let mut config: Config = toml::from_str(&content)?;
             info!("Loaded config from {:?}", path);
+            // Migrate legacy [plugins.<name>] entries to [plugin_config.<name>].
+            // Known PluginsConfig fields are excluded from migration.
+            const KNOWN_PLUGINS_KEYS: &[&str] =
+                &["enabled", "disabled_plugins", "sandbox", "registry_url"];
+            if let Ok(raw) = toml::from_str::<toml::Value>(&content)
+                && let Some(plugins_table) = raw.get("plugins").and_then(|v| v.as_table())
+            {
+                for (key, value) in plugins_table {
+                    if !KNOWN_PLUGINS_KEYS.contains(&key.as_str())
+                        && !config.plugin_config.contains_key(key)
+                    {
+                        warn!(
+                            "Config: [plugins.{}] is deprecated; move to [plugin_config.{}]",
+                            key, key
+                        );
+                        config.plugin_config.insert(key.clone(), value.clone());
+                    }
+                }
+            }
             config
         };
 
@@ -539,30 +531,41 @@ impl Config {
 
         paths::ensure_parent_dir(&path)?;
 
-        let new_content = toml::to_string_pretty(self)?;
+        // Acquire an exclusive advisory lock via a sibling lock file.
+        // Concurrent writers (e.g. two `owlry plugin enable` invocations) will
+        // block here until the first one finishes, preventing interleaved writes.
+        let lock_path = path.with_extension("toml.lock");
+        let lock_file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false) // lock files are never written to; don't clobber existing
+            .open(&lock_path)?;
+        lock_file.lock_exclusive()?;
 
-        // If a config file already exists, merge into it to preserve comments and
-        // any keys the user has added that are not part of the Config struct.
-        let content = if path.exists() {
+        // Preserve any leading comment block (e.g. user docs / generated header).
+        let header = if path.exists() {
             let existing = std::fs::read_to_string(&path)?;
-            match existing.parse::<toml_edit::DocumentMut>() {
-                Ok(mut doc) => {
-                    if let Ok(new_doc) = new_content.parse::<toml_edit::DocumentMut>() {
-                        merge_toml_doc(&mut doc, &new_doc);
-                    }
-                    doc.to_string()
-                }
-                Err(_) => {
-                    // Existing file is malformed — fall back to full rewrite.
-                    warn!("Existing config is malformed; overwriting with current settings");
-                    new_content
-                }
-            }
+            extract_header_comments(&existing)
         } else {
-            new_content
+            String::new()
         };
 
-        std::fs::write(&path, content)?;
+        let body = toml::to_string_pretty(self)?;
+        let content = if header.is_empty() {
+            body
+        } else {
+            format!("{}\n{}", header.trim_end(), body)
+        };
+
+        // Atomic write: write to a sibling temp file, then rename over the target.
+        // rename(2) is atomic on POSIX — readers always see either the old or new file.
+        let tmp_path = path.with_extension("toml.tmp");
+        std::fs::write(&tmp_path, &content)?;
+        std::fs::rename(&tmp_path, &path)?;
+
+        // Lock is released when lock_file is dropped here.
+        drop(lock_file);
+
         info!("Saved config to {:?}", path);
         Ok(())
     }

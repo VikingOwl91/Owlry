@@ -66,7 +66,7 @@ pub fn is_submenu_item(item: &LaunchItem) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use owlry_core::providers::ProviderType;
+    use owlry_core::providers::{ItemSource, ProviderType};
 
     #[test]
     fn test_parse_submenu_command() {
@@ -94,6 +94,7 @@ mod tests {
             command: "SUBMENU:plugin:data".to_string(),
             terminal: false,
             tags: vec![],
+            source: ItemSource::NativePlugin,
         };
         assert!(is_submenu_item(&submenu_item));
 
@@ -106,6 +107,7 @@ mod tests {
             command: "some-command".to_string(),
             terminal: false,
             tags: vec![],
+            source: ItemSource::NativePlugin,
         };
         assert!(!is_submenu_item(&normal_item));
     }

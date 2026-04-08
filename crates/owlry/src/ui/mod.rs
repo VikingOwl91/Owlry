@@ -1,4 +1,5 @@
 mod main_window;
+pub mod provider_meta;
 mod result_row;
 pub mod submenu;
 

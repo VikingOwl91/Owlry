@@ -1,4 +1,6 @@
-use super::{LaunchItem, Provider, ProviderType};
+use std::collections::HashSet;
+
+use super::{ItemSource, LaunchItem, Provider, ProviderType};
 use crate::paths;
 use freedesktop_desktop_entry::{DesktopEntry, Iter};
 use log::{debug, warn};
@@ -118,7 +120,21 @@ impl Provider for ApplicationProvider {
             .map(|s| s.to_string())
             .collect();
 
+        // Track seen .desktop file basenames to skip duplicates.
+        // XDG dirs are iterated user-first per spec, so the first occurrence wins.
+        let mut seen_basenames: HashSet<String> = HashSet::new();
+
         for path in Iter::new(dirs.into_iter()) {
+            // Skip if we've already loaded a .desktop with this basename from a higher-priority dir.
+            if path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|basename| !seen_basenames.insert(basename.to_string()))
+            {
+                debug!("Skipping duplicate desktop entry: {:?}", path);
+                continue;
+            }
+
             let content = match std::fs::read_to_string(&path) {
                 Ok(c) => c,
                 Err(e) => {
@@ -196,6 +212,7 @@ impl Provider for ApplicationProvider {
                 command: run_cmd,
                 terminal: desktop_entry.terminal(),
                 tags,
+                source: ItemSource::Core,
             };
 
             self.items.push(item);

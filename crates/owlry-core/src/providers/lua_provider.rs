@@ -3,12 +3,11 @@
 //! This module provides a `LuaProvider` struct that implements the `Provider` trait
 //! by delegating to a Lua plugin's registered provider functions.
 
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use crate::plugins::{LoadedPlugin, PluginItem, ProviderRegistration};
 
-use super::{LaunchItem, Provider, ProviderType};
+use super::{ItemSource, LaunchItem, Provider, ProviderType};
 
 /// A provider backed by a Lua plugin
 ///
@@ -17,15 +16,16 @@ use super::{LaunchItem, Provider, ProviderType};
 pub struct LuaProvider {
     /// Provider registration info
     registration: ProviderRegistration,
-    /// Reference to the loaded plugin (shared with other providers from same plugin)
-    plugin: Rc<RefCell<LoadedPlugin>>,
+    /// Reference to the loaded plugin (shared with other providers from same plugin).
+    /// Mutex serializes concurrent refresh calls; Arc allows sharing across threads.
+    plugin: Arc<Mutex<LoadedPlugin>>,
     /// Cached items from last refresh
     items: Vec<LaunchItem>,
 }
 
 impl LuaProvider {
     /// Create a new LuaProvider
-    pub fn new(registration: ProviderRegistration, plugin: Rc<RefCell<LoadedPlugin>>) -> Self {
+    pub fn new(registration: ProviderRegistration, plugin: Arc<Mutex<LoadedPlugin>>) -> Self {
         Self {
             registration,
             plugin,
@@ -35,6 +35,9 @@ impl LuaProvider {
 
     /// Convert a PluginItem to a LaunchItem
     fn convert_item(&self, item: PluginItem) -> LaunchItem {
+        if item.command.is_none() {
+            log::warn!("Plugin item '{}' has no command", item.name);
+        }
         LaunchItem {
             id: item.id,
             name: item.name,
@@ -44,6 +47,7 @@ impl LuaProvider {
             command: item.command.unwrap_or_default(),
             terminal: item.terminal,
             tags: item.tags,
+            source: ItemSource::ScriptPlugin,
         }
     }
 }
@@ -63,7 +67,7 @@ impl Provider for LuaProvider {
             return;
         }
 
-        let plugin = self.plugin.borrow();
+        let plugin = self.plugin.lock().unwrap();
         match plugin.call_provider_refresh(&self.registration.name) {
             Ok(items) => {
                 self.items = items.into_iter().map(|i| self.convert_item(i)).collect();
@@ -89,17 +93,15 @@ impl Provider for LuaProvider {
     }
 }
 
-// LuaProvider needs to be Send + Sync for the Provider trait.
-// Rc<RefCell<>> is !Send and !Sync, but the ProviderManager RwLock ensures
-// Rc<RefCell<>> is only accessed during refresh() (write lock = exclusive access).
-// Read-only operations (items(), search) only touch self.items (Vec<LaunchItem>).
-unsafe impl Send for LuaProvider {}
-unsafe impl Sync for LuaProvider {}
+// LuaProvider is Send + Sync because:
+// - Arc<Mutex<LoadedPlugin>> is Send + Sync (LoadedPlugin: Send with mlua "send" feature)
+// - All other fields are Send + Sync
+// No unsafe impl needed.
 
 /// Create LuaProviders from all registered providers in a plugin
-pub fn create_providers_from_plugin(plugin: Rc<RefCell<LoadedPlugin>>) -> Vec<Box<dyn Provider>> {
+pub fn create_providers_from_plugin(plugin: Arc<Mutex<LoadedPlugin>>) -> Vec<Box<dyn Provider>> {
     let registrations = {
-        let p = plugin.borrow();
+        let p = plugin.lock().unwrap();
         match p.get_provider_registrations() {
             Ok(regs) => regs,
             Err(e) => {

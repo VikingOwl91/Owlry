@@ -68,8 +68,11 @@ pub struct RuntimeHandle {
     pub ptr: *mut (),
 }
 
+// SAFETY: LuaRuntimeState (pointed to by RuntimeHandle) contains mlua::Lua, which is
+// Send when the "send" feature is enabled (enabled in Cargo.toml). RuntimeHandle itself
+// is Copy and has no interior mutability — Sync is NOT implemented because concurrent
+// access is serialized by Arc<Mutex<RuntimeHandle>> in the runtime loader.
 unsafe impl Send for RuntimeHandle {}
-unsafe impl Sync for RuntimeHandle {}
 
 impl RuntimeHandle {
     /// Create a null handle (reserved for error cases)

@@ -1,5 +1,5 @@
 use log::debug;
-use owlry_core::providers::{LaunchItem, Provider, ProviderType};
+use owlry_core::providers::{ItemSource, LaunchItem, Provider, ProviderType};
 use std::io::{self, BufRead};
 
 /// Provider for dmenu-style input from stdin
@@ -102,6 +102,7 @@ impl Provider for DmenuProvider {
                 command: line.to_string(),
                 terminal: false,
                 tags: Vec::new(),
+                source: ItemSource::Core,
             };
 
             self.items.push(item);

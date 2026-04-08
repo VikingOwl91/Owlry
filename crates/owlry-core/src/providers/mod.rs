@@ -23,10 +23,12 @@ pub use native_provider::NativeProvider;
 use chrono::Utc;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
-use log::info;
+use log::{info, warn};
 
 #[cfg(feature = "dev-logging")]
 use log::debug;
+
+use std::sync::{Arc, RwLock};
 
 use crate::config::Config;
 use crate::data::FrecencyStore;
@@ -42,6 +44,38 @@ pub struct ProviderDescriptor {
     pub position: String,
 }
 
+/// Trust level of a [`LaunchItem`]'s command, used to gate `sh -c` execution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ItemSource {
+    /// Built-in provider compiled into owlry-core (trusted).
+    Core,
+    /// Native plugin (.so from /usr/lib/owlry/plugins/) — trusted at install time.
+    NativePlugin,
+    /// Script plugin (Lua/Rune from ~/.config/owlry/plugins/) — user-installed, untrusted.
+    ScriptPlugin,
+}
+
+impl ItemSource {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ItemSource::Core => "core",
+            ItemSource::NativePlugin => "native_plugin",
+            ItemSource::ScriptPlugin => "script_plugin",
+        }
+    }
+}
+
+impl std::str::FromStr for ItemSource {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "native_plugin" => Ok(ItemSource::NativePlugin),
+            "script_plugin" => Ok(ItemSource::ScriptPlugin),
+            _ => Ok(ItemSource::Core),
+        }
+    }
+}
+
 /// Represents a single searchable/launchable item
 #[derive(Debug, Clone)]
 pub struct LaunchItem {
@@ -55,21 +89,29 @@ pub struct LaunchItem {
     pub terminal: bool,
     /// Tags/categories for filtering (e.g., from .desktop Categories)
     pub tags: Vec<String>,
+    /// Trust level — gates `sh -c` execution for script plugin items.
+    pub source: ItemSource,
 }
 
-/// Provider type identifier for filtering and badge display
+/// Provider type identifier for filtering and badge display.
 ///
-/// Core types are built-in providers. All native plugins use Plugin(type_id).
-/// This keeps the core app free of plugin-specific knowledge.
+/// **Glossary:**
+/// - *Provider*: An abstract source of [`LaunchItem`]s (interface).
+/// - *Built-in provider*: A provider compiled into owlry-core (Application, Command).
+/// - *Plugin*: External code (native `.so` or Lua/Rune script) loaded at runtime.
+/// - *Plugin provider*: A provider registered by a plugin, identified by its `type_id`.
+///
+/// All plugin-provided types use `Plugin(type_id)`. The core has no hardcoded
+/// knowledge of individual plugin types — this keeps the core app extensible.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ProviderType {
-    /// Built-in: Desktop applications from XDG directories
+    /// Built-in provider: desktop applications from XDG data directories.
     Application,
-    /// Built-in: Shell commands from PATH
+    /// Built-in provider: shell commands from `$PATH`.
     Command,
-    /// Built-in: Pipe-based input (dmenu compatibility)
+    /// Built-in provider: pipe-based input for dmenu compatibility (client-local only).
     Dmenu,
-    /// Plugin-defined provider type with its type_id (e.g., "calc", "weather", "emoji")
+    /// Plugin provider with its declared `type_id` (e.g. `"calc"`, `"weather"`, `"emoji"`).
     Plugin(String),
 }
 
@@ -145,6 +187,9 @@ pub struct ProviderManager {
     runtimes: Vec<LoadedRuntime>,
     /// Type IDs of providers from script runtimes (for hot-reload removal)
     runtime_type_ids: std::collections::HashSet<String>,
+    /// Registry of native plugins that were loaded or suppressed at startup.
+    /// Used by `Request::PluginList` to report plugin status to the CLI.
+    pub plugin_registry: Vec<crate::ipc::PluginEntry>,
 }
 
 impl ProviderManager {
@@ -166,6 +211,7 @@ impl ProviderManager {
             matcher: SkimMatcherV2::default(),
             runtimes: Vec::new(),
             runtime_type_ids: std::collections::HashSet::new(),
+            plugin_registry: Vec::new(),
         };
 
         // Categorize native plugins based on their declared ProviderKind and ProviderPosition
@@ -207,9 +253,8 @@ impl ProviderManager {
     /// Loads native plugins, creates core providers (Application + Command),
     /// categorizes everything, and performs initial refresh. Used by the daemon
     /// which doesn't have the UI-driven setup path from `app.rs`.
-    pub fn new_with_config(config: &Config) -> Self {
+    pub fn new_with_config(config: Arc<RwLock<Config>>) -> Self {
         use crate::plugins::native_loader::NativePluginLoader;
-        use std::sync::Arc;
 
         // Create core providers
         let mut core_providers: Vec<Box<dyn Provider>> = vec![
@@ -217,9 +262,23 @@ impl ProviderManager {
             Box::new(CommandProvider::new()),
         ];
 
+        // Take a read lock once for configuration reads during setup.
+        let (disabled_plugins, calc_enabled, conv_enabled, sys_enabled) = match config.read() {
+            Ok(cfg) => (
+                cfg.plugins.disabled_plugins.clone(),
+                cfg.providers.calculator,
+                cfg.providers.converter,
+                cfg.providers.system,
+            ),
+            Err(_) => {
+                warn!("Config lock poisoned during provider init; using defaults");
+                (Vec::new(), true, true, true)
+            }
+        };
+
         // Load native plugins
         let mut loader = NativePluginLoader::new();
-        loader.set_disabled(config.plugins.disabled_plugins.clone());
+        loader.set_disabled(disabled_plugins);
 
         let native_providers = match loader.discover() {
             Ok(count) => {
@@ -304,23 +363,22 @@ impl ProviderManager {
         // Built-in dynamic providers
         let mut builtin_dynamic: Vec<Box<dyn DynamicProvider>> = Vec::new();
 
-        if config.providers.calculator {
+        if calc_enabled {
             builtin_dynamic.push(Box::new(calculator::CalculatorProvider));
             info!("Registered built-in calculator provider");
         }
 
-        if config.providers.converter {
+        if conv_enabled {
             builtin_dynamic.push(Box::new(converter::ConverterProvider::new()));
             info!("Registered built-in converter provider");
         }
 
-        // Config editor — always enabled
-        let config_arc = std::sync::Arc::new(std::sync::RwLock::new(config.clone()));
-        builtin_dynamic.push(Box::new(config_editor::ConfigProvider::new(config_arc)));
+        // Config editor — always enabled; shares the same Arc<RwLock<Config>>
+        builtin_dynamic.push(Box::new(config_editor::ConfigProvider::new(Arc::clone(&config))));
         info!("Registered built-in config editor provider");
 
         // Built-in static providers
-        if config.providers.system {
+        if sys_enabled {
             core_providers.push(Box::new(system::SystemProvider::new()));
             info!("Registered built-in system provider");
         }
@@ -345,15 +403,28 @@ impl ProviderManager {
             ids
         };
 
+        let mut suppressed_registry: Vec<crate::ipc::PluginEntry> = Vec::new();
         let native_providers: Vec<NativeProvider> = native_providers
             .into_iter()
             .filter(|provider| {
                 let type_id = provider.type_id();
                 if builtin_ids.contains(type_id) {
-                    info!(
-                        "Skipping native plugin '{}' — built-in provider exists",
+                    log::warn!(
+                        "Native plugin '{}' suppressed — a built-in provider with the same type ID exists",
                         type_id
                     );
+                    suppressed_registry.push(crate::ipc::PluginEntry {
+                        id: provider.plugin_id().to_string(),
+                        name: provider.plugin_name().to_string(),
+                        version: provider.plugin_version().to_string(),
+                        runtime: "native".to_string(),
+                        status: "suppressed".to_string(),
+                        status_detail: format!(
+                            "built-in provider '{}' takes precedence",
+                            type_id
+                        ),
+                        providers: vec![type_id.to_string()],
+                    });
                     false
                 } else {
                     true
@@ -361,10 +432,28 @@ impl ProviderManager {
             })
             .collect();
 
+        // Capture active native plugin entries before ownership moves into Self::new().
+        let active_registry: Vec<crate::ipc::PluginEntry> = native_providers
+            .iter()
+            .map(|p| crate::ipc::PluginEntry {
+                id: p.plugin_id().to_string(),
+                name: p.plugin_name().to_string(),
+                version: p.plugin_version().to_string(),
+                runtime: "native".to_string(),
+                status: "active".to_string(),
+                status_detail: String::new(),
+                providers: vec![p.type_id().to_string()],
+            })
+            .collect();
+
         let mut manager = Self::new(core_providers, native_providers);
         manager.builtin_dynamic = builtin_dynamic;
         manager.runtimes = runtimes;
         manager.runtime_type_ids = runtime_type_ids;
+
+        manager.plugin_registry = active_registry;
+        manager.plugin_registry.extend(suppressed_registry);
+
         manager
     }
 
@@ -378,11 +467,11 @@ impl ProviderManager {
             !self.runtime_type_ids.contains(&type_str)
         });
 
-        // Drop old runtimes (catch panics from runtime cleanup)
+        // Drop old runtimes. Panics here will poison the ProviderManager RwLock,
+        // which is caught and reported by the watcher thread (see plugins/watcher.rs).
+        info!("Dropping old runtimes before reload");
         let old_runtimes = std::mem::take(&mut self.runtimes);
-        drop(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            drop(old_runtimes);
-        })));
+        drop(old_runtimes);
         self.runtime_type_ids.clear();
 
         let owlry_version = env!("CARGO_PKG_VERSION");
@@ -600,6 +689,7 @@ impl ProviderManager {
         query: &str,
         max_results: usize,
         filter: &crate::filter::ProviderFilter,
+        tag_filter: Option<&str>,
     ) -> Vec<(LaunchItem, i64)> {
         // Collect items from core providers
         let core_items = self
@@ -615,16 +705,15 @@ impl ProviderManager {
             .filter(|p| filter.is_active(p.provider_type()))
             .flat_map(|p| p.items().iter().cloned());
 
+        let all_items = core_items.chain(native_items).filter(|item| {
+            tag_filter.is_none_or(|t| item.tags.iter().any(|it| it == t))
+        });
+
         if query.is_empty() {
-            return core_items
-                .chain(native_items)
-                .take(max_results)
-                .map(|item| (item, 0))
-                .collect();
+            return all_items.take(max_results).map(|item| (item, 0)).collect();
         }
 
-        let mut results: Vec<(LaunchItem, i64)> = core_items
-            .chain(native_items)
+        let mut results: Vec<(LaunchItem, i64)> = all_items
             .filter_map(|item| {
                 let name_score = self.matcher.fuzzy_match(&item.name, query);
                 let desc_score = item
@@ -1146,6 +1235,7 @@ mod tests {
             command: format!("run-{}", id),
             terminal: false,
             tags: Vec::new(),
+            source: ItemSource::Core,
         }
     }
 

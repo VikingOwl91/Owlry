@@ -1,4 +1,4 @@
-use super::{LaunchItem, Provider, ProviderType};
+use super::{ItemSource, LaunchItem, Provider, ProviderType};
 use log::debug;
 use std::collections::HashSet;
 use std::os::unix::fs::PermissionsExt;
@@ -89,6 +89,7 @@ impl Provider for CommandProvider {
                     command: name,
                     terminal: false,
                     tags: Vec::new(),
+                    source: ItemSource::Core,
                 };
 
                 self.items.push(item);

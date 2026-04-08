@@ -9,7 +9,7 @@ use owlry_core::config::Config;
 use owlry_core::data::FrecencyStore;
 use owlry_core::filter::ProviderFilter;
 use owlry_core::ipc::ResultItem;
-use owlry_core::providers::{LaunchItem, ProviderManager, ProviderType};
+use owlry_core::providers::{ItemSource, LaunchItem, ProviderManager, ProviderType};
 use std::sync::{Arc, Mutex};
 
 /// Parameters needed to run a search query on a background thread.
@@ -167,7 +167,7 @@ impl SearchBackend {
                         .collect()
                 } else {
                     providers
-                        .search_filtered(query, max_results, filter)
+                        .search_filtered(query, max_results, filter, None)
                         .into_iter()
                         .map(|(item, _)| item)
                         .collect()
@@ -230,7 +230,7 @@ impl SearchBackend {
                         .collect()
                 } else {
                     providers
-                        .search_filtered(query, max_results, filter)
+                        .search_filtered(query, max_results, filter, tag_filter)
                         .into_iter()
                         .map(|(item, _)| item)
                         .collect()
@@ -378,6 +378,7 @@ impl SearchBackend {
 /// Convert an IPC ResultItem to the internal LaunchItem type.
 fn result_to_launch_item(item: ResultItem) -> LaunchItem {
     let provider: ProviderType = item.provider.parse().unwrap_or(ProviderType::Application);
+    let source: ItemSource = item.source.parse().unwrap_or(ItemSource::Core);
     LaunchItem {
         id: item.id,
         name: item.title,
@@ -395,5 +396,6 @@ fn result_to_launch_item(item: ResultItem) -> LaunchItem {
         command: item.command.unwrap_or_default(),
         terminal: item.terminal,
         tags: item.tags,
+        source,
     }
 }

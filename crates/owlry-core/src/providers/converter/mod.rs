@@ -2,7 +2,7 @@ mod currency;
 mod parser;
 mod units;
 
-use super::{DynamicProvider, LaunchItem, ProviderType};
+use super::{DynamicProvider, ItemSource, LaunchItem, ProviderType};
 
 const PROVIDER_TYPE_ID: &str = "conv";
 const PROVIDER_ICON: &str = "edit-find-replace-symbolic";
@@ -69,6 +69,7 @@ impl DynamicProvider for ConverterProvider {
                 ),
                 terminal: false,
                 tags: vec!["converter".into(), "units".into()],
+                source: ItemSource::Core,
             })
             .collect()
     }

@@ -1,5 +1,6 @@
 use crate::backend::SearchBackend;
 use crate::ui::ResultRow;
+use crate::ui::provider_meta;
 use crate::ui::submenu;
 use gtk4::gdk::Key;
 use gtk4::prelude::*;
@@ -10,7 +11,7 @@ use gtk4::{
 use log::info;
 use owlry_core::config::Config;
 use owlry_core::filter::ProviderFilter;
-use owlry_core::providers::{LaunchItem, ProviderType};
+use owlry_core::providers::{ItemSource, LaunchItem, ProviderType};
 
 #[cfg(feature = "dev-logging")]
 use log::debug;
@@ -248,7 +249,12 @@ impl MainWindow {
         // scroll position and selection.
         if !matches!(&*main_window.backend.borrow(), SearchBackend::Daemon(_)) {
             let backend_for_auto = main_window.backend.clone();
-            gtk4::glib::timeout_add_local(std::time::Duration::from_secs(5), move || {
+            let debounce_for_auto = main_window.debounce_source.clone();
+            gtk4::glib::timeout_add_local(std::time::Duration::from_secs(10), move || {
+                // Skip widget refresh while the user is actively typing.
+                if debounce_for_auto.borrow().is_some() {
+                    return gtk4::glib::ControlFlow::Continue;
+                }
                 backend_for_auto.borrow_mut().refresh_widgets();
                 gtk4::glib::ControlFlow::Continue
             });
@@ -315,80 +321,18 @@ impl MainWindow {
     /// Get display label for a provider tab
     /// Core types have fixed labels; plugins derive labels from type_id
     fn provider_tab_label(provider: &ProviderType) -> &'static str {
-        match provider {
-            ProviderType::Application => "Apps",
-            ProviderType::Command => "Cmds",
-            ProviderType::Dmenu => "Dmenu",
-            ProviderType::Plugin(type_id) => match type_id.as_str() {
-                "bookmarks" => "Bookmarks",
-                "calc" => "Calc",
-                "clipboard" => "Clip",
-                "emoji" => "Emoji",
-                "filesearch" => "Files",
-                "media" => "Media",
-                "pomodoro" => "Pomo",
-                "scripts" => "Scripts",
-                "ssh" => "SSH",
-                "system" => "System",
-                "uuctl" => "uuctl",
-                "weather" => "Weather",
-                "websearch" => "Web",
-                _ => "Plugin",
-            },
-        }
+        provider_meta::meta_for(provider).tab_label
     }
 
-    /// Get CSS class for a provider
-    /// Core types have fixed CSS classes; plugins derive from type_id
     fn provider_css_class(provider: &ProviderType) -> &'static str {
-        match provider {
-            ProviderType::Application => "owlry-filter-app",
-            ProviderType::Command => "owlry-filter-cmd",
-            ProviderType::Dmenu => "owlry-filter-dmenu",
-            ProviderType::Plugin(type_id) => match type_id.as_str() {
-                "bookmarks" => "owlry-filter-bookmark",
-                "calc" => "owlry-filter-calc",
-                "clipboard" => "owlry-filter-clip",
-                "emoji" => "owlry-filter-emoji",
-                "filesearch" => "owlry-filter-file",
-                "media" => "owlry-filter-media",
-                "pomodoro" => "owlry-filter-pomodoro",
-                "scripts" => "owlry-filter-script",
-                "ssh" => "owlry-filter-ssh",
-                "system" => "owlry-filter-sys",
-                "uuctl" => "owlry-filter-uuctl",
-                "weather" => "owlry-filter-weather",
-                "websearch" => "owlry-filter-web",
-                _ => "owlry-filter-plugin",
-            },
-        }
+        provider_meta::meta_for(provider).css_class
     }
 
     fn build_placeholder(filter: &ProviderFilter) -> String {
         let active: Vec<&str> = filter
             .enabled_providers()
             .iter()
-            .map(|p| match p {
-                ProviderType::Application => "applications",
-                ProviderType::Command => "commands",
-                ProviderType::Dmenu => "options",
-                ProviderType::Plugin(type_id) => match type_id.as_str() {
-                    "bookmarks" => "bookmarks",
-                    "calc" => "calculator",
-                    "clipboard" => "clipboard",
-                    "emoji" => "emoji",
-                    "filesearch" => "files",
-                    "media" => "media",
-                    "pomodoro" => "pomodoro",
-                    "scripts" => "scripts",
-                    "ssh" => "SSH hosts",
-                    "system" => "system",
-                    "uuctl" => "uuctl units",
-                    "weather" => "weather",
-                    "websearch" => "web",
-                    _ => "plugins",
-                },
-            })
+            .map(|p| provider_meta::meta_for(p).search_noun)
             .collect();
 
         format!("Search {}...", active.join(", "))
@@ -1346,6 +1290,36 @@ impl MainWindow {
             "[UI] Launch details: terminal={}, provider={:?}, id={}",
             item.terminal, item.provider, item.id
         );
+
+        // Reject script plugin commands that don't match the known-safe allowlist.
+        // Script plugins (Lua/Rune user plugins) are untrusted code; only allow
+        // patterns that can't escalate privileges or exfiltrate data.
+        if item.source == ItemSource::ScriptPlugin {
+            let cmd = &item.command;
+            let allowed = cmd.is_empty()
+                || cmd.starts_with("xdg-open ")
+                || cmd.starts_with("wl-copy")
+                || cmd.starts_with("wl-paste")
+                || cmd.starts_with("SUBMENU:")
+                || cmd.starts_with('!');
+            if !allowed {
+                let msg = format!(
+                    "Blocked untrusted script plugin command from '{}': {}",
+                    item.name, cmd
+                );
+                log::warn!("{}", msg);
+                owlry_core::notify::notify("Command blocked", &msg);
+                return;
+            }
+        }
+
+        // Reject items with no command — nothing to execute.
+        if item.command.is_empty() && !matches!(item.provider, ProviderType::Application) {
+            let msg = format!("Item '{}' has no command; cannot launch", item.name);
+            log::warn!("{}", msg);
+            owlry_core::notify::notify("Launch failed", &msg);
+            return;
+        }
 
         // Check if this is a desktop application (has .desktop file as ID)
         let is_desktop_app =

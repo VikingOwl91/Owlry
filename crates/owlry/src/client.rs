@@ -3,7 +3,46 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use owlry_core::ipc::{ProviderDesc, Request, Response, ResultItem};
+use owlry_core::ipc::{PluginEntry, ProviderDesc, Request, Response, ResultItem};
+
+/// Maximum allowed size for a single IPC response line (4 MiB).
+/// Larger than the request limit because responses carry result sets.
+const MAX_RESPONSE_SIZE: usize = 4_194_304;
+
+/// Read a newline-terminated line from `reader` without allocating beyond `max` bytes.
+fn read_bounded_line(reader: &mut BufReader<UnixStream>, max: usize) -> io::Result<Option<String>> {
+    let mut buf: Vec<u8> = Vec::with_capacity(4096);
+    loop {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            return if buf.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(String::from_utf8_lossy(&buf).into_owned()))
+            };
+        }
+        if let Some(pos) = available.iter().position(|&b| b == b'\n') {
+            if buf.len() + pos > max {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("response too large (exceeded {} bytes)", max),
+                ));
+            }
+            buf.extend_from_slice(&available[..pos]);
+            reader.consume(pos + 1);
+            return Ok(Some(String::from_utf8_lossy(&buf).into_owned()));
+        }
+        let len = available.len();
+        if buf.len() + len > max {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("response too large (exceeded {} bytes)", max),
+            ));
+        }
+        buf.extend_from_slice(available);
+        reader.consume(len);
+    }
+}
 
 /// IPC client that connects to the owlryd daemon Unix socket
 /// and provides typed methods for all IPC operations.
@@ -157,6 +196,19 @@ impl CoreClient {
         }
     }
 
+    /// Query the daemon's native plugin registry (loaded + suppressed entries).
+    pub fn plugin_list(&mut self) -> io::Result<Vec<PluginEntry>> {
+        self.send(&Request::PluginList)?;
+        match self.receive()? {
+            Response::PluginList { entries } => Ok(entries),
+            Response::Error { message } => Err(io::Error::other(message)),
+            other => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("unexpected response to PluginList: {other:?}"),
+            )),
+        }
+    }
+
     /// Query a plugin's submenu actions.
     pub fn submenu(&mut self, plugin_id: &str, data: &str) -> io::Result<Vec<ResultItem>> {
         self.send(&Request::Submenu {
@@ -186,14 +238,15 @@ impl CoreClient {
     }
 
     fn receive(&mut self) -> io::Result<Response> {
-        let mut line = String::new();
-        self.reader.read_line(&mut line)?;
-        if line.is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "daemon closed the connection",
-            ));
-        }
+        let line = match read_bounded_line(&mut self.reader, MAX_RESPONSE_SIZE)? {
+            Some(l) => l,
+            None => {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "daemon closed the connection",
+                ))
+            }
+        };
         serde_json::from_str(line.trim()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
 }
@@ -256,6 +309,7 @@ mod tests {
                 command: Some("firefox".into()),
                 terminal: false,
                 tags: vec![],
+                source: "app".into(),
             }],
         };
 
@@ -327,6 +381,7 @@ mod tests {
                 command: Some("systemctl --user start foo".into()),
                 terminal: false,
                 tags: vec![],
+                source: "native_plugin".into(),
             }],
         };
 

@@ -24,6 +24,8 @@ pub enum Request {
     PluginAction {
         command: String,
     },
+    /// Query the daemon's plugin registry (native plugins + suppressed entries).
+    PluginList,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -32,8 +34,28 @@ pub enum Response {
     Results { items: Vec<ResultItem> },
     Providers { list: Vec<ProviderDesc> },
     SubmenuItems { items: Vec<ResultItem> },
+    PluginList { entries: Vec<PluginEntry> },
     Ack,
     Error { message: String },
+}
+
+/// Registry entry for a loaded or suppressed plugin (native plugins only).
+/// Script plugins are tracked separately via filesystem discovery.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PluginEntry {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    /// Plugin runtime type: "native", "builtin"
+    pub runtime: String,
+    /// Load status: "active" or "suppressed"
+    pub status: String,
+    /// Human-readable detail for non-active status (e.g. suppression reason)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub status_detail: String,
+    /// Provider type IDs registered by this plugin
+    #[serde(default)]
+    pub providers: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -50,6 +72,14 @@ pub struct ResultItem {
     pub terminal: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    /// Item trust level: "core", "native_plugin", or "script_plugin".
+    /// Defaults to "core" when absent (backwards-compatible with old daemons).
+    #[serde(default = "default_source")]
+    pub source: String,
+}
+
+fn default_source() -> String {
+    "core".to_string()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

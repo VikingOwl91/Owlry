@@ -47,6 +47,7 @@ fn test_results_response_roundtrip() {
             command: Some("firefox".into()),
             terminal: false,
             tags: vec![],
+            source: "core".into(),
         }],
     };
     let json = serde_json::to_string(&resp).unwrap();
@@ -140,6 +141,7 @@ fn test_terminal_field_roundtrip() {
         command: Some("htop".into()),
         terminal: true,
         tags: vec![],
+        source: "cmd".into(),
     };
     let json = serde_json::to_string(&item).unwrap();
     assert!(json.contains("\"terminal\":true"));

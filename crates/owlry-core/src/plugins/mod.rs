@@ -1,24 +1,38 @@
 //! Owlry Plugin System
 //!
-//! This module provides plugin support for extending owlry's functionality.
-//! Plugins can register providers, actions, themes, and hooks.
+//! This module loads and manages *plugins* — external code that extends owlry
+//! with additional *plugin providers* beyond the built-in ones.
+//!
+//! # Terminology
+//!
+//! | Term | Meaning |
+//! |------|---------|
+//! | **Provider** | Abstract source of [`LaunchItem`]s (the core interface) |
+//! | **Built-in provider** | Provider compiled into owlry-core (Application, Command) |
+//! | **Plugin** | External code (native `.so` or script) loaded at runtime |
+//! | **Plugin provider** | A provider registered by a plugin via its `type_id` |
+//! | **Native plugin** | Pre-compiled Rust `.so` from `/usr/lib/owlry/plugins/` |
+//! | **Script plugin** | Lua or Rune plugin from `~/.config/owlry/plugins/` |
 //!
 //! # Plugin Types
 //!
-//! - **Native plugins** (.so): Pre-compiled Rust plugins loaded from `/usr/lib/owlry/plugins/`
-//! - **Lua plugins**: Script-based plugins from `~/.config/owlry/plugins/` (requires `lua` feature)
+//! - **Native plugins** (`.so`): Pre-compiled Rust plugins loaded from `/usr/lib/owlry/plugins/`
+//! - **Script plugins**: Lua or Rune scripts from `~/.config/owlry/plugins/`
+//!   (requires the corresponding runtime: `owlry-lua` or `owlry-rune`)
 //!
-//! # Plugin Structure (Lua)
+//! # Script Plugin Structure
 //!
-//! Each Lua plugin lives in its own directory under `~/.config/owlry/plugins/`:
+//! Each script plugin lives in its own directory under `~/.config/owlry/plugins/`:
 //!
 //! ```text
 //! ~/.config/owlry/plugins/
 //!   my-plugin/
 //!     plugin.toml    # Plugin manifest
-//!     init.lua       # Entry point
+//!     init.lua       # Entry point (Lua) or init.rn (Rune)
 //!     lib/           # Optional modules
 //! ```
+//!
+//! [`LaunchItem`]: crate::providers::LaunchItem
 
 // Always available
 pub mod error;
@@ -60,10 +74,9 @@ pub use manifest::{PluginManifest, check_compatibility, discover_plugins};
 #[cfg(feature = "lua")]
 mod lua_manager {
     use super::*;
-    use std::cell::RefCell;
     use std::collections::HashMap;
     use std::path::PathBuf;
-    use std::rc::Rc;
+    use std::sync::{Arc, Mutex};
 
     use manifest::{check_compatibility, discover_plugins};
 
@@ -73,8 +86,8 @@ mod lua_manager {
         plugins_dir: PathBuf,
         /// Current owlry version for compatibility checks
         owlry_version: String,
-        /// Loaded plugins by ID (Rc<RefCell<>> allows sharing with LuaProviders)
-        plugins: HashMap<String, Rc<RefCell<LoadedPlugin>>>,
+        /// Loaded plugins by ID. Arc<Mutex<>> allows sharing with LuaProviders across threads.
+        plugins: HashMap<String, Arc<Mutex<LoadedPlugin>>>,
         /// Plugin IDs that are explicitly disabled
         disabled: Vec<String>,
     }
@@ -116,7 +129,7 @@ mod lua_manager {
                 }
 
                 let plugin = LoadedPlugin::new(manifest, path);
-                self.plugins.insert(id, Rc::new(RefCell::new(plugin)));
+                self.plugins.insert(id, Arc::new(Mutex::new(plugin)));
                 loaded_count += 1;
             }
 
@@ -129,7 +142,7 @@ mod lua_manager {
             let mut errors = Vec::new();
 
             for (id, plugin_rc) in &self.plugins {
-                let mut plugin = plugin_rc.borrow_mut();
+                let mut plugin = plugin_rc.lock().unwrap();
                 if !plugin.enabled {
                     continue;
                 }
@@ -145,23 +158,23 @@ mod lua_manager {
             errors
         }
 
-        /// Get a loaded plugin by ID (returns Rc for shared ownership)
+        /// Get a loaded plugin by ID
         #[allow(dead_code)]
-        pub fn get(&self, id: &str) -> Option<Rc<RefCell<LoadedPlugin>>> {
+        pub fn get(&self, id: &str) -> Option<Arc<Mutex<LoadedPlugin>>> {
             self.plugins.get(id).cloned()
         }
 
         /// Get all loaded plugins
         #[allow(dead_code)]
-        pub fn plugins(&self) -> impl Iterator<Item = Rc<RefCell<LoadedPlugin>>> + '_ {
+        pub fn plugins(&self) -> impl Iterator<Item = Arc<Mutex<LoadedPlugin>>> + '_ {
             self.plugins.values().cloned()
         }
 
         /// Get all enabled plugins
-        pub fn enabled_plugins(&self) -> impl Iterator<Item = Rc<RefCell<LoadedPlugin>>> + '_ {
+        pub fn enabled_plugins(&self) -> impl Iterator<Item = Arc<Mutex<LoadedPlugin>>> + '_ {
             self.plugins
                 .values()
-                .filter(|p| p.borrow().enabled)
+                .filter(|p| p.lock().unwrap().enabled)
                 .cloned()
         }
 
@@ -174,7 +187,7 @@ mod lua_manager {
         /// Get the number of enabled plugins
         #[allow(dead_code)]
         pub fn enabled_count(&self) -> usize {
-            self.plugins.values().filter(|p| p.borrow().enabled).count()
+            self.plugins.values().filter(|p| p.lock().unwrap().enabled).count()
         }
 
         /// Enable a plugin by ID
@@ -184,7 +197,7 @@ mod lua_manager {
                 .plugins
                 .get(id)
                 .ok_or_else(|| PluginError::NotFound(id.to_string()))?;
-            let mut plugin = plugin_rc.borrow_mut();
+            let mut plugin = plugin_rc.lock().unwrap();
 
             if !plugin.enabled {
                 plugin.enabled = true;
@@ -202,7 +215,7 @@ mod lua_manager {
                 .plugins
                 .get(id)
                 .ok_or_else(|| PluginError::NotFound(id.to_string()))?;
-            plugin_rc.borrow_mut().enabled = false;
+            plugin_rc.lock().unwrap().enabled = false;
             Ok(())
         }
 
@@ -211,13 +224,14 @@ mod lua_manager {
         pub fn providers_for(&self, provider_name: &str) -> Vec<String> {
             self.enabled_plugins()
                 .filter(|p| {
-                    p.borrow()
+                    p.lock()
+                        .unwrap()
                         .manifest
                         .provides
                         .providers
                         .contains(&provider_name.to_string())
                 })
-                .map(|p| p.borrow().id().to_string())
+                .map(|p| p.lock().unwrap().id().to_string())
                 .collect()
         }
 
@@ -225,21 +239,21 @@ mod lua_manager {
         #[allow(dead_code)]
         pub fn has_action_plugins(&self) -> bool {
             self.enabled_plugins()
-                .any(|p| p.borrow().manifest.provides.actions)
+                .any(|p| p.lock().unwrap().manifest.provides.actions)
         }
 
         /// Check if any plugin provides hooks
         #[allow(dead_code)]
         pub fn has_hook_plugins(&self) -> bool {
             self.enabled_plugins()
-                .any(|p| p.borrow().manifest.provides.hooks)
+                .any(|p| p.lock().unwrap().manifest.provides.hooks)
         }
 
         /// Get all theme names provided by plugins
         #[allow(dead_code)]
         pub fn theme_names(&self) -> Vec<String> {
             self.enabled_plugins()
-                .flat_map(|p| p.borrow().manifest.provides.themes.clone())
+                .flat_map(|p| p.lock().unwrap().manifest.provides.themes.clone())
                 .collect()
         }
 

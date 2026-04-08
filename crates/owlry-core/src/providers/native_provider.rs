@@ -13,7 +13,7 @@ use owlry_plugin_api::{
     PluginItem as ApiPluginItem, ProviderHandle, ProviderInfo, ProviderKind, ProviderPosition,
 };
 
-use super::{LaunchItem, Provider, ProviderType};
+use super::{ItemSource, LaunchItem, Provider, ProviderType};
 use crate::plugins::native_loader::NativePlugin;
 
 /// A provider backed by a native plugin
@@ -50,6 +50,21 @@ impl NativeProvider {
         ProviderType::Plugin(self.info.type_id.to_string())
     }
 
+    /// The ID of the plugin that owns this provider.
+    pub fn plugin_id(&self) -> &str {
+        self.plugin.id()
+    }
+
+    /// The human-readable name of the plugin that owns this provider.
+    pub fn plugin_name(&self) -> &str {
+        self.plugin.name()
+    }
+
+    /// The version string of the plugin that owns this provider.
+    pub fn plugin_version(&self) -> &str {
+        self.plugin.info.version.as_str()
+    }
+
     /// Convert a plugin API item to a core LaunchItem
     fn convert_item(&self, item: ApiPluginItem) -> LaunchItem {
         LaunchItem {
@@ -61,6 +76,7 @@ impl NativeProvider {
             command: item.command.to_string(),
             terminal: item.terminal,
             tags: item.keywords.iter().map(|s| s.to_string()).collect(),
+            source: ItemSource::NativePlugin,
         }
     }
 

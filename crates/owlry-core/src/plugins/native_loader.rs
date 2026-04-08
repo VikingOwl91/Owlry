@@ -12,16 +12,69 @@
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Once};
+use std::sync::{Arc, Once, OnceLock, RwLock};
 
 use libloading::Library;
 use log::{debug, error, info, warn};
 use owlry_plugin_api::{
     API_VERSION, HostAPI, NotifyUrgency, PluginInfo, PluginVTable, ProviderHandle, ProviderInfo,
-    ProviderKind, RStr,
+    ProviderKind, ROption, RStr, RString,
 };
 
+use crate::config::Config;
 use crate::notify;
+
+// ============================================================================
+// Plugin config access
+// ============================================================================
+
+/// Shared config reference, set by the host before any plugins are loaded.
+static PLUGIN_CONFIG: OnceLock<Arc<RwLock<Config>>> = OnceLock::new();
+
+/// Share the config with the native plugin loader so plugins can read their
+/// own config sections. Must be called before `NativePluginLoader::discover()`.
+pub fn set_shared_config(config: Arc<RwLock<Config>>) {
+    let _ = PLUGIN_CONFIG.set(config);
+}
+
+extern "C" fn host_get_config_string(plugin_id: RStr<'_>, key: RStr<'_>) -> ROption<RString> {
+    let Some(cfg_arc) = PLUGIN_CONFIG.get() else {
+        return ROption::RNone;
+    };
+    let Ok(cfg) = cfg_arc.read() else {
+        return ROption::RNone;
+    };
+    match cfg.get_plugin_string(plugin_id.as_str(), key.as_str()) {
+        Some(v) => ROption::RSome(RString::from(v)),
+        None => ROption::RNone,
+    }
+}
+
+extern "C" fn host_get_config_int(plugin_id: RStr<'_>, key: RStr<'_>) -> ROption<i64> {
+    let Some(cfg_arc) = PLUGIN_CONFIG.get() else {
+        return ROption::RNone;
+    };
+    let Ok(cfg) = cfg_arc.read() else {
+        return ROption::RNone;
+    };
+    match cfg.get_plugin_int(plugin_id.as_str(), key.as_str()) {
+        Some(v) => ROption::RSome(v),
+        None => ROption::RNone,
+    }
+}
+
+extern "C" fn host_get_config_bool(plugin_id: RStr<'_>, key: RStr<'_>) -> ROption<bool> {
+    let Some(cfg_arc) = PLUGIN_CONFIG.get() else {
+        return ROption::RNone;
+    };
+    let Ok(cfg) = cfg_arc.read() else {
+        return ROption::RNone;
+    };
+    match cfg.get_plugin_bool(plugin_id.as_str(), key.as_str()) {
+        Some(v) => ROption::RSome(v),
+        None => ROption::RNone,
+    }
+}
 
 // ============================================================================
 // Host API Implementation
@@ -71,6 +124,9 @@ static HOST_API: HostAPI = HostAPI {
     log_info: host_log_info,
     log_warn: host_log_warn,
     log_error: host_log_error,
+    get_config_string: host_get_config_string,
+    get_config_int: host_get_config_int,
+    get_config_bool: host_get_config_bool,
 };
 
 /// Initialize the host API (called once before loading plugins)

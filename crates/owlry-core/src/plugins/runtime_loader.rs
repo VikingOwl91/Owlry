@@ -12,13 +12,13 @@
 
 use std::mem::ManuallyDrop;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use libloading::{Library, Symbol};
 use owlry_plugin_api::{PluginItem, RStr, RString, RVec};
 
 use super::error::{PluginError, PluginResult};
-use crate::providers::{LaunchItem, Provider, ProviderType};
+use crate::providers::{ItemSource, LaunchItem, Provider, ProviderType};
 
 /// System directory for runtime libraries
 pub const SYSTEM_RUNTIMES_DIR: &str = "/usr/lib/owlry/runtimes";
@@ -51,6 +51,11 @@ pub type LuaProviderInfo = ScriptProviderInfo;
 #[derive(Clone, Copy)]
 pub struct RuntimeHandle(pub *mut ());
 
+// SAFETY: The underlying runtime state (Lua VM, Rune VM) is Send — mlua enables
+// the "send" feature and Rune wraps its state in Mutex internally. Access is always
+// serialized through Arc<Mutex<RuntimeHandle>>, so there are no data races.
+unsafe impl Send for RuntimeHandle {}
+
 /// VTable for script runtime functions (used by both Lua and Rune)
 #[repr(C)]
 pub struct ScriptRuntimeVTable {
@@ -77,8 +82,10 @@ pub struct LoadedRuntime {
     _library: ManuallyDrop<Arc<Library>>,
     /// Runtime vtable
     vtable: &'static ScriptRuntimeVTable,
-    /// Runtime handle (state)
-    handle: RuntimeHandle,
+    /// Runtime handle shared with all RuntimeProvider instances for this runtime.
+    /// Mutex serializes concurrent vtable calls. Arc shares ownership so all
+    /// RuntimeProviders can call into the runtime through the same handle.
+    handle: Arc<Mutex<RuntimeHandle>>,
     /// Provider information
     providers: Vec<ScriptProviderInfo>,
 }
@@ -128,10 +135,14 @@ impl LoadedRuntime {
 
         // Initialize the runtime
         let plugins_dir_str = plugins_dir.to_string_lossy();
-        let handle = (vtable.init)(RStr::from_str(&plugins_dir_str), RStr::from_str(owlry_version));
+        let raw_handle = (vtable.init)(RStr::from_str(&plugins_dir_str), RStr::from_str(owlry_version));
+        let handle = Arc::new(Mutex::new(raw_handle));
 
-        // Get provider information
-        let providers_rvec = (vtable.providers)(handle);
+        // Get provider information — lock to serialize the vtable call
+        let providers_rvec = {
+            let h = handle.lock().unwrap();
+            (vtable.providers)(*h)
+        };
         let providers: Vec<ScriptProviderInfo> = providers_rvec.into_iter().collect();
 
         log::info!(
@@ -159,8 +170,12 @@ impl LoadedRuntime {
         self.providers
             .iter()
             .map(|info| {
-                let provider =
-                    RuntimeProvider::new(self.name, self.vtable, self.handle, info.clone());
+                let provider = RuntimeProvider::new(
+                    self.name,
+                    self.vtable,
+                    Arc::clone(&self.handle),
+                    info.clone(),
+                );
                 Box::new(provider) as Box<dyn Provider>
             })
             .collect()
@@ -169,19 +184,16 @@ impl LoadedRuntime {
 
 impl Drop for LoadedRuntime {
     fn drop(&mut self) {
-        (self.vtable.drop)(self.handle);
+        let h = self.handle.lock().unwrap();
+        (self.vtable.drop)(*h);
         // Do NOT drop _library: ManuallyDrop ensures dlclose() is never called.
         // See field comment for rationale.
     }
 }
-
-// LoadedRuntime needs to be Send + Sync because ProviderManager is shared across
-// threads via Arc<RwLock<ProviderManager>>.
-// Safety: RuntimeHandle is an opaque FFI handle accessed only through extern "C"
-// vtable functions. The same safety argument that applies to RuntimeProvider applies
-// here — all access is mediated by the vtable, and the runtime itself serializes access.
-unsafe impl Send for LoadedRuntime {}
-unsafe impl Sync for LoadedRuntime {}
+// LoadedRuntime is Send + Sync because:
+// - Arc<Mutex<RuntimeHandle>> is Send + Sync (RuntimeHandle: Send via unsafe impl above)
+// - All other fields are 'static references or Send types
+// No unsafe impl needed — this is derived automatically.
 
 /// A provider backed by a dynamically loaded runtime
 pub struct RuntimeProvider {
@@ -189,7 +201,9 @@ pub struct RuntimeProvider {
     #[allow(dead_code)]
     runtime_name: &'static str,
     vtable: &'static ScriptRuntimeVTable,
-    handle: RuntimeHandle,
+    /// Shared with the owning LoadedRuntime and sibling RuntimeProviders.
+    /// Mutex serializes concurrent vtable calls on the same runtime handle.
+    handle: Arc<Mutex<RuntimeHandle>>,
     info: ScriptProviderInfo,
     items: Vec<LaunchItem>,
 }
@@ -198,7 +212,7 @@ impl RuntimeProvider {
     fn new(
         runtime_name: &'static str,
         vtable: &'static ScriptRuntimeVTable,
-        handle: RuntimeHandle,
+        handle: Arc<Mutex<RuntimeHandle>>,
         info: ScriptProviderInfo,
     ) -> Self {
         Self {
@@ -220,6 +234,7 @@ impl RuntimeProvider {
             command: item.command.to_string(),
             terminal: item.terminal,
             tags: item.keywords.iter().map(|s| s.to_string()).collect(),
+            source: ItemSource::ScriptPlugin,
         }
     }
 }
@@ -239,7 +254,10 @@ impl Provider for RuntimeProvider {
         }
 
         let name_rstr = RStr::from_str(self.info.name.as_str());
-        let items_rvec = (self.vtable.refresh)(self.handle, name_rstr);
+        let items_rvec = {
+            let h = self.handle.lock().unwrap();
+            (self.vtable.refresh)(*h, name_rstr)
+        };
         self.items = items_rvec
             .into_iter()
             .map(|i| self.convert_item(i))
@@ -257,12 +275,10 @@ impl Provider for RuntimeProvider {
     }
 }
 
-// RuntimeProvider needs to be Send + Sync for the Provider trait.
-// Safety: RuntimeHandle is an opaque FFI handle accessed only through
-// extern "C" vtable functions. The same safety argument that justifies
-// Send applies to Sync — all access is mediated by the vtable.
-unsafe impl Send for RuntimeProvider {}
-unsafe impl Sync for RuntimeProvider {}
+// RuntimeProvider is Send + Sync because:
+// - Arc<Mutex<RuntimeHandle>> is Send + Sync (RuntimeHandle: Send via unsafe impl above)
+// - vtable is &'static (Send + Sync), info and items are Send
+// No unsafe impl needed — this is derived automatically.
 
 /// Check if the Lua runtime is available
 pub fn lua_runtime_available() -> bool {

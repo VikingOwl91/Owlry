@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use log::warn;
 
-use super::{DynamicProvider, LaunchItem, ProviderType};
+use super::{DynamicProvider, ItemSource, LaunchItem, ProviderType};
 use crate::config::Config;
 
 const ICON: &str = "preferences-system-symbolic";
@@ -46,22 +46,33 @@ impl ConfigProvider {
     }
 
     /// Execute a `CONFIG:*` action command. Returns `true` if handled.
+    ///
+    /// Acquires the write lock once and holds it across both the mutation and
+    /// the subsequent save, eliminating the TOCTOU window that would exist if
+    /// the sub-handlers each acquired the lock independently.
     fn handle_config_action(&self, command: &str) -> bool {
         let Some(rest) = command.strip_prefix("CONFIG:") else {
             return false;
         };
 
+        let mut cfg = match self.config.write() {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+
         let result = if let Some(path) = rest.strip_prefix("toggle:") {
-            self.handle_toggle(path)
+            Self::toggle_config(&mut cfg, path)
         } else if let Some(kv) = rest.strip_prefix("set:") {
-            self.handle_set(kv)
+            Self::set_config(&mut cfg, kv)
         } else if let Some(profile_cmd) = rest.strip_prefix("profile:") {
-            self.handle_profile(profile_cmd)
+            Self::profile_config(&mut cfg, profile_cmd)
         } else {
             false
         };
 
-        if result && let Ok(cfg) = self.config.read() && let Err(e) = cfg.save() {
+        if result
+            && let Err(e) = cfg.save()
+        {
             warn!("Failed to save config: {}", e);
         }
 
@@ -70,12 +81,7 @@ impl ConfigProvider {
 
     // ── Toggle handler ──────────────────────────────────────────────────
 
-    fn handle_toggle(&self, path: &str) -> bool {
-        let mut cfg = match self.config.write() {
-            Ok(c) => c,
-            Err(_) => return false,
-        };
-
+    fn toggle_config(cfg: &mut Config, path: &str) -> bool {
         match path {
             "providers.applications" => {
                 cfg.providers.applications = !cfg.providers.applications;
@@ -115,13 +121,9 @@ impl ConfigProvider {
 
     // ── Set handler ─────────────────────────────────────────────────────
 
-    fn handle_set(&self, kv: &str) -> bool {
+    fn set_config(cfg: &mut Config, kv: &str) -> bool {
         let Some((path, value)) = kv.split_once(':') else {
             return false;
-        };
-        let mut cfg = match self.config.write() {
-            Ok(c) => c,
-            Err(_) => return false,
         };
 
         match path {
@@ -183,12 +185,8 @@ impl ConfigProvider {
 
     // ── Profile handler ─────────────────────────────────────────────────
 
-    fn handle_profile(&self, cmd: &str) -> bool {
+    fn profile_config(cfg: &mut Config, cmd: &str) -> bool {
         if let Some(name) = cmd.strip_prefix("create:") {
-            let mut cfg = match self.config.write() {
-                Ok(c) => c,
-                Err(_) => return false,
-            };
             if !name.is_empty() && !cfg.profiles.contains_key(name) {
                 cfg.profiles.insert(
                     name.to_string(),
@@ -199,10 +197,6 @@ impl ConfigProvider {
                 false
             }
         } else if let Some(name) = cmd.strip_prefix("delete:") {
-            let mut cfg = match self.config.write() {
-                Ok(c) => c,
-                Err(_) => return false,
-            };
             cfg.profiles.remove(name).is_some()
         } else if let Some(rest) = cmd.strip_prefix("mode:") {
             // format: profile_name:toggle:mode_name
@@ -210,10 +204,6 @@ impl ConfigProvider {
             if parts.len() == 3 && parts[1] == "toggle" {
                 let profile_name = parts[0];
                 let mode_name = parts[2];
-                let mut cfg = match self.config.write() {
-                    Ok(c) => c,
-                    Err(_) => return false,
-                };
                 if let Some(profile) = cfg.profiles.get_mut(profile_name) {
                     if let Some(pos) = profile.modes.iter().position(|m| m == mode_name) {
                         profile.modes.remove(pos);
@@ -272,6 +262,7 @@ impl ConfigProvider {
                     command: format!("CONFIG:toggle:providers.{}", field),
                     terminal: false,
                     tags: vec!["config".into(), "settings".into()],
+                    source: ItemSource::Core,
                 }
             })
             .collect()
@@ -326,6 +317,7 @@ impl ConfigProvider {
                     command: format!("CONFIG:set:appearance.theme:{}", theme_name),
                     terminal: false,
                     tags: vec!["config".into(), "settings".into()],
+                    source: ItemSource::Core,
                 }
             })
             .collect()
@@ -356,6 +348,7 @@ impl ConfigProvider {
                     command: format!("CONFIG:set:providers.search_engine:{}", engine),
                     terminal: false,
                     tags: vec!["config".into(), "settings".into()],
+                    source: ItemSource::Core,
                 }
             })
             .collect()
@@ -382,6 +375,7 @@ impl ConfigProvider {
             command: "CONFIG:toggle:providers.frecency".into(),
             terminal: false,
             tags: vec!["config".into(), "settings".into()],
+            source: ItemSource::Core,
         });
 
         // If numeric input, offer a set-weight action
@@ -396,6 +390,7 @@ impl ConfigProvider {
                 command: format!("CONFIG:set:providers.frecency_weight:{}", clamped),
                 terminal: false,
                 tags: vec!["config".into(), "settings".into()],
+                source: ItemSource::Core,
             });
         }
 
@@ -422,6 +417,7 @@ impl ConfigProvider {
             command: String::new(),
             terminal: false,
             tags: vec!["config".into(), "settings".into()],
+            source: ItemSource::Core,
         });
 
         // If numeric input, offer a set action
@@ -438,6 +434,7 @@ impl ConfigProvider {
                     command: format!("CONFIG:set:{}:{}", config_path, input),
                     terminal: false,
                     tags: vec!["config".into(), "settings".into()],
+                    source: ItemSource::Core,
                 });
             }
         }
@@ -481,6 +478,7 @@ impl ConfigProvider {
                 command: String::new(),
                 terminal: false,
                 tags: vec!["config".into(), "settings".into()],
+                source: ItemSource::Core,
             });
         }
 
@@ -506,6 +504,7 @@ impl ConfigProvider {
             command: format!("CONFIG:profile:create:{}", name),
             terminal: false,
             tags: vec!["config".into(), "settings".into()],
+            source: ItemSource::Core,
         }]
     }
 
@@ -534,6 +533,7 @@ impl ConfigProvider {
                 command: format!("CONFIG:profile:delete:{}", profile_name),
                 terminal: false,
                 tags: vec!["config".into(), "settings".into()],
+                source: ItemSource::Core,
             },
         ]
     }
@@ -570,6 +570,7 @@ impl ConfigProvider {
                     ),
                     terminal: false,
                     tags: vec!["config".into(), "settings".into()],
+                    source: ItemSource::Core,
                 }
             })
             .collect()
@@ -697,6 +698,7 @@ fn nav_item(id: &str, name: &str, description: &str) -> LaunchItem {
         command: String::new(),
         terminal: false,
         tags: vec!["config".into(), "settings".into()],
+        source: ItemSource::Core,
     }
 }
 

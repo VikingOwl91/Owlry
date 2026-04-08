@@ -29,6 +29,10 @@ impl Default for FrecencyData {
     }
 }
 
+const MAX_ENTRIES: usize = 5000;
+const PRUNE_AGE_DAYS: i64 = 180;
+const MIN_LAUNCHES_TO_KEEP: u32 = 3;
+
 /// Frecency store for tracking and boosting recently/frequently used items
 pub struct FrecencyStore {
     data: FrecencyData,
@@ -44,10 +48,49 @@ impl FrecencyStore {
 
         info!("Frecency store loaded with {} entries", data.entries.len());
 
-        Self {
+        let mut store = Self {
             data,
             path,
             dirty: false,
+        };
+        store.prune();
+        store
+    }
+
+    /// Remove stale low-usage entries and enforce the hard cap.
+    ///
+    /// Entries older than `PRUNE_AGE_DAYS` with fewer than `MIN_LAUNCHES_TO_KEEP`
+    /// launches are removed. After age-based pruning, entries are sorted by score
+    /// (descending) and the list is truncated to `MAX_ENTRIES`.
+    fn prune(&mut self) {
+        let now = Utc::now();
+        let cutoff = now - chrono::Duration::days(PRUNE_AGE_DAYS);
+
+        let before = self.data.entries.len();
+        self.data.entries.retain(|_, e| {
+            e.last_launch > cutoff || e.launch_count >= MIN_LAUNCHES_TO_KEEP
+        });
+
+        if self.data.entries.len() > MAX_ENTRIES {
+            // Sort by score descending and keep the top MAX_ENTRIES
+            let mut scored: Vec<(String, f64)> = self
+                .data
+                .entries
+                .iter()
+                .map(|(k, e)| {
+                    (k.clone(), Self::calculate_frecency_at(e.launch_count, e.last_launch, now))
+                })
+                .collect();
+            scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            let keep: std::collections::HashSet<String> =
+                scored.into_iter().take(MAX_ENTRIES).map(|(k, _)| k).collect();
+            self.data.entries.retain(|k, _| keep.contains(k));
+        }
+
+        let removed = before - self.data.entries.len();
+        if removed > 0 {
+            info!("Frecency: pruned {} stale entries ({} remaining)", removed, self.data.entries.len());
+            self.dirty = true;
         }
     }
 

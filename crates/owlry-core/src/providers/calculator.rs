@@ -1,4 +1,4 @@
-use super::{DynamicProvider, LaunchItem, ProviderType};
+use super::{DynamicProvider, ItemSource, LaunchItem, ProviderType};
 
 /// Built-in calculator provider. Evaluates mathematical expressions via `meval`.
 ///
@@ -42,6 +42,7 @@ impl DynamicProvider for CalculatorProvider {
                     command: copy_cmd,
                     terminal: false,
                     tags: vec!["math".into(), "calculator".into()],
+                    source: ItemSource::Core,
                 }]
             }
             Err(_) => Vec::new(),
