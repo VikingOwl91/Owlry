@@ -139,6 +139,13 @@ exec owlryd
 systemctl --user enable --now owlryd.service
 ```
 
+The daemon reloads its configuration on `SIGHUP` without restarting — useful when editing `config.toml` directly:
+
+```bash
+systemctl --user reload owlryd.service
+# or: kill -HUP $(pidof owlryd)
+```
+
 **3. Socket activation (auto-start on first use)**
 
 ```bash
@@ -372,7 +379,6 @@ search_engine = "duckduckgo"
 
 [plugins]
 # disabled_plugins = ["emoji", "pomodoro"]  # Plugin IDs to disable
-# enabled_plugins = []                       # Empty = all discovered plugins are loaded
 # registry_url = "https://..."              # Custom plugin registry URL
 
 # Sandboxing for Lua/Rune user plugins (~/.config/owlry/plugins/)
@@ -381,6 +387,10 @@ search_engine = "duckduckgo"
 # allow_network = false      # Allow outbound network requests
 # allow_commands = false     # Allow shell command execution
 # memory_limit = 67108864    # Lua memory cap in bytes (default: 64 MB)
+
+# Per-plugin config (for plugins that expose configurable options)
+# [plugin_config.my-plugin]
+# option = "value"
 
 # Profiles: named sets of modes
 [profiles.dev]
@@ -420,7 +430,7 @@ owlry plugin enable emoji
 ### Plugin Management CLI
 
 ```bash
-# List installed plugins
+# List installed plugins (shows both native .so plugins and user script plugins)
 owlry plugin list
 owlry plugin list --enabled        # Only enabled
 owlry plugin list --available      # Show registry plugins
@@ -528,7 +538,7 @@ owlryd (daemon)                        owlry (GTK4 UI client)
 │   ├── /usr/lib/owlry/plugins/*.so
 │   ├── /usr/lib/owlry/runtimes/
 │   └── ~/.config/owlry/plugins/
-├── Frecency tracking
+├── Frecency tracking (auto-saved every 5 min; flushed on shutdown)
 └── IPC server (Unix socket)
          │
          └── $XDG_RUNTIME_DIR/owlry/owlry.sock

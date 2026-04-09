@@ -12,6 +12,13 @@ categories = ["development-tools"]
 [lib]
 crate-type = ["cdylib"]  # Compile as dynamic library (.so)
 
+[features]
+# Bundle Lua 5.4 from source (no system lua dep). Enabled by default for dev
+# and CI builds. Distribution packages should disable this and add lua54 as a
+# system dependency instead.
+default = ["vendored"]
+vendored = ["mlua/vendored"]
+
 [dependencies]
 # Plugin API for owlry (shared types)
 owlry-plugin-api = { path = "../owlry-plugin-api" }
@@ -20,7 +27,7 @@ owlry-plugin-api = { path = "../owlry-plugin-api" }
 abi_stable = "0.11"
 
 # Lua runtime
-mlua = { version = "0.11", features = ["lua54", "vendored", "send", "serialize"] }
+mlua = { version = "0.11", features = ["lua54", "send", "serialize"] }
 
 # Plugin manifest parsing
 toml = "0.8"
@@ -33,11 +40,6 @@ semver = "1"
 # Logging
 log = "0.4"
 
-# HTTP client for plugins
-reqwest = { version = "0.13", default-features = false, features = ["native-tls", "blocking", "json"] }
-
-# Math expression evaluation
-meval = "0.2"
 
 # Date/time for os.date
 chrono = "0.4"

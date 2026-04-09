@@ -73,4 +73,5 @@ package() {
     # Example plugins (for user plugin development)
     install -d "$pkgdir/usr/share/$pkgname/examples/plugins"
     cp -r examples/plugins/* "$pkgdir/usr/share/$pkgname/examples/plugins/"
+    chmod -R a+rX "$pkgdir/usr/share/$pkgname/examples/plugins/"
 }

@@ -1,6 +1,8 @@
+use expr_solver::{SymTable, eval_with_table};
+
 use super::{DynamicProvider, ItemSource, LaunchItem, ProviderType};
 
-/// Built-in calculator provider. Evaluates mathematical expressions via `meval`.
+/// Built-in calculator provider. Evaluates mathematical expressions via `expr-solver-lib`.
 ///
 /// Triggered by:
 /// - `= expr` / `=expr` / `calc expr` (explicit prefix)
@@ -26,7 +28,7 @@ impl DynamicProvider for CalculatorProvider {
             _ => return Vec::new(),
         };
 
-        match meval::eval_str(expr) {
+        match eval_math(expr) {
             Ok(result) => {
                 let display = format_result(result);
                 let copy_cmd = format!(
@@ -48,6 +50,18 @@ impl DynamicProvider for CalculatorProvider {
             Err(_) => Vec::new(),
         }
     }
+}
+
+/// Evaluate a math expression string, returning the result as f64.
+///
+/// Extends the stdlib with `ln` as an alias for natural log (meval compat).
+/// In expr-solver-lib, `log(x)` is natural log and `log10(x)` is base-10.
+fn eval_math(expr: &str) -> Result<f64, String> {
+    let mut table = SymTable::stdlib();
+    table
+        .add_func("ln", 1, false, |args| Ok(args[0].ln()), false)
+        .expect("ln alias is valid");
+    eval_with_table(expr, table)
 }
 
 /// Extract the math expression from a query string.
@@ -76,7 +90,7 @@ fn extract_expression(query: &str) -> Option<&str> {
     }
 
     // Auto-detect: only forward if the expression looks like math.
-    // Plain words like "firefox" should not reach meval.
+    // Plain words like "firefox" should not reach the evaluator.
     if looks_like_math(trimmed) {
         Some(trimmed)
     } else {

@@ -348,4 +348,10 @@ aur-test-pkg pkg:
 #   just aur-local-test -c owlry-core owlry-rune
 #   just aur-local-test --all --reset
 aur-local-test *args:
-    scripts/aur-local-test {{args}}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ts=$(date +%Y%m%d-%H%M%S)
+    outfile="build-logs/aur-test-$ts.log"
+    mkdir -p build-logs
+    scripts/aur-local-test {{args}} 2>&1 | tee "$outfile"
+    echo "⌁ Output saved to $outfile"

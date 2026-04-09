@@ -12,3 +12,8 @@ aur/*/*.tar.zst
 aur/*/*.tar.gz
 aur/*/*.tar.xz
 aur/*/*.pkg.tar.*
+
+# Local AUR test build logs
+build-logs/
+test-build-output*.md
+test-build-output*.log

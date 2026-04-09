@@ -3,7 +3,16 @@
 //! Provides safe math expression evaluation:
 //! - `owlry.math.calculate(expression)` - Evaluate a math expression
 
+use expr_solver::{SymTable, eval_with_table};
 use mlua::{Lua, Result as LuaResult, Table};
+
+fn eval_math(expr: &str) -> Result<f64, String> {
+    let mut table = SymTable::stdlib();
+    table
+        .add_func("ln", 1, false, |args| Ok(args[0].ln()), false)
+        .expect("ln alias is valid");
+    eval_with_table(expr, table)
+}
 
 /// Register math APIs
 pub fn register_math_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
@@ -16,7 +25,7 @@ pub fn register_math_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
         "calculate",
         lua.create_function(
             |_lua, expr: String| -> LuaResult<(Option<f64>, Option<String>)> {
-                match meval::eval_str(&expr) {
+                match eval_math(&expr) {
                     Ok(result) => {
                         if result.is_finite() {
                             Ok((Some(result), None))
@@ -24,7 +33,7 @@ pub fn register_math_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
                             Ok((None, Some("Result is not a finite number".to_string())))
                         }
                     }
-                    Err(e) => Ok((None, Some(e.to_string()))),
+                    Err(e) => Ok((None, Some(e))),
                 }
             },
         )?,
@@ -35,7 +44,7 @@ pub fn register_math_api(lua: &Lua, owlry: &Table) -> LuaResult<()> {
     math_table.set(
         "calc",
         lua.create_function(|_lua, expr: String| {
-            meval::eval_str(&expr)
+            eval_math(&expr)
                 .map_err(|e| mlua::Error::external(format!("Math error: {}", e)))
                 .and_then(|r| {
                     if r.is_finite() {
