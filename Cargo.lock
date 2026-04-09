@@ -2374,7 +2374,7 @@ dependencies = [
 
 [[package]]
 name = "owlry-lua"
-version = "1.1.4"
+version = "1.1.5"
 dependencies = [
  "abi_stable",
  "chrono",
