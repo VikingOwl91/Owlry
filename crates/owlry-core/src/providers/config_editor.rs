@@ -70,6 +70,7 @@ impl ConfigProvider {
             false
         };
 
+        #[cfg(not(test))]
         if result
             && let Err(e) = cfg.save()
         {
