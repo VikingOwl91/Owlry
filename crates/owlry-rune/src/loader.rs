@@ -70,6 +70,8 @@ impl LoadedPlugin {
                     default_icon: decl.icon.clone().unwrap_or_else(|| "application-x-addon".to_string()),
                     is_static: decl.provider_type != "dynamic",
                     prefix: decl.prefix.clone(),
+                    tab_label: decl.tab_label.clone(),
+                    search_noun: decl.search_noun.clone(),
                 });
             }
         }

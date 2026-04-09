@@ -841,6 +841,8 @@ type = "static"
 type_id = "{type_id}"
 icon = "application-x-addon"
 # prefix = ":{type_id}"
+# tab_label = "{display}"
+# search_noun = "{type_id} items"
 "#,
         name = name,
         display = display,

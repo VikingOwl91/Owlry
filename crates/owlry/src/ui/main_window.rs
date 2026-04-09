@@ -11,6 +11,7 @@ use gtk4::{
 use log::info;
 use owlry_core::config::Config;
 use owlry_core::filter::ProviderFilter;
+use owlry_core::ipc::ProviderDesc;
 use owlry_core::providers::{ItemSource, LaunchItem, ProviderType};
 
 #[cfg(feature = "dev-logging")]
@@ -77,6 +78,8 @@ pub struct MainWindow {
     debounce_source: Rc<RefCell<Option<gtk4::glib::SourceId>>>,
     /// Whether we're in dmenu mode (stdin pipe input)
     is_dmenu_mode: bool,
+    /// Provider display metadata from daemon (keyed by provider id)
+    provider_descs: Rc<HashMap<String, ProviderDesc>>,
 }
 
 impl MainWindow {
@@ -143,8 +146,24 @@ impl MainWindow {
         let tab_strings: Vec<String> = enabled.iter().map(|p| p.to_string()).collect();
         let tab_order = Rc::new(enabled);
 
+        // Fetch provider display metadata from daemon/local backend
+        let provider_descs: HashMap<String, ProviderDesc> = backend
+            .borrow_mut()
+            .available_providers()
+            .into_iter()
+            .map(|d| (d.id.clone(), d))
+            .collect();
+        let provider_descs = Rc::new(provider_descs);
+
+        // Update mode label with resolved plugin name (if applicable)
+        mode_label.set_label(&Self::mode_display_name(
+            &filter.borrow(),
+            &provider_descs,
+        ));
+
         // Create toggle buttons for each enabled provider
-        let filter_buttons = Self::create_filter_buttons(&filter_tabs, &filter, &tab_strings);
+        let filter_buttons =
+            Self::create_filter_buttons(&filter_tabs, &filter, &tab_strings, &provider_descs);
         let filter_buttons = Rc::new(RefCell::new(filter_buttons));
 
         header_box.append(&mode_label);
@@ -153,7 +172,7 @@ impl MainWindow {
         // Search entry with dynamic placeholder (or custom prompt if provided)
         let placeholder = custom_prompt
             .clone()
-            .unwrap_or_else(|| Self::build_placeholder(&filter.borrow()));
+            .unwrap_or_else(|| Self::build_placeholder(&filter.borrow(), &provider_descs));
         let search_entry = Entry::builder()
             .placeholder_text(&placeholder)
             .hexpand(true)
@@ -223,6 +242,7 @@ impl MainWindow {
             lazy_state,
             debounce_source: Rc::new(RefCell::new(None)),
             is_dmenu_mode,
+            provider_descs,
         };
 
         main_window.setup_signals();
@@ -267,6 +287,7 @@ impl MainWindow {
         container: &GtkBox,
         filter: &Rc<RefCell<ProviderFilter>>,
         tabs: &[String],
+        descs: &HashMap<String, ProviderDesc>,
     ) -> HashMap<ProviderType, ToggleButton> {
         let mut buttons = HashMap::new();
 
@@ -280,7 +301,7 @@ impl MainWindow {
                 }
             };
 
-            let base_label = Self::provider_tab_label(&provider_type);
+            let meta = Self::provider_meta(&provider_type, descs);
             // Show number hint in the label for first 9 tabs (using superscript)
             let label = if idx < 9 {
                 let superscript = match idx + 1 {
@@ -295,9 +316,9 @@ impl MainWindow {
                     9 => "⁹",
                     _ => "",
                 };
-                format!("{}{}", base_label, superscript)
+                format!("{}{}", meta.tab_label, superscript)
             } else {
-                base_label.to_string()
+                meta.tab_label.clone()
             };
             let shortcut = format!("Ctrl+{}", idx + 1);
 
@@ -308,8 +329,7 @@ impl MainWindow {
                 .build();
 
             button.add_css_class("owlry-filter-button");
-            let css_class = Self::provider_css_class(&provider_type);
-            button.add_css_class(css_class);
+            button.add_css_class(&meta.css_class);
 
             container.append(&button);
             buttons.insert(provider_type, button);
@@ -318,21 +338,42 @@ impl MainWindow {
         buttons
     }
 
-    /// Get display label for a provider tab
-    /// Core types have fixed labels; plugins derive labels from type_id
-    fn provider_tab_label(provider: &ProviderType) -> &'static str {
-        provider_meta::meta_for(provider).tab_label
+    /// Get the mode display name, resolving plugin names via IPC metadata.
+    fn mode_display_name(
+        filter: &ProviderFilter,
+        descs: &HashMap<String, ProviderDesc>,
+    ) -> String {
+        let base = filter.mode_display_name();
+        // "Plugin" is the generic fallback — resolve it to the actual name
+        if base == "Plugin" {
+            let enabled = filter.enabled_providers();
+            if enabled.len() == 1
+                && let ProviderType::Plugin(_) = &enabled[0]
+            {
+                return Self::provider_meta(&enabled[0], descs).tab_label;
+            }
+        }
+        base.to_string()
     }
 
-    fn provider_css_class(provider: &ProviderType) -> &'static str {
-        provider_meta::meta_for(provider).css_class
+    /// Resolve display metadata for a provider, checking IPC data first.
+    fn provider_meta(
+        provider: &ProviderType,
+        descs: &HashMap<String, ProviderDesc>,
+    ) -> provider_meta::ProviderMeta {
+        let type_id = provider.to_string();
+        let desc = descs.get(&type_id);
+        provider_meta::resolve(provider, desc)
     }
 
-    fn build_placeholder(filter: &ProviderFilter) -> String {
-        let active: Vec<&str> = filter
+    fn build_placeholder(
+        filter: &ProviderFilter,
+        descs: &HashMap<String, ProviderDesc>,
+    ) -> String {
+        let active: Vec<String> = filter
             .enabled_providers()
             .iter()
-            .map(|p| provider_meta::meta_for(p).search_noun)
+            .map(|p| Self::provider_meta(p, descs).search_noun)
             .collect();
 
         format!("Search {}...", active.join(", "))
@@ -451,6 +492,7 @@ impl MainWindow {
         search_entry: &Entry,
         filter: &Rc<RefCell<ProviderFilter>>,
         config: &Rc<RefCell<Config>>,
+        descs: &HashMap<String, ProviderDesc>,
     ) {
         #[cfg(feature = "dev-logging")]
         debug!("[UI] Exiting submenu");
@@ -463,9 +505,12 @@ impl MainWindow {
         };
 
         // Restore UI
-        mode_label.set_label(filter.borrow().mode_display_name());
+        mode_label.set_label(&Self::mode_display_name(&filter.borrow(), descs));
         hints_label.set_label(&Self::build_hints(&config.borrow().providers));
-        search_entry.set_placeholder_text(Some(&Self::build_placeholder(&filter.borrow())));
+        search_entry.set_placeholder_text(Some(&Self::build_placeholder(
+            &filter.borrow(),
+            descs,
+        )));
         search_entry.set_text(&saved_search);
 
         // Trigger refresh by emitting changed signal
@@ -484,6 +529,7 @@ impl MainWindow {
         let submenu_state = self.submenu_state.clone();
         let lazy_state = self.lazy_state.clone();
         let debounce_source = self.debounce_source.clone();
+        let descs = self.provider_descs.clone();
 
         self.search_entry.connect_changed(move |entry| {
             let raw_query = entry.text();
@@ -532,7 +578,7 @@ impl MainWindow {
                 f.set_prefix(parsed.prefix.clone());
             }
 
-            mode_label.set_label(filter.borrow().mode_display_name());
+            mode_label.set_label(&Self::mode_display_name(&filter.borrow(), &descs));
 
             if let Some(ref prefix) = parsed.prefix {
                 let prefix_name = match prefix {
@@ -779,6 +825,7 @@ impl MainWindow {
             let search_entry = self.search_entry.clone();
             let mode_label = self.mode_label.clone();
             let ptype = provider_type.clone();
+            let descs = self.provider_descs.clone();
 
             button.connect_toggled(move |btn| {
                 {
@@ -789,8 +836,11 @@ impl MainWindow {
                         f.disable(ptype.clone());
                     }
                 }
-                mode_label.set_label(filter.borrow().mode_display_name());
-                search_entry.set_placeholder_text(Some(&Self::build_placeholder(&filter.borrow())));
+                mode_label.set_label(&Self::mode_display_name(&filter.borrow(), &descs));
+                search_entry.set_placeholder_text(Some(&Self::build_placeholder(
+                    &filter.borrow(),
+                    &descs,
+                )));
                 search_entry.emit_by_name::<()>("changed", &[]);
             });
         }
@@ -811,6 +861,7 @@ impl MainWindow {
         let tab_order = self.tab_order.clone();
         let is_dmenu_mode = self.is_dmenu_mode;
         let lazy_state_for_keys = self.lazy_state.clone();
+        let provider_descs = self.provider_descs.clone();
 
         key_controller.connect_key_pressed(move |_, key, _, modifiers| {
             let ctrl = modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK);
@@ -833,6 +884,7 @@ impl MainWindow {
                             &search_entry,
                             &filter,
                             &config,
+                            &provider_descs,
                         );
                         gtk4::glib::Propagation::Stop
                     } else {
@@ -854,6 +906,7 @@ impl MainWindow {
                             &search_entry,
                             &filter,
                             &config,
+                            &provider_descs,
                         );
                         gtk4::glib::Propagation::Stop
                     } else {
@@ -901,6 +954,7 @@ impl MainWindow {
                             &mode_label,
                             &tab_order,
                             !shift,
+                            &provider_descs,
                         );
                     }
                     gtk4::glib::Propagation::Stop
@@ -914,6 +968,7 @@ impl MainWindow {
                             &mode_label,
                             &tab_order,
                             false,
+                            &provider_descs,
                         );
                     }
                     gtk4::glib::Propagation::Stop
@@ -953,6 +1008,7 @@ impl MainWindow {
                                 &filter_buttons,
                                 &search_entry,
                                 &mode_label,
+                                &provider_descs,
                             );
                         } else {
                             info!(
@@ -1041,6 +1097,7 @@ impl MainWindow {
         mode_label: &Label,
         tab_order: &[ProviderType],
         forward: bool,
+        descs: &HashMap<String, ProviderDesc>,
     ) {
         if tab_order.is_empty() {
             return;
@@ -1113,8 +1170,8 @@ impl MainWindow {
             }
         }
 
-        mode_label.set_label(filter.borrow().mode_display_name());
-        entry.set_placeholder_text(Some(&Self::build_placeholder(&filter.borrow())));
+        mode_label.set_label(&Self::mode_display_name(&filter.borrow(), descs));
+        entry.set_placeholder_text(Some(&Self::build_placeholder(&filter.borrow(), descs)));
         entry.emit_by_name::<()>("changed", &[]);
     }
 
@@ -1124,6 +1181,7 @@ impl MainWindow {
         buttons: &Rc<RefCell<HashMap<ProviderType, ToggleButton>>>,
         entry: &Entry,
         mode_label: &Label,
+        descs: &HashMap<String, ProviderDesc>,
     ) {
         {
             let mut f = filter.borrow_mut();
@@ -1134,8 +1192,8 @@ impl MainWindow {
             button.set_active(filter.borrow().is_enabled(provider));
         }
 
-        mode_label.set_label(filter.borrow().mode_display_name());
-        entry.set_placeholder_text(Some(&Self::build_placeholder(&filter.borrow())));
+        mode_label.set_label(&Self::mode_display_name(&filter.borrow(), descs));
+        entry.set_placeholder_text(Some(&Self::build_placeholder(&filter.borrow(), descs)));
         entry.emit_by_name::<()>("changed", &[]);
     }
 

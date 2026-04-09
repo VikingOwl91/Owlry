@@ -55,6 +55,8 @@ pub struct RuneProviderInfo {
     pub default_icon: RString,
     pub is_static: bool,
     pub prefix: ROption<RString>,
+    pub tab_label: ROption<RString>,
+    pub search_noun: ROption<RString>,
 }
 
 /// Opaque handle to runtime state
@@ -125,6 +127,16 @@ extern "C" fn runtime_init(plugins_dir: RStr<'_>, owlry_version: RStr<'_>) -> Ru
                             .prefix
                             .as_ref()
                             .map(|p| RString::from(p.as_str()))
+                            .into(),
+                        tab_label: reg
+                            .tab_label
+                            .as_ref()
+                            .map(|s| RString::from(s.as_str()))
+                            .into(),
+                        search_noun: reg
+                            .search_noun
+                            .as_ref()
+                            .map(|s| RString::from(s.as_str()))
                             .into(),
                     });
                 }

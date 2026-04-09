@@ -42,6 +42,8 @@ pub struct ProviderDescriptor {
     pub prefix: Option<String>,
     pub icon: String,
     pub position: String,
+    pub tab_label: Option<String>,
+    pub search_noun: Option<String>,
 }
 
 /// Trust level of a [`LaunchItem`]'s command, used to gate `sh -c` execution.
@@ -148,6 +150,14 @@ pub trait Provider: Send + Sync {
     fn provider_type(&self) -> ProviderType;
     fn refresh(&mut self);
     fn items(&self) -> &[LaunchItem];
+    /// Short label for UI tab button (e.g., "Shutdown"). None = use default.
+    fn tab_label(&self) -> Option<&str> {
+        None
+    }
+    /// Noun for search placeholder (e.g., "shutdown actions"). None = use default.
+    fn search_noun(&self) -> Option<&str> {
+        None
+    }
 }
 
 /// Trait for built-in providers that produce results per-keystroke.
@@ -1022,6 +1032,8 @@ impl ProviderManager {
                 prefix,
                 icon,
                 position: "normal".to_string(),
+                tab_label: provider.tab_label().map(String::from),
+                search_noun: provider.search_noun().map(String::from),
             });
         }
 
@@ -1033,6 +1045,8 @@ impl ProviderManager {
                 prefix: provider.prefix().map(String::from),
                 icon: provider.icon().to_string(),
                 position: provider.position_str().to_string(),
+                tab_label: None,
+                search_noun: None,
             });
         }
 
@@ -1044,6 +1058,8 @@ impl ProviderManager {
                 prefix: provider.prefix().map(String::from),
                 icon: provider.icon().to_string(),
                 position: provider.position_str().to_string(),
+                tab_label: None,
+                search_noun: None,
             });
         }
 
@@ -1055,6 +1071,8 @@ impl ProviderManager {
                 prefix: provider.prefix().map(String::from),
                 icon: provider.icon().to_string(),
                 position: provider.position_str().to_string(),
+                tab_label: None,
+                search_noun: None,
             });
         }
 

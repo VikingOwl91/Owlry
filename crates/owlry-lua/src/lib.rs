@@ -113,6 +113,10 @@ pub struct LuaProviderInfo {
     pub is_static: bool,
     /// Optional prefix trigger
     pub prefix: ROption<RString>,
+    /// Short label for UI tab button
+    pub tab_label: ROption<RString>,
+    /// Noun for search placeholder
+    pub search_noun: ROption<RString>,
 }
 
 /// Internal runtime state
@@ -184,6 +188,8 @@ impl LuaRuntimeState {
                         default_icon: RString::from(reg.default_icon.as_str()),
                         is_static: !reg.is_dynamic,
                         prefix: reg.prefix.map(RString::from).into(),
+                        tab_label: reg.tab_label.map(RString::from).into(),
+                        search_noun: reg.search_noun.map(RString::from).into(),
                     });
                 }
             }

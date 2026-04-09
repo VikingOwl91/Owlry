@@ -73,6 +73,12 @@ pub struct ProviderSpec {
     pub provider_type: String,
     #[serde(default)]
     pub type_id: Option<String>,
+    /// Short label for UI tab button (e.g., "Shutdown"). Defaults to provider name.
+    #[serde(default)]
+    pub tab_label: Option<String>,
+    /// Noun for search placeholder (e.g., "shutdown actions"). Defaults to provider name.
+    #[serde(default)]
+    pub search_noun: Option<String>,
 }
 
 fn default_provider_type() -> String {

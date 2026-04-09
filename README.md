@@ -459,6 +459,32 @@ owlry plugin create my-plugin -r rune      # Rune
 owlry plugin run <plugin-id> <command> [args...]
 ```
 
+### Plugin Display Metadata
+
+Plugins can declare how they appear in the UI via their `plugin.toml`. Without these fields, the tab label and search placeholder default to a capitalized version of the `type_id`.
+
+```toml
+[[providers]]
+id = "my-plugin"
+name = "My Plugin"
+type_id = "myplugin"
+tab_label = "My Plugin"        # Tab button and page title
+search_noun = "plugin items"   # Search placeholder: "Search plugin items..."
+```
+
+Both fields are optional. If omitted, the UI auto-generates from `type_id` (e.g., `type_id = "hs"` shows "Hs" as the tab label).
+
+Lua plugins can also set these at runtime via `owlry.provider.register()`:
+
+```lua
+owlry.provider.register({
+    id = "my-plugin",
+    name = "My Plugin",
+    tab_label = "My Plugin",
+    search_noun = "plugin items",
+})
+```
+
 ### Creating Custom Plugins
 
 See [docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) for:

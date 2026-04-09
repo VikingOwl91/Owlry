@@ -64,6 +64,8 @@ fn test_providers_response() {
             prefix: Some(":app".into()),
             icon: "application-x-executable".into(),
             position: "normal".into(),
+            tab_label: None,
+            search_noun: None,
         }],
     };
     let json = serde_json::to_string(&resp).unwrap();

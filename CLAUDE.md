@@ -276,7 +276,7 @@ Communication uses newline-delimited JSON over a Unix domain socket at `$XDG_RUN
 | Type | Purpose |
 |------|---------|
 | `Results` | Search results with `Vec<ResultItem>` |
-| `Providers` | Provider list with `Vec<ProviderDesc>` |
+| `Providers` | Provider list with `Vec<ProviderDesc>` (includes optional `tab_label`, `search_noun`) |
 | `SubmenuItems` | Submenu actions for a plugin |
 | `Ack` | Success acknowledgement |
 | `Error` | Error with message |
@@ -330,6 +330,8 @@ All other providers are native plugins in the separate `owlry-plugins` repo (`so
 - Filesystem watching for automatic user plugin hot-reload
 
 **Submenu System**: Plugins can return items with `SUBMENU:plugin_id:data` commands. When selected, the plugin is queried with `?SUBMENU:data` to get action items (e.g., systemd service actions).
+
+**Provider Display Metadata**: Script plugins can declare `tab_label` and `search_noun` in their `plugin.toml` `[[providers]]` section, or at runtime via `owlry.provider.register()` (Lua) / `register_provider()` (Rune). These flow through the `Provider` trait → `ProviderDescriptor` → IPC `ProviderDesc` → UI. The UI resolves metadata via `provider_meta::resolve()`, checking IPC metadata first, then falling back to the hardcoded match table. Unknown plugins auto-generate labels from `type_id` (e.g., "hs" → "Hs"). Native plugins use the hardcoded match table since `owlry-plugin-api::ProviderInfo` doesn't include these fields (deferred to API v5).
 
 ### Plugin API
 
@@ -428,6 +430,7 @@ Plugins live in a separate repository: `somegit.dev/Owlibou/owlry-plugins`
 - **ABI stability**: Plugin interface uses `abi_stable` crate for safe Rust dynamic linking
 - **Plugin API v3**: Adds `position` (Normal/Widget) and `priority` fields to ProviderInfo
 - **ProviderType simplification**: Core uses only `Application`, `Command`, `Dmenu`, `Plugin(String)` - all plugin-specific types removed from core
+- **Provider display metadata**: Tab labels and search nouns flow from plugin.toml → `Provider` trait → IPC `ProviderDesc` → UI `provider_meta::resolve()`. Known native plugins use a hardcoded match table; script plugins declare metadata in their manifest or at runtime registration
 
 ## Dependencies (Rust 1.90+, GTK 4.12+)
 

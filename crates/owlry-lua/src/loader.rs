@@ -19,6 +19,8 @@ pub struct ProviderRegistration {
     pub default_icon: String,
     pub prefix: Option<String>,
     pub is_dynamic: bool,
+    pub tab_label: Option<String>,
+    pub search_noun: Option<String>,
 }
 
 /// A loaded plugin instance
@@ -113,6 +115,8 @@ impl LoadedPlugin {
                         .unwrap_or_else(|| "application-x-addon".to_string()),
                     prefix: decl.prefix.clone(),
                     is_dynamic: decl.provider_type == "dynamic",
+                    tab_label: decl.tab_label.clone(),
+                    search_noun: decl.search_noun.clone(),
                 });
             }
         }

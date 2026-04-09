@@ -90,4 +90,8 @@ pub struct ProviderDesc {
     pub prefix: Option<String>,
     pub icon: String,
     pub position: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab_label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search_noun: Option<String>,
 }

@@ -34,6 +34,8 @@ fn register_provider(lua: &Lua, config: Table) -> LuaResult<()> {
         .get::<Option<String>>("default_icon")?
         .unwrap_or_else(|| "application-x-addon".to_string());
     let prefix: Option<String> = config.get("prefix")?;
+    let tab_label: Option<String> = config.get("tab_label")?;
+    let search_noun: Option<String> = config.get("search_noun")?;
 
     // Check if it's a dynamic provider (has query function) or static (has refresh)
     let has_query: bool = config.contains_key("query")?;
@@ -70,6 +72,8 @@ fn register_provider(lua: &Lua, config: Table) -> LuaResult<()> {
             default_icon,
             prefix,
             is_dynamic,
+            tab_label,
+            search_noun,
         });
     });
 

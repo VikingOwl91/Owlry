@@ -8,7 +8,7 @@ use log::warn;
 use owlry_core::config::Config;
 use owlry_core::data::FrecencyStore;
 use owlry_core::filter::ProviderFilter;
-use owlry_core::ipc::ResultItem;
+use owlry_core::ipc::{ProviderDesc, ResultItem};
 use owlry_core::providers::{ItemSource, LaunchItem, ProviderManager, ProviderType};
 use std::sync::{Arc, Mutex};
 
@@ -349,13 +349,12 @@ impl SearchBackend {
         }
     }
 
-    /// Get available provider type IDs from the daemon, or from local manager.
-    #[allow(dead_code)]
-    pub fn available_provider_ids(&mut self) -> Vec<String> {
+    /// Get available provider descriptors from the daemon, or from local manager.
+    pub fn available_providers(&mut self) -> Vec<ProviderDesc> {
         match self {
             SearchBackend::Daemon(handle) => match handle.client.lock() {
                 Ok(mut client) => match client.providers() {
-                    Ok(descs) => descs.into_iter().map(|d| d.id).collect(),
+                    Ok(descs) => descs,
                     Err(e) => {
                         warn!("IPC providers query failed: {}", e);
                         Vec::new()
@@ -369,7 +368,15 @@ impl SearchBackend {
             SearchBackend::Local { providers, .. } => providers
                 .available_providers()
                 .into_iter()
-                .map(|d| d.id)
+                .map(|d| ProviderDesc {
+                    id: d.id,
+                    name: d.name,
+                    prefix: d.prefix,
+                    icon: d.icon,
+                    position: d.position,
+                    tab_label: d.tab_label,
+                    search_noun: d.search_noun,
+                })
                 .collect(),
         }
     }

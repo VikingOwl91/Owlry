@@ -41,6 +41,8 @@ pub struct ScriptProviderInfo {
     pub default_icon: RString,
     pub is_static: bool,
     pub prefix: owlry_plugin_api::ROption<RString>,
+    pub tab_label: owlry_plugin_api::ROption<RString>,
+    pub search_noun: owlry_plugin_api::ROption<RString>,
 }
 
 // Type alias for backwards compatibility
@@ -272,6 +274,14 @@ impl Provider for RuntimeProvider {
 
     fn items(&self) -> &[LaunchItem] {
         &self.items
+    }
+
+    fn tab_label(&self) -> Option<&str> {
+        self.info.tab_label.as_ref().map(|s| s.as_str()).into()
+    }
+
+    fn search_noun(&self) -> Option<&str> {
+        self.info.search_noun.as_ref().map(|s| s.as_str()).into()
     }
 }
 

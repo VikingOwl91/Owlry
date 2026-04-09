@@ -16,6 +16,8 @@ pub struct ProviderRegistration {
     pub default_icon: String,
     pub is_static: bool,
     pub prefix: Option<String>,
+    pub tab_label: Option<String>,
+    pub search_noun: Option<String>,
 }
 
 /// An item returned by a provider

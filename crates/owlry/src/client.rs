@@ -355,6 +355,8 @@ mod tests {
                 prefix: Some(":app".into()),
                 icon: "application-x-executable".into(),
                 position: "normal".into(),
+                tab_label: None,
+                search_noun: None,
             }],
         };
 

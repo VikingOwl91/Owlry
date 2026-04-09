@@ -29,6 +29,10 @@ pub struct ProviderDecl {
     pub provider_type: String,
     #[serde(default)]
     pub type_id: Option<String>,
+    #[serde(default)]
+    pub tab_label: Option<String>,
+    #[serde(default)]
+    pub search_noun: Option<String>,
 }
 
 fn default_provider_type() -> String {

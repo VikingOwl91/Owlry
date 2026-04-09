@@ -472,6 +472,8 @@ fn descriptor_to_desc(desc: crate::providers::ProviderDescriptor) -> ProviderDes
         prefix: desc.prefix,
         icon: desc.icon,
         position: desc.position,
+        tab_label: desc.tab_label,
+        search_noun: desc.search_noun,
     }
 }
 
