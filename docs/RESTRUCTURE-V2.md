@@ -27,6 +27,13 @@ All design decisions agreed before work started. These are load-bearing — do n
 | D12 | **Drop `scripts` provider** | Replaced by `owlry.provider {}` in Lua config (Phase 3+). |
 | D13 | **Rename `sys` → `power`** | "sys" collides mentally with "systemd". `:sys` kept as alias. |
 | D14 | **Keep submenu protocol** | Used by systemd provider for service actions. Becomes a method on the `Provider` trait. |
+| D15 | **Rename systemd unit `owlryd.{service,socket}` → `owlry.{service,socket}`** | Consistent with single-binary collapse. PKGBUILD ships new names; old units cleaned up via `replaces=()` upgrade path. |
+| D16 | **Submenu protocol redesign deferred to Phase 5** | Today's `SUBMENU:type:data` string encoding works. Typed IPC variant is hygiene, not blocking. |
+| D17 | **Keep the daemon** | Cold-start cost (XDG scan, frecency load, provider warm-up) is the real reason the daemon exists. Single-process collapse remains an option to revisit post-2.0 if profiling proves it's free. |
+| D18 | **TOML reader: hard cut at 3.0.0** | One migration moment. 2.x stays TOML-only; 3.0 ships Lua-only with `owlry migrate-config` shipping in 2.x as preview. |
+| D19 | **Lua sandbox** (Phase 3): filesystem read + process spawn allowed; no network by default | Launcher needs to read configs and spawn commands. Network access (HTTP, sockets) requires explicit config opt-in. |
+| D20 | **Widget providers (`weather`, `media`, `pomodoro`) on hold** | UI positioning unresolved. **Excluded from Phase 1 conversion entirely** — not pulled in, not compiled in. Revisit as a dedicated workstream after 2.0 ships. |
+| D21 | **Hot-reload of `init.lua` on save** (Phase 3) | `notify` crate already a dep. Watch `~/.config/owlry/init.lua` and any `require`d files; re-run config eval on change. |
 
 ---
 
@@ -66,10 +73,8 @@ owlry/
 │       │   ├── ssh.rs         (feature: ssh)
 │       │   ├── systemd.rs     (feature: systemd, type_id "uuctl")
 │       │   ├── websearch.rs   (feature: websearch)
-│       │   ├── filesearch.rs  (feature: filesearch)
-│       │   ├── weather.rs     (feature: weather)
-│       │   ├── media.rs       (feature: media)
-│       │   └── pomodoro.rs    (feature: pomodoro)
+│       │   └── filesearch.rs  (feature: filesearch)
+│       │   -- weather, media, pomodoro: deferred (D20)
 │       └── ui/                -- GTK4 client
 ├── data/
 │   ├── config.example.toml    -- shipped defaults (Phase 1)
@@ -144,9 +149,9 @@ Final naming for cargo features and corresponding provider IDs:
 | `systemd`    | `:systemd` (`:uuctl` alias) | systemd user units (type_id stays "uuctl" for config compat) |
 | `websearch`  | `:web` / `?`          | Web search (DDG, Google, custom engines) |
 | `filesearch` | `:file` / `/`         | File search via `fd` or `mlocate` |
-| `weather`    | (widget)              | Weather widget at top of results |
-| `media`      | (widget)              | MPRIS media player controls |
-| `pomodoro`   | (widget)              | Pomodoro focus timer widget |
+| ~~`weather`~~ | — | **Deferred (D20)** — not in 2.0.0 |
+| ~~`media`~~  | — | **Deferred (D20)** — not in 2.0.0 |
+| ~~`pomodoro`~~ | — | **Deferred (D20)** — not in 2.0.0 |
 
 ### Cargo feature groups
 
@@ -156,7 +161,8 @@ default = ["app", "cmd", "calc", "conv", "power", "dmenu"]
 full = [
     "app", "cmd", "calc", "conv", "power", "dmenu",
     "bookmarks", "clipboard", "emoji", "ssh", "systemd",
-    "websearch", "filesearch", "weather", "media", "pomodoro",
+    "websearch", "filesearch",
+    # widgets (weather, media, pomodoro): deferred (D20)
 ]
 dev-logging = []
 ```
@@ -230,7 +236,7 @@ Subtasks (tracked in TaskList):
 3. **Delete C-ABI plugin system** — `plugins/` dir, `native_provider.rs`, `lua_provider.rs`, `owlry-plugin-api` crate; strip `ProviderManager::new_with_config()` of plugin loading
 4. **Delete Rune + Lua runtime crates** — `crates/owlry-rune/`, `crates/owlry-lua/`
 5. **Delete config_editor + scripts providers**
-6. **Convert 11 plugins to native Provider impls** — pull source from `owlry-plugins/crates/owlry-plugin-*`, convert `extern "C"` vtable → `impl Provider` / `impl DynamicProvider`. Per-plugin mechanical work.
+6. **Convert 8 plugins to native Provider impls** — bookmarks, clipboard, emoji, ssh, systemd, websearch, filesearch. Pull source from `owlry-plugins/crates/owlry-plugin-*`, convert `extern "C"` vtable → `impl Provider` / `impl DynamicProvider`. Per-plugin mechanical work. **Widgets (weather, media, pomodoro) excluded per D20; scripts excluded per D12.**
 7. **Wire cargo features per provider** — `#[cfg(feature = "...")]` gating; `default` / `full` feature groups
 8. **Rename `sys` → `power`** — file, type_id (in CLI mode mapping table), `:sys` kept as alias, config key `providers.system` → `providers.power` (with TOML migration shim that reads the old name)
 9. **CLI restructure** — new clap shape (subcommands `daemon`, `dmenu`, `doctor`, `providers`, `config`, `migrate-config`); drop entire `plugin` subcommand tree; daemon mode via `owlry -d` / `owlry daemon`
@@ -318,9 +324,9 @@ Mechanical pattern for each plugin: drop `extern "C"` exports, `PluginItem` → 
 | scripts          | DELETE   | —        | —              | Replaced by Lua config (D12) |
 | websearch        | Dynamic  | no       | yes            | per-keystroke; `?` trigger |
 | filesearch       | Dynamic  | no       | yes            | per-keystroke; `/` trigger; `fd` or `mlocate` |
-| weather          | Widget   | no       | no             | Top-of-results; network call on refresh |
-| media            | Widget   | yes      | no             | MPRIS control via submenu actions |
-| pomodoro         | Widget   | yes      | no             | Start/pause/reset via submenu actions |
+| ~~weather~~      | DEFER    | —        | —              | **D20** — UI positioning unresolved |
+| ~~media~~        | DEFER    | —        | —              | **D20** — UI positioning unresolved |
+| ~~pomodoro~~     | DEFER    | —        | —              | **D20** — UI positioning unresolved |
 
 ### Submenu mechanism on `Provider` trait
 
@@ -389,17 +395,26 @@ owlry-meta-full
 
 ---
 
-## 8. Open questions / decisions deferred to later phases
+## 8. Open questions — RESOLVED
+
+All section-8 questions from the original plan have been answered. Captured as D15–D21 in section 0.
+
+| Original question | Resolution | Recorded as |
+|---|---|---|
+| systemd unit name | Rename to `owlry.{service,socket}` | D15 |
+| Submenu protocol redesign | Deferred to Phase 5 | D16 |
+| Drop daemon entirely? | No — cold-start cost justifies it | D17 |
+| TOML reader removal timing | Hard cut at 3.0.0 | D18 |
+| Lua sandbox model | fs read + process spawn allowed; no network by default | D19 |
+| Widget positioning | On hold; widgets excluded from Phase 1 | D20 |
+| Hot-reload init.lua | Yes (Phase 3) | D21 |
+
+### Newly open (post-resolution)
 
 | Question | Defer to | Notes |
 |---|---|---|
-| systemd unit name: `owlry.service` vs keep `owlryd.service`? | Phase 2 | Probably rename for consistency; PKGBUILD handles old name via `backup` field |
-| Submenu protocol redesign (`SUBMENU:type:data` string-encoded → typed IPC variant) | Phase 5 | Works today; not blocking |
-| Drop daemon entirely (collapse into single-process UI)? | Post-2.0 | Profile first; daemon's perf justification is dubious but not measured |
-| TOML reader removal timing — 2.1.0 dual-read or 3.0.0 hard cut? | Phase 3 entry | Hard cut is cleaner; one migration moment |
-| LuaProvider sandboxing model — what stdlib subset can user `init.lua` access? | Phase 3 | At minimum: filesystem read, process spawn (it's a launcher), no network by default |
-| Where do widgets (`weather`, `media`, `pomodoro`) live in the UI after the rewrite? | Phase 1.6 | Today they're "position: Widget" rendered above results; keep that |
-| Hot-reload of `init.lua` on save? | Phase 3 | Nice-to-have; `notify` crate is already a dep |
+| Widget rework: keep the "Widget position" UI concept, redesign, or drop entirely? | Post-2.0 workstream | Pulled out of Phase 1 scope per D20. Decide before re-introducing weather/media/pomodoro. |
+| `owlry migrate-config` shipped in 2.x as preview, or only at 3.0.0? | Phase 3 planning | Lean toward shipping in 2.1.0 as a preview so users can test their migrations before TOML is gone. |
 
 ---
 
