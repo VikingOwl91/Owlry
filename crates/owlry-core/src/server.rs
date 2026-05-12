@@ -111,8 +111,6 @@ impl Server {
         info!("IPC server listening on {:?}", socket_path);
 
         let config = Arc::new(RwLock::new(Config::load_or_default()));
-        // Share config with native plugin loader so plugins can read their own config sections.
-        crate::plugins::native_loader::set_shared_config(Arc::clone(&config));
         let provider_manager = ProviderManager::new_with_config(Arc::clone(&config));
         let frecency = FrecencyStore::new();
 
@@ -127,9 +125,6 @@ impl Server {
 
     /// Accept connections in a loop, spawning a thread per client.
     pub fn run(&self) -> io::Result<()> {
-        // Start filesystem watcher for user plugin hot-reload
-        crate::plugins::watcher::start_watching(Arc::clone(&self.provider_manager));
-
         // SIGHUP handler: reload config from disk into the shared Arc<RwLock<Config>>.
         {
             use signal_hook::consts::SIGHUP;
@@ -419,15 +414,6 @@ impl Server {
                 }
             }
 
-            Request::PluginList => {
-                let pm_guard = match pm.read() {
-                    Ok(g) => g,
-                    Err(_) => return Response::Error { message: "internal error: provider lock poisoned".into() },
-                };
-                Response::PluginList {
-                    entries: pm_guard.plugin_registry.clone(),
-                }
-            }
         }
     }
 }

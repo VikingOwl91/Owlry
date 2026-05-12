@@ -3,9 +3,6 @@ resolver = "2"
 members = [
     "crates/owlry",
     "crates/owlry-core",
-    "crates/owlry-plugin-api",
-    "crates/owlry-lua",
-    "crates/owlry-rune",
 ]
 
 # Shared workspace settings

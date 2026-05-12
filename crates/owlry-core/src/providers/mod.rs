@@ -1,29 +1,18 @@
-// Core providers (no plugin equivalents)
+// Core providers (compiled in)
 mod application;
 mod command;
 pub(crate) mod calculator;
-pub(crate) mod config_editor;
 pub(crate) mod converter;
 pub(crate) mod system;
-
-// Native plugin bridge
-pub mod native_provider;
-
-// Lua plugin bridge (optional)
-#[cfg(feature = "lua")]
-pub mod lua_provider;
 
 // Re-exports for core providers
 pub use application::ApplicationProvider;
 pub use command::CommandProvider;
 
-// Re-export native provider for plugin loading
-pub use native_provider::NativeProvider;
-
 use chrono::Utc;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
-use log::{info, warn};
+use log::info;
 
 #[cfg(feature = "dev-logging")]
 use log::debug;
@@ -32,7 +21,24 @@ use std::sync::{Arc, RwLock};
 
 use crate::config::Config;
 use crate::data::FrecencyStore;
-use crate::plugins::runtime_loader::LoadedRuntime;
+
+/// Where a provider sits in the UI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderPosition {
+    /// Normal results list.
+    Normal,
+    /// Widget — rendered at the top of the results, outside the normal flow.
+    Widget,
+}
+
+impl ProviderPosition {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ProviderPosition::Normal => "normal",
+            ProviderPosition::Widget => "widget",
+        }
+    }
+}
 
 /// Metadata descriptor for an available provider (used by IPC/daemon API)
 #[derive(Debug, Clone)]
@@ -49,11 +55,9 @@ pub struct ProviderDescriptor {
 /// Trust level of a [`LaunchItem`]'s command, used to gate `sh -c` execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ItemSource {
-    /// Built-in provider compiled into owlry-core (trusted).
+    /// Built-in provider compiled into the binary (trusted).
     Core,
-    /// Native plugin (.so from /usr/lib/owlry/plugins/) — trusted at install time.
-    NativePlugin,
-    /// Script plugin (Lua/Rune from ~/.config/owlry/plugins/) — user-installed, untrusted.
+    /// Script-defined provider (Lua, in Phase 3+) — user-installed, untrusted.
     ScriptPlugin,
 }
 
@@ -61,7 +65,6 @@ impl ItemSource {
     pub fn as_str(&self) -> &'static str {
         match self {
             ItemSource::Core => "core",
-            ItemSource::NativePlugin => "native_plugin",
             ItemSource::ScriptPlugin => "script_plugin",
         }
     }
@@ -71,7 +74,6 @@ impl std::str::FromStr for ItemSource {
     type Err = ();
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "native_plugin" => Ok(ItemSource::NativePlugin),
             "script_plugin" => Ok(ItemSource::ScriptPlugin),
             _ => Ok(ItemSource::Core),
         }
@@ -97,23 +99,15 @@ pub struct LaunchItem {
 
 /// Provider type identifier for filtering and badge display.
 ///
-/// **Glossary:**
-/// - *Provider*: An abstract source of [`LaunchItem`]s (interface).
-/// - *Built-in provider*: A provider compiled into owlry-core (Application, Command).
-/// - *Plugin*: External code (native `.so` or Lua/Rune script) loaded at runtime.
-/// - *Plugin provider*: A provider registered by a plugin, identified by its `type_id`.
-///
-/// All plugin-provided types use `Plugin(type_id)`. The core has no hardcoded
-/// knowledge of individual plugin types — this keeps the core app extensible.
+/// - `Application`, `Command`, `Dmenu`: built-in core providers
+/// - `Plugin(type_id)`: any other provider (compiled-in feature module or
+///   future Lua-registered provider). The `type_id` is the provider's
+///   stable identifier (e.g. `"bookmarks"`, `"uuctl"`, `"calc"`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ProviderType {
-    /// Built-in provider: desktop applications from XDG data directories.
     Application,
-    /// Built-in provider: shell commands from `$PATH`.
     Command,
-    /// Built-in provider: pipe-based input for dmenu compatibility (client-local only).
     Dmenu,
-    /// Plugin provider with its declared `type_id` (e.g. `"calc"`, `"weather"`, `"emoji"`).
     Plugin(String),
 }
 
@@ -122,11 +116,9 @@ impl std::str::FromStr for ProviderType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            // Core built-in providers
             "app" | "apps" | "application" | "applications" => Ok(ProviderType::Application),
-            "cmd" | "command" | "commands" => Ok(ProviderType::Command),
+            "cmd" | "cmds" | "command" | "commands" => Ok(ProviderType::Command),
             "dmenu" => Ok(ProviderType::Dmenu),
-            // Everything else is a plugin
             other => Ok(ProviderType::Plugin(other.to_string())),
         }
     }
@@ -143,13 +135,18 @@ impl std::fmt::Display for ProviderType {
     }
 }
 
-/// Trait for all search providers
+/// Trait for all search providers.
+///
+/// Static providers hold a refreshable item cache. Submenu and action support
+/// are optional methods — implement them only if the provider produces
+/// `SUBMENU:` items or handles plugin-defined action commands.
 pub trait Provider: Send + Sync {
     #[allow(dead_code)]
     fn name(&self) -> &str;
     fn provider_type(&self) -> ProviderType;
     fn refresh(&mut self);
     fn items(&self) -> &[LaunchItem];
+
     /// Short label for UI tab button (e.g., "Shutdown"). None = use default.
     fn tab_label(&self) -> Option<&str> {
         None
@@ -158,12 +155,42 @@ pub trait Provider: Send + Sync {
     fn search_noun(&self) -> Option<&str> {
         None
     }
+    /// Optional search prefix (e.g. ":bm"). None = no prefix.
+    fn prefix(&self) -> Option<&str> {
+        None
+    }
+    /// Icon name (XDG icon theme).
+    fn icon(&self) -> &str {
+        "application-x-addon"
+    }
+    /// UI placement.
+    fn position(&self) -> ProviderPosition {
+        ProviderPosition::Normal
+    }
+    /// Priority hint for ordering.
+    fn priority(&self) -> u32 {
+        0
+    }
+
+    /// Generate submenu actions for an item whose command starts with `SUBMENU:`.
+    /// `data` is everything after the type_id prefix.
+    /// Default: no submenu support.
+    fn submenu_actions(&self, _data: &str) -> Vec<LaunchItem> {
+        Vec::new()
+    }
+
+    /// Handle a plugin-defined action command (e.g. `"POMODORO:start"`).
+    /// Returns true if the command was handled.
+    /// Default: no action support.
+    fn execute_action(&self, _command: &str) -> bool {
+        false
+    }
 }
 
 /// Trait for built-in providers that produce results per-keystroke.
 /// Unlike static `Provider`s which cache items via `refresh()`/`items()`,
 /// dynamic providers generate results on every query.
-pub(crate) trait DynamicProvider: Send + Sync {
+pub trait DynamicProvider: Send + Sync {
     #[allow(dead_code)]
     fn name(&self) -> &str;
     fn provider_type(&self) -> ProviderType;
@@ -176,358 +203,73 @@ pub(crate) trait DynamicProvider: Send + Sync {
     }
 }
 
-/// Manages all providers and handles searching
+/// Manages all providers and handles searching.
 pub struct ProviderManager {
-    /// Core static providers (apps, commands, dmenu)
+    /// Static providers (apps, commands, systemd, etc.).
     providers: Vec<Box<dyn Provider>>,
-    /// Built-in dynamic providers (calculator, converter)
-    /// These are queried per-keystroke, like native dynamic plugins
+    /// Dynamic providers (calculator, converter, websearch, filesearch).
+    /// Queried per-keystroke, not cached.
     builtin_dynamic: Vec<Box<dyn DynamicProvider>>,
-    /// Static native plugin providers (need query() for submenu support)
-    static_native_providers: Vec<NativeProvider>,
-    /// Dynamic providers from native plugins (calculator, websearch, filesearch)
-    /// These are queried per-keystroke, not cached
-    dynamic_providers: Vec<NativeProvider>,
-    /// Widget providers from native plugins (weather, media, pomodoro)
-    /// These appear at the top of results
-    widget_providers: Vec<NativeProvider>,
-    /// Fuzzy matcher for search
+    /// Fuzzy matcher for search.
     matcher: SkimMatcherV2,
-    /// Loaded script runtimes (Lua, Rune) — must stay alive to keep Library handles
-    runtimes: Vec<LoadedRuntime>,
-    /// Type IDs of providers from script runtimes (for hot-reload removal)
-    runtime_type_ids: std::collections::HashSet<String>,
-    /// Registry of native plugins that were loaded or suppressed at startup.
-    /// Used by `Request::PluginList` to report plugin status to the CLI.
-    pub plugin_registry: Vec<crate::ipc::PluginEntry>,
 }
 
 impl ProviderManager {
-    /// Create a new ProviderManager with core providers and native plugins.
+    /// Create a new ProviderManager from a pre-built list of providers.
     ///
-    /// Core providers (e.g., ApplicationProvider, CommandProvider, DmenuProvider) are
-    /// passed in by the caller. Native plugins are categorized based on their declared
-    /// ProviderKind and ProviderPosition.
+    /// Used by tests and by the dmenu-mode client. The daemon uses
+    /// [`Self::new_with_config`] which builds the provider set from config.
     pub fn new(
         core_providers: Vec<Box<dyn Provider>>,
-        native_providers: Vec<NativeProvider>,
+        dynamic: Vec<Box<dyn DynamicProvider>>,
     ) -> Self {
         let mut manager = Self {
             providers: core_providers,
-            builtin_dynamic: Vec::new(),
-            static_native_providers: Vec::new(),
-            dynamic_providers: Vec::new(),
-            widget_providers: Vec::new(),
+            builtin_dynamic: dynamic,
             matcher: SkimMatcherV2::default(),
-            runtimes: Vec::new(),
-            runtime_type_ids: std::collections::HashSet::new(),
-            plugin_registry: Vec::new(),
         };
-
-        // Categorize native plugins based on their declared ProviderKind and ProviderPosition
-        for provider in native_providers {
-            let type_id = provider.type_id();
-
-            if provider.is_dynamic() {
-                info!(
-                    "Registered dynamic provider: {} ({})",
-                    provider.name(),
-                    type_id
-                );
-                manager.dynamic_providers.push(provider);
-            } else if provider.is_widget() {
-                info!(
-                    "Registered widget provider: {} ({})",
-                    provider.name(),
-                    type_id
-                );
-                manager.widget_providers.push(provider);
-            } else {
-                info!(
-                    "Registered static provider: {} ({})",
-                    provider.name(),
-                    type_id
-                );
-                manager.static_native_providers.push(provider);
-            }
-        }
-
-        // Initial refresh
         manager.refresh_all();
-
         manager
     }
 
-    /// Create a self-contained ProviderManager from config.
+    /// Build a ProviderManager for the daemon, sourcing enabled providers from config.
     ///
-    /// Loads native plugins, creates core providers (Application + Command),
-    /// categorizes everything, and performs initial refresh. Used by the daemon
-    /// which doesn't have the UI-driven setup path from `app.rs`.
+    /// Only built-in / compiled-in providers are registered here. Future Lua-defined
+    /// providers (Phase 3+) are added via [`Self::add_provider`] after construction.
     pub fn new_with_config(config: Arc<RwLock<Config>>) -> Self {
-        use crate::plugins::native_loader::NativePluginLoader;
-
-        // Create core providers
-        let mut core_providers: Vec<Box<dyn Provider>> = vec![
-            Box::new(ApplicationProvider::new()),
-            Box::new(CommandProvider::new()),
-        ];
-
-        // Take a read lock once for configuration reads during setup.
-        let (disabled_plugins, calc_enabled, conv_enabled, sys_enabled) = match config.read() {
+        let (calc_enabled, conv_enabled, sys_enabled) = match config.read() {
             Ok(cfg) => (
-                cfg.plugins.disabled_plugins.clone(),
                 cfg.providers.calculator,
                 cfg.providers.converter,
                 cfg.providers.system,
             ),
             Err(_) => {
-                warn!("Config lock poisoned during provider init; using defaults");
-                (Vec::new(), true, true, true)
+                log::warn!("Config lock poisoned during provider init; using defaults");
+                (true, true, true)
             }
         };
 
-        // Load native plugins
-        let mut loader = NativePluginLoader::new();
-        loader.set_disabled(disabled_plugins);
+        let mut core_providers: Vec<Box<dyn Provider>> = vec![
+            Box::new(ApplicationProvider::new()),
+            Box::new(CommandProvider::new()),
+        ];
 
-        let native_providers = match loader.discover() {
-            Ok(count) => {
-                if count == 0 {
-                    info!("No native plugins found");
-                    Vec::new()
-                } else {
-                    info!("Discovered {} native plugin(s)", count);
-                    let plugins: Vec<Arc<crate::plugins::native_loader::NativePlugin>> =
-                        loader.into_plugins();
-                    let mut providers = Vec::new();
-                    for plugin in plugins {
-                        for provider_info in &plugin.providers {
-                            let provider =
-                                NativeProvider::new(Arc::clone(&plugin), provider_info.clone());
-                            info!(
-                                "Created native provider: {} ({})",
-                                provider.name(),
-                                provider.type_id()
-                            );
-                            providers.push(provider);
-                        }
-                    }
-                    providers
-                }
-            }
-            Err(e) => {
-                log::warn!("Failed to discover native plugins: {}", e);
-                Vec::new()
-            }
-        };
-
-        // Load script runtimes (Lua, Rune) for user plugins
-        let mut runtime_providers: Vec<Box<dyn Provider>> = Vec::new();
-        let mut runtimes: Vec<LoadedRuntime> = Vec::new();
-        let mut runtime_type_ids = std::collections::HashSet::new();
-        let owlry_version = env!("CARGO_PKG_VERSION");
-
-        let skip_runtimes = std::env::var("OWLRY_SKIP_RUNTIMES").is_ok();
-        if !skip_runtimes
-            && let Some(plugins_dir) = crate::paths::plugins_dir()
-        {
-            // Try Lua runtime
-            match LoadedRuntime::load_lua(&plugins_dir, owlry_version) {
-                Ok(rt) => {
-                    info!("Loaded Lua runtime with {} provider(s)", rt.providers().len());
-                    for provider in rt.create_providers() {
-                        let type_id = format!("{}", provider.provider_type());
-                        runtime_type_ids.insert(type_id);
-                        runtime_providers.push(provider);
-                    }
-                    runtimes.push(rt);
-                }
-                Err(e) => {
-                    info!("Lua runtime not available: {}", e);
-                }
-            }
-
-            // Try Rune runtime
-            match LoadedRuntime::load_rune(&plugins_dir, owlry_version) {
-                Ok(rt) => {
-                    info!("Loaded Rune runtime with {} provider(s)", rt.providers().len());
-                    for provider in rt.create_providers() {
-                        let type_id = format!("{}", provider.provider_type());
-                        runtime_type_ids.insert(type_id);
-                        runtime_providers.push(provider);
-                    }
-                    runtimes.push(rt);
-                }
-                Err(e) => {
-                    info!("Rune runtime not available: {}", e);
-                }
-            }
-        } // skip_runtimes
-
-        // Merge runtime providers into core providers
-        for provider in runtime_providers {
-            info!("Registered runtime provider: {}", provider.name());
-            core_providers.push(provider);
-        }
-
-        // Built-in dynamic providers
-        let mut builtin_dynamic: Vec<Box<dyn DynamicProvider>> = Vec::new();
-
-        if calc_enabled {
-            builtin_dynamic.push(Box::new(calculator::CalculatorProvider));
-            info!("Registered built-in calculator provider");
-        }
-
-        if conv_enabled {
-            builtin_dynamic.push(Box::new(converter::ConverterProvider::new()));
-            info!("Registered built-in converter provider");
-        }
-
-        // Config editor — always enabled; shares the same Arc<RwLock<Config>>
-        builtin_dynamic.push(Box::new(config_editor::ConfigProvider::new(Arc::clone(&config))));
-        info!("Registered built-in config editor provider");
-
-        // Built-in static providers
         if sys_enabled {
             core_providers.push(Box::new(system::SystemProvider::new()));
             info!("Registered built-in system provider");
         }
 
-        // Compute built-in type IDs to detect conflicts with native plugins.
-        // A native plugin whose type_id matches a built-in provider would
-        // produce duplicate results, so we skip it.
-        let builtin_ids: std::collections::HashSet<String> = {
-            let mut ids = std::collections::HashSet::new();
-            // Dynamic built-ins (calculator, converter)
-            for p in &builtin_dynamic {
-                if let ProviderType::Plugin(id) = p.provider_type() {
-                    ids.insert(id);
-                }
-            }
-            // Static built-ins added to core_providers (e.g. system)
-            for p in &core_providers {
-                if let ProviderType::Plugin(id) = p.provider_type() {
-                    ids.insert(id);
-                }
-            }
-            ids
-        };
-
-        let mut suppressed_registry: Vec<crate::ipc::PluginEntry> = Vec::new();
-        let native_providers: Vec<NativeProvider> = native_providers
-            .into_iter()
-            .filter(|provider| {
-                let type_id = provider.type_id();
-                if builtin_ids.contains(type_id) {
-                    log::warn!(
-                        "Native plugin '{}' suppressed — a built-in provider with the same type ID exists",
-                        type_id
-                    );
-                    suppressed_registry.push(crate::ipc::PluginEntry {
-                        id: provider.plugin_id().to_string(),
-                        name: provider.plugin_name().to_string(),
-                        version: provider.plugin_version().to_string(),
-                        runtime: "native".to_string(),
-                        status: "suppressed".to_string(),
-                        status_detail: format!(
-                            "built-in provider '{}' takes precedence",
-                            type_id
-                        ),
-                        providers: vec![type_id.to_string()],
-                    });
-                    false
-                } else {
-                    true
-                }
-            })
-            .collect();
-
-        // Capture active native plugin entries before ownership moves into Self::new().
-        let active_registry: Vec<crate::ipc::PluginEntry> = native_providers
-            .iter()
-            .map(|p| crate::ipc::PluginEntry {
-                id: p.plugin_id().to_string(),
-                name: p.plugin_name().to_string(),
-                version: p.plugin_version().to_string(),
-                runtime: "native".to_string(),
-                status: "active".to_string(),
-                status_detail: String::new(),
-                providers: vec![p.type_id().to_string()],
-            })
-            .collect();
-
-        let mut manager = Self::new(core_providers, native_providers);
-        manager.builtin_dynamic = builtin_dynamic;
-        manager.runtimes = runtimes;
-        manager.runtime_type_ids = runtime_type_ids;
-
-        manager.plugin_registry = active_registry;
-        manager.plugin_registry.extend(suppressed_registry);
-
-        manager
-    }
-
-    /// Reload all script runtime providers (called by filesystem watcher)
-    pub fn reload_runtimes(&mut self) {
-        use crate::plugins::runtime_loader::LoadedRuntime;
-
-        // Remove old runtime providers from the core providers list
-        self.providers.retain(|p| {
-            let type_str = format!("{}", p.provider_type());
-            !self.runtime_type_ids.contains(&type_str)
-        });
-
-        // Drop old runtimes. Panics here will poison the ProviderManager RwLock,
-        // which is caught and reported by the watcher thread (see plugins/watcher.rs).
-        info!("Dropping old runtimes before reload");
-        let old_runtimes = std::mem::take(&mut self.runtimes);
-        drop(old_runtimes);
-        self.runtime_type_ids.clear();
-
-        let owlry_version = env!("CARGO_PKG_VERSION");
-        let plugins_dir = match crate::paths::plugins_dir() {
-            Some(d) => d,
-            None => return,
-        };
-
-        // Reload Lua runtime
-        match LoadedRuntime::load_lua(&plugins_dir, owlry_version) {
-            Ok(rt) => {
-                info!("Reloaded Lua runtime with {} provider(s)", rt.providers().len());
-                for provider in rt.create_providers() {
-                    let type_id = format!("{}", provider.provider_type());
-                    self.runtime_type_ids.insert(type_id);
-                    self.providers.push(provider);
-                }
-                self.runtimes.push(rt);
-            }
-            Err(e) => {
-                info!("Lua runtime not available on reload: {}", e);
-            }
+        let mut builtin_dynamic: Vec<Box<dyn DynamicProvider>> = Vec::new();
+        if calc_enabled {
+            builtin_dynamic.push(Box::new(calculator::CalculatorProvider));
+            info!("Registered built-in calculator provider");
+        }
+        if conv_enabled {
+            builtin_dynamic.push(Box::new(converter::ConverterProvider::new()));
+            info!("Registered built-in converter provider");
         }
 
-        // Reload Rune runtime
-        match LoadedRuntime::load_rune(&plugins_dir, owlry_version) {
-            Ok(rt) => {
-                info!("Reloaded Rune runtime with {} provider(s)", rt.providers().len());
-                for provider in rt.create_providers() {
-                    let type_id = format!("{}", provider.provider_type());
-                    self.runtime_type_ids.insert(type_id);
-                    self.providers.push(provider);
-                }
-                self.runtimes.push(rt);
-            }
-            Err(e) => {
-                info!("Rune runtime not available on reload: {}", e);
-            }
-        }
-
-        // Refresh the newly added providers
-        for provider in &mut self.providers {
-            provider.refresh();
-        }
-
-        info!("Runtime reload complete");
+        Self::new(core_providers, builtin_dynamic)
     }
 
     #[allow(dead_code)]
@@ -538,7 +280,6 @@ impl ProviderManager {
     }
 
     pub fn refresh_all(&mut self) {
-        // Refresh core providers (apps, commands)
         for provider in &mut self.providers {
             provider.refresh();
             info!(
@@ -547,153 +288,77 @@ impl ProviderManager {
                 provider.items().len()
             );
         }
-
-        // Refresh static native providers (clipboard, emoji, ssh, etc.)
-        for provider in &mut self.static_native_providers {
-            provider.refresh();
-            info!(
-                "Static provider '{}' loaded {} items",
-                provider.name(),
-                provider.items().len()
-            );
-        }
-
-        // Widget providers are refreshed separately to avoid blocking startup
-        // Call refresh_widgets() after window is shown
-
-        // Dynamic providers don't need refresh (they query on demand)
+        // Dynamic providers don't need refresh (they query on demand).
     }
 
-    /// Refresh widget providers (weather, media, pomodoro)
-    /// Call this separately from refresh_all() to avoid blocking startup
-    /// since widgets may make network requests or spawn processes
-    pub fn refresh_widgets(&mut self) {
-        for provider in &mut self.widget_providers {
-            provider.refresh();
-            info!(
-                "Widget '{}' loaded {} items",
-                provider.name(),
-                provider.items().len()
-            );
-        }
+    /// Register an additional provider at runtime.
+    ///
+    /// Used by Phase 3+ Lua config to add user-defined providers after the
+    /// daemon has booted. The provider's `refresh()` is called immediately.
+    #[allow(dead_code)]
+    pub fn add_provider(&mut self, mut provider: Box<dyn Provider>) {
+        provider.refresh();
+        info!("Registered provider: {}", provider.name());
+        self.providers.push(provider);
     }
 
-    /// Find a native provider by type ID
-    /// Searches in all native provider lists (static, dynamic, widget)
-    pub fn find_native_provider(&self, type_id: &str) -> Option<&NativeProvider> {
-        // Check static native providers first (clipboard, emoji, ssh, systemd, etc.)
-        if let Some(p) = self
-            .static_native_providers
-            .iter()
-            .find(|p| p.type_id() == type_id)
-        {
-            return Some(p);
-        }
-        // Check widget providers (pomodoro, weather, media)
-        if let Some(p) = self
-            .widget_providers
-            .iter()
-            .find(|p| p.type_id() == type_id)
-        {
-            return Some(p);
-        }
-        // Then dynamic providers (calc, websearch, filesearch)
-        self.dynamic_providers
-            .iter()
-            .find(|p| p.type_id() == type_id)
-    }
-
-    /// Execute a plugin action command
-    /// Command format: PLUGIN_ID:action_data (e.g., "POMODORO:start", "SYSTEMD:unit:restart")
-    /// Returns true if the command was handled by a plugin
+    /// Execute a plugin-defined action command.
+    ///
+    /// Command format: `PLUGIN_ID:action_data` (e.g. `"POMODORO:start"`).
+    /// Returns true if a provider handled the command.
     pub fn execute_plugin_action(&self, command: &str) -> bool {
-        // Parse command format: PLUGIN_ID:action_data
-        if let Some(colon_pos) = command.find(':') {
-            let plugin_id = &command[..colon_pos];
-            let action = command; // Pass full command to plugin
-
-            // Find provider by type ID (case-insensitive for convenience)
-            let type_id = plugin_id.to_lowercase();
-
-            if let Some(provider) = self.find_native_provider(&type_id) {
-                provider.execute_action(action);
+        for provider in &self.providers {
+            if provider.execute_action(command) {
                 return true;
             }
         }
-
-        // Check built-in dynamic providers
         for provider in &self.builtin_dynamic {
             if provider.execute_action(command) {
                 return true;
             }
         }
-
         false
-    }
-
-    /// Add a dynamic provider (e.g., from a Lua plugin)
-    #[allow(dead_code)]
-    pub fn add_provider(&mut self, provider: Box<dyn Provider>) {
-        info!("Added plugin provider: {}", provider.name());
-        self.providers.push(provider);
-    }
-
-    /// Add multiple providers at once (for batch plugin loading)
-    #[allow(dead_code)]
-    pub fn add_providers(&mut self, providers: Vec<Box<dyn Provider>>) {
-        for provider in providers {
-            self.add_provider(provider);
-        }
-    }
-
-    /// Iterate over all static provider items (core + native static plugins)
-    fn all_static_items(&self) -> impl Iterator<Item = &LaunchItem> {
-        self.providers.iter().flat_map(|p| p.items().iter()).chain(
-            self.static_native_providers
-                .iter()
-                .flat_map(|p| p.items().iter()),
-        )
     }
 
     #[allow(dead_code)]
     pub fn search(&self, query: &str, max_results: usize) -> Vec<(LaunchItem, i64)> {
         if query.is_empty() {
-            // Return recent/popular items when query is empty
             return self
-                .all_static_items()
+                .providers
+                .iter()
+                .flat_map(|p| p.items().iter().cloned())
                 .take(max_results)
-                .map(|item| (item.clone(), 0))
+                .map(|item| (item, 0))
                 .collect();
         }
 
         let mut results: Vec<(LaunchItem, i64)> = self
-            .all_static_items()
+            .providers
+            .iter()
+            .flat_map(|p| p.items().iter())
             .filter_map(|item| {
-                // Match against name and description
                 let name_score = self.matcher.fuzzy_match(&item.name, query);
                 let desc_score = item
                     .description
                     .as_ref()
                     .and_then(|d| self.matcher.fuzzy_match(d, query));
-
                 let score = match (name_score, desc_score) {
                     (Some(n), Some(d)) => Some(n.max(d)),
                     (Some(n), None) => Some(n),
-                    (None, Some(d)) => Some(d / 2), // Lower weight for description matches
+                    (None, Some(d)) => Some(d / 2),
                     (None, None) => None,
                 };
-
                 score.map(|s| (item.clone(), s))
             })
             .collect();
 
-        // Sort by score (descending)
         results.sort_by(|a, b| b.1.cmp(&a.1));
         results.truncate(max_results);
         results
     }
 
-    /// Search with provider filtering
+    /// Search with provider filtering.
+    #[allow(dead_code)]
     pub fn search_filtered(
         &self,
         query: &str,
@@ -701,23 +366,12 @@ impl ProviderManager {
         filter: &crate::filter::ProviderFilter,
         tag_filter: Option<&str>,
     ) -> Vec<(LaunchItem, i64)> {
-        // Collect items from core providers
-        let core_items = self
+        let all_items = self
             .providers
             .iter()
             .filter(|p| filter.is_active(p.provider_type()))
-            .flat_map(|p| p.items().iter().cloned());
-
-        // Collect items from static native providers
-        let native_items = self
-            .static_native_providers
-            .iter()
-            .filter(|p| filter.is_active(p.provider_type()))
-            .flat_map(|p| p.items().iter().cloned());
-
-        let all_items = core_items.chain(native_items).filter(|item| {
-            tag_filter.is_none_or(|t| item.tags.iter().any(|it| it == t))
-        });
+            .flat_map(|p| p.items().iter().cloned())
+            .filter(|item| tag_filter.is_none_or(|t| item.tags.iter().any(|it| it == t)));
 
         if query.is_empty() {
             return all_items.take(max_results).map(|item| (item, 0)).collect();
@@ -730,14 +384,12 @@ impl ProviderManager {
                     .description
                     .as_ref()
                     .and_then(|d| self.matcher.fuzzy_match(d, query));
-
                 let score = match (name_score, desc_score) {
                     (Some(n), Some(d)) => Some(n.max(d)),
                     (Some(n), None) => Some(n),
                     (None, Some(d)) => Some(d / 2),
                     (None, None) => None,
                 };
-
                 score.map(|s| (item, s))
             })
             .collect();
@@ -747,7 +399,7 @@ impl ProviderManager {
         results
     }
 
-    /// Search with frecency boosting, dynamic providers, and tag filtering
+    /// Search with frecency boosting, dynamic providers, and tag filtering.
     pub fn search_with_frecency(
         &self,
         query: &str,
@@ -766,14 +418,12 @@ impl ProviderManager {
         let now = Utc::now();
         let mut results: Vec<(LaunchItem, i64)> = Vec::new();
 
-        // Add widget items first (highest priority) - only when:
-        // 1. No specific filter prefix is active
-        // 2. Query is empty (user hasn't started searching)
-        // This keeps widgets visible on launch but hides them during active search
-        // Widgets are always visible regardless of filter settings (they declare position via API)
+        // Widget providers contribute on empty query (no prefix active).
         if filter.active_prefix().is_none() && query.is_empty() {
-            // Widget priority comes from plugin-declared priority field
-            for provider in &self.widget_providers {
+            for provider in &self.providers {
+                if provider.position() != ProviderPosition::Widget {
+                    continue;
+                }
                 let base_score = provider.priority() as i64;
                 for (idx, item) in provider.items().iter().enumerate() {
                     results.push((item.clone(), base_score - idx as i64));
@@ -781,74 +431,35 @@ impl ProviderManager {
             }
         }
 
-        // Query dynamic providers (calculator, websearch, filesearch)
-        // Only query if:
-        // 1. Their specific filter is active (e.g., :file prefix or Files tab selected), OR
-        // 2. No specific single-mode filter is active (showing all providers)
+        // Dynamic providers (calculator, converter, etc.) — only when there's a query.
         if !query.is_empty() {
-            for provider in &self.dynamic_providers {
-                // Skip if this provider type is explicitly filtered out
-                if !filter.is_active(provider.provider_type()) {
-                    continue;
-                }
-                let dynamic_results = provider.query(query);
-                // Priority comes from plugin-declared priority field
-                let base_score = provider.priority() as i64;
-
-                // Auto-detect plugins (calc, conv) get a grouping bonus so
-                // all their results stay together above generic search results
-                let grouping_bonus: i64 = match provider.provider_type() {
-                    ProviderType::Plugin(ref id)
-                        if matches!(id.as_str(), "calc" | "conv") =>
-                    {
-                        10_000
-                    }
-                    _ => 0,
-                };
-
-                for (idx, item) in dynamic_results.into_iter().enumerate() {
-                    results.push((item, base_score + grouping_bonus - idx as i64));
-                }
-            }
-
-            // Built-in dynamic providers (calculator, converter)
             for provider in &self.builtin_dynamic {
                 if !filter.is_active(provider.provider_type()) {
                     continue;
                 }
                 let dynamic_results = provider.query(query);
                 let base_score = provider.priority() as i64;
-
                 let grouping_bonus: i64 = match provider.provider_type() {
-                    ProviderType::Plugin(ref id)
-                        if matches!(id.as_str(), "calc" | "conv") =>
-                    {
+                    ProviderType::Plugin(ref id) if matches!(id.as_str(), "calc" | "conv") => {
                         10_000
                     }
                     _ => 0,
                 };
-
                 for (idx, item) in dynamic_results.into_iter().enumerate() {
                     results.push((item, base_score + grouping_bonus - idx as i64));
                 }
             }
         }
 
-        // Empty query (after checking special providers) - return frecency-sorted items
+        // Empty query (after widgets) — frecency-sorted items.
         if query.is_empty() {
             let mut scored_refs: Vec<(&LaunchItem, i64)> = self
                 .providers
                 .iter()
+                .filter(|p| p.position() != ProviderPosition::Widget)
                 .filter(|p| filter.is_active(p.provider_type()))
                 .flat_map(|p| p.items().iter())
-                .chain(
-                    self.static_native_providers
-                        .iter()
-                        .filter(|p| filter.is_active(p.provider_type()))
-                        .flat_map(|p| p.items().iter()),
-                )
                 .filter(|item| {
-                    // Apply tag filter if present
                     if let Some(tag) = tag_filter {
                         item.tags.iter().any(|t| t.to_lowercase().contains(tag))
                     } else {
@@ -862,43 +473,36 @@ impl ProviderManager {
                 })
                 .collect();
 
-            // Partial sort: O(n) average to find top max_results, then O(k log k) to order them
             if scored_refs.len() > max_results {
                 scored_refs.select_nth_unstable_by(max_results, |a, b| b.1.cmp(&a.1));
                 scored_refs.truncate(max_results);
             }
             scored_refs.sort_by(|a, b| b.1.cmp(&a.1));
 
-            // Clone only the survivors
             results.extend(scored_refs.into_iter().map(|(item, score)| (item.clone(), score)));
             results.sort_by(|a, b| b.1.cmp(&a.1));
             results.truncate(max_results);
             return results;
         }
 
-        // Regular search with frecency boost and tag matching
-        // Helper closure for scoring items
+        // Regular search with frecency boost and tag matching.
         let score_item = |item: &LaunchItem| -> Option<i64> {
-            // Apply tag filter if present
             if let Some(tag) = tag_filter
                 && !item.tags.iter().any(|t| t.to_lowercase().contains(tag))
             {
                 return None;
             }
-
             let name_score = self.matcher.fuzzy_match(&item.name, query);
             let desc_score = item
                 .description
                 .as_ref()
                 .and_then(|d| self.matcher.fuzzy_match(d, query));
-
-            // Also match against tags (lower weight)
             let tag_score = item
                 .tags
                 .iter()
                 .filter_map(|t| self.matcher.fuzzy_match(t, query))
                 .max()
-                .map(|s| s / 3); // Lower weight for tag matches
+                .map(|s| s / 3);
 
             let base_score = match (name_score, desc_score, tag_score) {
                 (Some(n), Some(d), Some(t)) => Some(n.max(d).max(t)),
@@ -914,8 +518,6 @@ impl ProviderManager {
             base_score.map(|s| {
                 let frecency_score = frecency.get_score_at(&item.id, now);
                 let frecency_boost = (frecency_score * frecency_weight * 10.0) as i64;
-
-                // Exact name match bonus — apps get a higher boost
                 let exact_match_boost = if item.name.eq_ignore_ascii_case(query) {
                     match &item.provider {
                         ProviderType::Application => 50_000,
@@ -924,15 +526,15 @@ impl ProviderManager {
                 } else {
                     0
                 };
-
                 s + frecency_boost + exact_match_boost
             })
         };
 
-        // Score static items by reference (no cloning)
         let mut scored_refs: Vec<(&LaunchItem, i64)> = Vec::new();
-
         for provider in &self.providers {
+            if provider.position() == ProviderPosition::Widget {
+                continue;
+            }
             if !filter.is_active(provider.provider_type()) {
                 continue;
             }
@@ -943,28 +545,13 @@ impl ProviderManager {
             }
         }
 
-        for provider in &self.static_native_providers {
-            if !filter.is_active(provider.provider_type()) {
-                continue;
-            }
-            for item in provider.items() {
-                if let Some(score) = score_item(item) {
-                    scored_refs.push((item, score));
-                }
-            }
-        }
-
-        // Partial sort: O(n) average to find top max_results, then O(k log k) to order them
         if scored_refs.len() > max_results {
             scored_refs.select_nth_unstable_by(max_results, |a, b| b.1.cmp(&a.1));
             scored_refs.truncate(max_results);
         }
         scored_refs.sort_by(|a, b| b.1.cmp(&a.1));
 
-        // Clone only the survivors
         results.extend(scored_refs.into_iter().map(|(item, score)| (item.clone(), score)));
-
-        // Final sort merges dynamic results (already in `results`) with static top-N
         results.sort_by(|a, b| b.1.cmp(&a.1));
         results.truncate(max_results);
 
@@ -988,91 +575,48 @@ impl ProviderManager {
         results
     }
 
-    /// Get all available provider types (for UI tabs)
+    /// Get all available provider types (for UI tabs).
     #[allow(dead_code)]
     pub fn available_provider_types(&self) -> Vec<ProviderType> {
-        self.providers
-            .iter()
-            .map(|p| p.provider_type())
-            .chain(
-                self.static_native_providers
-                    .iter()
-                    .map(|p| p.provider_type()),
-            )
-            .collect()
+        self.providers.iter().map(|p| p.provider_type()).collect()
     }
 
-    /// Get descriptors for all registered providers (core + native plugins).
+    /// Get descriptors for all registered providers.
     ///
     /// Used by the IPC server to report what providers are available to clients.
     pub fn available_providers(&self) -> Vec<ProviderDescriptor> {
         let mut descs = Vec::new();
 
-        // Core providers
         for provider in &self.providers {
-            let (id, prefix, icon) = match provider.provider_type() {
+            let (id, default_prefix, default_icon) = match provider.provider_type() {
                 ProviderType::Application => (
                     "app".to_string(),
                     Some(":app".to_string()),
-                    "application-x-executable".to_string(),
+                    "application-x-executable",
                 ),
                 ProviderType::Command => (
                     "cmd".to_string(),
                     Some(":cmd".to_string()),
-                    "utilities-terminal".to_string(),
+                    "utilities-terminal",
                 ),
-                ProviderType::Dmenu => {
-                    ("dmenu".to_string(), None, "view-list-symbolic".to_string())
-                }
-                ProviderType::Plugin(type_id) => (type_id, None, "application-x-addon".to_string()),
+                ProviderType::Dmenu => ("dmenu".to_string(), None, "view-list-symbolic"),
+                ProviderType::Plugin(type_id) => (type_id, None, "application-x-addon"),
             };
             descs.push(ProviderDescriptor {
                 id,
                 name: provider.name().to_string(),
-                prefix,
-                icon,
-                position: "normal".to_string(),
+                prefix: provider.prefix().map(String::from).or(default_prefix),
+                icon: {
+                    let trait_icon = provider.icon();
+                    if trait_icon == "application-x-addon" {
+                        default_icon.to_string()
+                    } else {
+                        trait_icon.to_string()
+                    }
+                },
+                position: provider.position().as_str().to_string(),
                 tab_label: provider.tab_label().map(String::from),
                 search_noun: provider.search_noun().map(String::from),
-            });
-        }
-
-        // Static native plugin providers
-        for provider in &self.static_native_providers {
-            descs.push(ProviderDescriptor {
-                id: provider.type_id().to_string(),
-                name: provider.name().to_string(),
-                prefix: provider.prefix().map(String::from),
-                icon: provider.icon().to_string(),
-                position: provider.position_str().to_string(),
-                tab_label: None,
-                search_noun: None,
-            });
-        }
-
-        // Dynamic native plugin providers
-        for provider in &self.dynamic_providers {
-            descs.push(ProviderDescriptor {
-                id: provider.type_id().to_string(),
-                name: provider.name().to_string(),
-                prefix: provider.prefix().map(String::from),
-                icon: provider.icon().to_string(),
-                position: provider.position_str().to_string(),
-                tab_label: None,
-                search_noun: None,
-            });
-        }
-
-        // Widget native plugin providers
-        for provider in &self.widget_providers {
-            descs.push(ProviderDescriptor {
-                id: provider.type_id().to_string(),
-                name: provider.name().to_string(),
-                prefix: provider.prefix().map(String::from),
-                icon: provider.icon().to_string(),
-                position: provider.position_str().to_string(),
-                tab_label: None,
-                search_noun: None,
             });
         }
 
@@ -1080,11 +624,7 @@ impl ProviderManager {
     }
 
     /// Refresh a specific provider by its type_id.
-    ///
-    /// Searches core providers (by ProviderType string), static native providers,
-    /// and widget providers. Dynamic providers are skipped (they query on demand).
     pub fn refresh_provider(&mut self, provider_id: &str) {
-        // Check core providers
         for provider in &mut self.providers {
             let matches = match provider.provider_type() {
                 ProviderType::Application => provider_id == "app",
@@ -1094,93 +634,33 @@ impl ProviderManager {
             };
             if matches {
                 provider.refresh();
-                info!("Refreshed core provider '{}'", provider.name());
+                info!("Refreshed provider '{}'", provider.name());
                 return;
             }
         }
-
-        // Check static native providers
-        for provider in &mut self.static_native_providers {
-            if provider.type_id() == provider_id {
-                provider.refresh();
-                info!("Refreshed static provider '{}'", provider.name());
-                return;
-            }
-        }
-
-        // Check widget providers
-        for provider in &mut self.widget_providers {
-            if provider.type_id() == provider_id {
-                provider.refresh();
-                info!("Refreshed widget provider '{}'", provider.name());
-                return;
-            }
-        }
-
         info!("Provider '{}' not found for refresh", provider_id);
     }
 
-    /// Get a widget item by type_id (e.g., "pomodoro", "weather", "media")
-    /// Returns the first item from the widget provider, if any
-    pub fn get_widget_item(&self, type_id: &str) -> Option<LaunchItem> {
-        self.widget_providers
-            .iter()
-            .find(|p| p.type_id() == type_id)
-            .and_then(|p| p.items().first().cloned())
-    }
-
-    /// Get all loaded widget provider type_ids
-    /// Returns an iterator over the type_ids of currently loaded widget providers
-    pub fn widget_type_ids(&self) -> impl Iterator<Item = &str> {
-        self.widget_providers.iter().map(|p| p.type_id())
-    }
-
-    /// Query a plugin for submenu actions
+    /// Query a provider for submenu actions.
     ///
-    /// This is used when a user selects a SUBMENU:plugin_id:data item.
-    /// The plugin is queried with "?SUBMENU:data" and returns action items.
-    ///
-    /// Returns (display_name, actions) where display_name is the item name
-    /// and actions are the submenu items returned by the plugin.
+    /// Called when a user selects a `SUBMENU:plugin_id:data` item. The provider's
+    /// `submenu_actions(data)` is invoked to produce the action list.
     pub fn query_submenu_actions(
         &self,
         plugin_id: &str,
         data: &str,
         display_name: &str,
     ) -> Option<(String, Vec<LaunchItem>)> {
-        // Build the submenu query
-        let submenu_query = format!("?SUBMENU:{}", data);
-
         #[cfg(feature = "dev-logging")]
-        debug!(
-            "[Submenu] Querying plugin '{}' with: {}",
-            plugin_id, submenu_query
-        );
+        debug!("[Submenu] Querying provider '{}' with data: {}", plugin_id, data);
 
-        // Search in static native providers (clipboard, emoji, ssh, systemd, etc.)
-        for provider in &self.static_native_providers {
-            if provider.type_id() == plugin_id {
-                let actions = provider.query(&submenu_query);
-                if !actions.is_empty() {
-                    return Some((display_name.to_string(), actions));
-                }
-            }
-        }
-
-        // Search in dynamic providers
-        for provider in &self.dynamic_providers {
-            if provider.type_id() == plugin_id {
-                let actions = provider.query(&submenu_query);
-                if !actions.is_empty() {
-                    return Some((display_name.to_string(), actions));
-                }
-            }
-        }
-
-        // Search in widget providers
-        for provider in &self.widget_providers {
-            if provider.type_id() == plugin_id {
-                let actions = provider.query(&submenu_query);
+        for provider in &self.providers {
+            let matches = match provider.provider_type() {
+                ProviderType::Plugin(ref id) => id == plugin_id,
+                _ => false,
+            };
+            if matches {
+                let actions = provider.submenu_actions(data);
                 if !actions.is_empty() {
                     return Some((display_name.to_string(), actions));
                 }
@@ -1188,11 +668,7 @@ impl ProviderManager {
         }
 
         #[cfg(feature = "dev-logging")]
-        debug!(
-            "[Submenu] No submenu actions found for plugin '{}'",
-            plugin_id
-        );
-
+        debug!("[Submenu] No submenu actions for provider '{}'", plugin_id);
         None
     }
 }
@@ -1306,11 +782,9 @@ mod tests {
         let providers: Vec<Box<dyn Provider>> = vec![Box::new(app), Box::new(cmd)];
         let mut pm = ProviderManager::new(providers, Vec::new());
 
-        // refresh_all was called during construction, now refresh individual
         pm.refresh_provider("app");
         pm.refresh_provider("cmd");
-        // Just verifying it doesn't panic; can't easily inspect refresh_count
-        // through Box<dyn Provider>
+        // Just verifying it doesn't panic.
     }
 
     #[test]
@@ -1321,7 +795,6 @@ mod tests {
         ))];
         let mut pm = ProviderManager::new(providers, Vec::new());
         pm.refresh_provider("nonexistent");
-        // Should complete without panicking
     }
 
     #[test]
@@ -1339,5 +812,4 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0.name, "Firefox");
     }
-
 }

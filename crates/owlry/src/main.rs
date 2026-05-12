@@ -2,13 +2,12 @@ mod app;
 mod backend;
 mod cli;
 pub mod client;
-mod plugin_commands;
 mod providers;
 mod theme;
 mod ui;
 
 use app::OwlryApp;
-use cli::{CliArgs, Command};
+use cli::CliArgs;
 use log::{info, warn};
 use std::os::unix::io::AsRawFd;
 
@@ -50,16 +49,29 @@ fn try_acquire_lock() -> Option<std::fs::File> {
 fn main() {
     let args = CliArgs::parse_args();
 
-    // Handle subcommands before initializing the full app
-    if let Some(command) = &args.command {
-        // CLI commands don't need full logging
-        match command {
-            Command::Plugin(plugin_cmd) => {
-                if let Err(e) = plugin_commands::execute(plugin_cmd.clone()) {
-                    eprintln!("Error: {}", e);
+    // -d / --daemon: run the daemon in-process and exit when it stops.
+    if args.daemon {
+        let default_level = if cfg!(feature = "dev-logging") { "debug" } else { "info" };
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(default_level))
+            .format_timestamp_millis()
+            .init();
+
+        let sock = owlry_core::paths::socket_path();
+        if let Err(e) = owlry_core::paths::ensure_parent_dir(&sock) {
+            eprintln!("Failed to create socket directory: {e}");
+            std::process::exit(1);
+        }
+        match owlry_core::server::Server::bind(&sock) {
+            Ok(server) => {
+                if let Err(e) = server.run() {
+                    eprintln!("Server error: {e}");
                     std::process::exit(1);
                 }
                 std::process::exit(0);
+            }
+            Err(e) => {
+                eprintln!("Failed to start daemon: {e}");
+                std::process::exit(1);
             }
         }
     }

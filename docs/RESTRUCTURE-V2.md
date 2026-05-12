@@ -447,9 +447,17 @@ Phase 1 is "done" when all of these pass:
 This section captures in-progress state. Update freely as work proceeds.
 
 - **Branch:** `v2`, cut from `main @ 1caa050` on 2026-05-13
-- **Current task:** #3 (Delete C-ABI plugin system) — in progress
+- **Checkpoints landed:**
+  - `163e68a` — plan doc
+  - `2fc976b` — D15–D21 resolutions
+  - (next) — C-ABI demolition: tasks #3/#4/#5 done in one commit
+- **Tasks done:** #1 inventory, #3 delete C-ABI, #4 delete Rune+Lua crates, #5 delete config_editor (scripts never lived in this repo)
+- **Tasks remaining (Phase 1):** #2 workspace collapse, #6 convert 8 plugins, #7 cargo features, #8 sys→power rename, #9 CLI subcommands, #10 auto-mode test, #11 final build+smoke
 - **Stray processes from inventory phase:**
   - PIDs 3042, 3278 — pre-existing `owlryd` (double-spawn bug; will resolve via Phase 5)
   - PID 594897 — test daemon from inventory probe; harness denied kill; resolves at next reboot or user kill
 - **Hyprland exec-once for owlryd:** suspected source of double-spawn; verify and remove during Phase 5
-- **`plugin-api-v1.0.1` git tag:** still has `API_VERSION = 3`. Moot once C-ABI is deleted.
+- **`plugin-api-v1.0.1` git tag:** still has `API_VERSION = 3`. Moot now — C-ABI deleted.
+- **Known clippy nits (Phase 5 cleanup):** ~8 `sort_by` → `sort_by_key` suggestions in `providers/mod.rs` and currency provider. Style only, not blocking.
+- **`refresh_widgets()` stub in `backend.rs`:** retained as a no-op since the UI still calls it. Delete when widgets are revisited (post-2.0 per D20).
+- **`system` provider rename to `power` (D13):** pending Task #8. Internal type_id and config key still `system`. Test names still use `sys_plugin`.

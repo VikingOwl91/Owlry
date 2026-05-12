@@ -342,12 +342,9 @@ impl SearchBackend {
         }
     }
 
-    /// Refresh widget providers. No-op for daemon mode (daemon handles refresh).
-    pub fn refresh_widgets(&mut self) {
-        if let SearchBackend::Local { providers, .. } = self {
-            providers.refresh_widgets();
-        }
-    }
+    /// Refresh widget providers. No-op in Phase 1 (widgets deferred per D20).
+    /// Retained as a stable no-op so callers don't need conditional compilation.
+    pub fn refresh_widgets(&mut self) {}
 
     /// Get available provider descriptors from the daemon, or from local manager.
     pub fn available_providers(&mut self) -> Vec<ProviderDesc> {

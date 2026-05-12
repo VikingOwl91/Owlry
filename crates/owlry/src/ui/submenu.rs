@@ -94,7 +94,7 @@ mod tests {
             command: "SUBMENU:plugin:data".to_string(),
             terminal: false,
             tags: vec![],
-            source: ItemSource::NativePlugin,
+            source: ItemSource::Core,
         };
         assert!(is_submenu_item(&submenu_item));
 
@@ -107,7 +107,7 @@ mod tests {
             command: "some-command".to_string(),
             terminal: false,
             tags: vec![],
-            source: ItemSource::NativePlugin,
+            source: ItemSource::Core,
         };
         assert!(!is_submenu_item(&normal_item));
     }

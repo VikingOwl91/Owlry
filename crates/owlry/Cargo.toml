@@ -34,17 +34,8 @@ toml = "0.8"
 # CLI argument parsing
 clap = { version = "4", features = ["derive"] }
 
-# JSON serialization (needed by plugin commands in CLI)
+# IPC (Request/Response serialization)
 serde_json = "1"
-
-# Date/time (needed by plugin commands in CLI)
-chrono = { version = "0.4", features = ["serde"] }
-
-# Directory utilities (needed by plugin commands)
-dirs = "5"
-
-# Semantic versioning (needed by plugin commands)
-semver = "1"
 
 # Async oneshot channel (background thread -> main loop)
 futures-channel = "0.3"
@@ -57,5 +48,3 @@ glib-build-tools = "0.20"
 default = []
 # Enable verbose debug logging (for development/testing builds)
 dev-logging = ["owlry-core/dev-logging"]
-# Enable built-in Lua runtime (disable to use external owlry-lua package)
-lua = ["owlry-core/lua"]

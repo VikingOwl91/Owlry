@@ -3,7 +3,7 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use owlry_core::ipc::{PluginEntry, ProviderDesc, Request, Response, ResultItem};
+use owlry_core::ipc::{ProviderDesc, Request, Response, ResultItem};
 
 /// Maximum allowed size for a single IPC response line (4 MiB).
 /// Larger than the request limit because responses carry result sets.
@@ -192,19 +192,6 @@ impl CoreClient {
             other => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("unexpected response to PluginAction: {other:?}"),
-            )),
-        }
-    }
-
-    /// Query the daemon's native plugin registry (loaded + suppressed entries).
-    pub fn plugin_list(&mut self) -> io::Result<Vec<PluginEntry>> {
-        self.send(&Request::PluginList)?;
-        match self.receive()? {
-            Response::PluginList { entries } => Ok(entries),
-            Response::Error { message } => Err(io::Error::other(message)),
-            other => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("unexpected response to PluginList: {other:?}"),
             )),
         }
     }

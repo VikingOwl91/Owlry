@@ -1,8 +1,6 @@
 //! Command-line interface for owlry launcher
-//!
-//! Provides both the launcher interface and plugin management commands.
 
-use clap::{Parser, Subcommand};
+use clap::Parser;
 
 use owlry_core::providers::ProviderType;
 
@@ -11,17 +9,17 @@ use owlry_core::providers::ProviderType;
     name = "owlry",
     about = "An owl-themed application launcher for Wayland",
     long_about = "An owl-themed application launcher for Wayland, built with GTK4 and Layer Shell.\n\n\
-                  Owlry provides fuzzy search across applications, commands, and plugins.\n\
-                  Native plugins add features like calculator, clipboard, emoji, weather, and more.",
+                  Owlry provides fuzzy search across applications, commands, and built-in providers.",
     version,
     after_help = "\
 EXAMPLES:
-    owlry                           Launch with all providers
+    owlry                           Launch UI, auto mode
+    owlry -m auto                   Launch UI, auto mode (explicit)
     owlry -m app                    Applications only
     owlry -m cmd                    PATH commands only
     owlry -m dmenu                  dmenu-compatible mode (reads from stdin)
     owlry --profile dev             Use a named profile from config
-    owlry -m calc                   Calculator plugin only (if installed)
+    owlry -d                        Run the daemon
 
 DMENU MODE:
     Pipe input to owlry for interactive selection:
@@ -41,18 +39,22 @@ PROFILES:
 SEARCH PREFIXES:
     :app firefox                    Search applications
     :cmd git                        Search PATH commands
-    = 5+3                           Calculator (requires plugin)
-    ? rust docs                     Web search (requires plugin)
-    / .bashrc                       File search (requires plugin)
+    :calc / =                       Calculator (e.g. = 2+2)
+    :web / ?                        Web search
+    :file / /                       File search
 
-For configuration, see ~/.config/owlry/config.toml
-For plugin management, see: owlry plugin --help"
+For configuration, see ~/.config/owlry/config.toml"
 )]
 pub struct CliArgs {
+    /// Run the daemon (alias for `owlry daemon`, when subcommands land)
+    #[arg(long, short = 'd', conflicts_with_all = ["mode", "profile", "prompt"])]
+    pub daemon: bool,
+
     /// Start in single-provider mode
     ///
-    /// Core modes: app, cmd, dmenu
-    /// Plugin modes: calc, clip, emoji, ssh, sys, bm, file, web, uuctl, weather, media, pomodoro
+    /// Core modes: app, cmd, dmenu, auto
+    /// Built-in modes: calc, conv, power
+    /// Optional modes (cargo features): bm, clip, emoji, ssh, systemd/uuctl, web, file
     #[arg(long, short = 'm', value_parser = parse_provider, value_name = "MODE")]
     pub mode: Option<ProviderType>,
 
@@ -69,187 +71,6 @@ pub struct CliArgs {
     /// Example: -p "Select file:" or --prompt "Select file:"
     #[arg(long, short = 'p', value_name = "TEXT")]
     pub prompt: Option<String>,
-
-    /// Subcommand to run (if any)
-    #[command(subcommand)]
-    pub command: Option<Command>,
-}
-
-#[derive(Subcommand, Debug, Clone)]
-pub enum Command {
-    /// Manage plugins
-    #[command(subcommand)]
-    Plugin(PluginCommand),
-}
-
-/// Plugin runtime type
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub enum PluginRuntime {
-    /// Lua runtime (requires owlry-lua package)
-    Lua,
-    /// Rune runtime (requires owlry-rune package)
-    Rune,
-}
-
-impl std::fmt::Display for PluginRuntime {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PluginRuntime::Lua => write!(f, "lua"),
-            PluginRuntime::Rune => write!(f, "rune"),
-        }
-    }
-}
-
-#[derive(Subcommand, Debug, Clone)]
-pub enum PluginCommand {
-    /// List installed plugins
-    List {
-        /// Show only enabled plugins
-        #[arg(long)]
-        enabled: bool,
-
-        /// Show only disabled plugins
-        #[arg(long)]
-        disabled: bool,
-
-        /// Filter by runtime type (lua or rune)
-        #[arg(long, short = 'r', value_enum)]
-        runtime: Option<PluginRuntime>,
-
-        /// Show available plugins from registry instead of installed
-        #[arg(long)]
-        available: bool,
-
-        /// Force refresh of registry cache
-        #[arg(long)]
-        refresh: bool,
-
-        /// Output in JSON format
-        #[arg(long)]
-        json: bool,
-    },
-
-    /// Search for plugins in the registry
-    Search {
-        /// Search query (matches name, description, tags)
-        query: String,
-
-        /// Force refresh of registry cache
-        #[arg(long)]
-        refresh: bool,
-
-        /// Output in JSON format
-        #[arg(long)]
-        json: bool,
-    },
-
-    /// Show detailed information about a plugin
-    Info {
-        /// Plugin ID
-        name: String,
-
-        /// Show info from registry instead of installed plugin
-        #[arg(long)]
-        registry: bool,
-
-        /// Output in JSON format
-        #[arg(long)]
-        json: bool,
-    },
-
-    /// Install a plugin from registry, path, or URL
-    Install {
-        /// Plugin source (registry name, local path, or git URL)
-        source: String,
-
-        /// Force reinstall even if already installed
-        #[arg(long, short = 'f')]
-        force: bool,
-    },
-
-    /// Remove an installed plugin
-    Remove {
-        /// Plugin ID to remove
-        name: String,
-
-        /// Don't ask for confirmation
-        #[arg(long, short = 'y')]
-        yes: bool,
-    },
-
-    /// Update installed plugins
-    Update {
-        /// Specific plugin to update (all if not specified)
-        name: Option<String>,
-    },
-
-    /// Enable a disabled plugin
-    Enable {
-        /// Plugin ID to enable
-        name: String,
-    },
-
-    /// Disable an installed plugin
-    Disable {
-        /// Plugin ID to disable
-        name: String,
-    },
-
-    /// Create a new plugin from template
-    Create {
-        /// Plugin ID (directory name)
-        name: String,
-
-        /// Runtime type to use (default: lua)
-        #[arg(long, short = 'r', value_enum, default_value = "lua")]
-        runtime: PluginRuntime,
-
-        /// Target directory (default: current directory)
-        #[arg(long, short = 'd')]
-        dir: Option<String>,
-
-        /// Plugin display name
-        #[arg(long)]
-        display_name: Option<String>,
-
-        /// Plugin description
-        #[arg(long)]
-        description: Option<String>,
-    },
-
-    /// Validate a plugin's structure and manifest
-    Validate {
-        /// Path to plugin directory (default: current directory)
-        path: Option<String>,
-    },
-
-    /// Show available script runtimes
-    Runtimes,
-
-    /// Run a plugin command
-    ///
-    /// Plugins can provide CLI commands that are invoked via:
-    ///   owlry plugin run <plugin-id> <command> [args...]
-    ///
-    /// Example:
-    ///   owlry plugin run bookmark add https://example.com "My Bookmark"
-    Run {
-        /// Plugin ID
-        plugin_id: String,
-
-        /// Command to run
-        command: String,
-
-        /// Arguments to pass to the command
-        #[arg(trailing_var_arg = true)]
-        args: Vec<String>,
-    },
-
-    /// List commands provided by a plugin
-    Commands {
-        /// Plugin ID (optional - lists all if not specified)
-        plugin_id: Option<String>,
-    },
 }
 
 fn parse_provider(s: &str) -> Result<ProviderType, String> {
