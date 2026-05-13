@@ -128,8 +128,7 @@ impl Provider for SystemdProvider {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         self.items = Self::parse_systemctl_output(&stdout);
-        self.items
-            .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        self.items.sort_by_key(|i| i.name.to_lowercase());
     }
 
     fn items(&self) -> &[LaunchItem] {

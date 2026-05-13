@@ -416,7 +416,7 @@ impl ProviderManager {
             })
             .collect();
 
-        results.sort_by(|a, b| b.1.cmp(&a.1));
+        results.sort_by_key(|x| std::cmp::Reverse(x.1));
         results.truncate(max_results);
         results
     }
@@ -458,7 +458,7 @@ impl ProviderManager {
             })
             .collect();
 
-        results.sort_by(|a, b| b.1.cmp(&a.1));
+        results.sort_by_key(|x| std::cmp::Reverse(x.1));
         results.truncate(max_results);
         results
     }
@@ -541,14 +541,14 @@ impl ProviderManager {
                 scored_refs.select_nth_unstable_by(max_results, |a, b| b.1.cmp(&a.1));
                 scored_refs.truncate(max_results);
             }
-            scored_refs.sort_by(|a, b| b.1.cmp(&a.1));
+            scored_refs.sort_by_key(|x| std::cmp::Reverse(x.1));
 
             results.extend(
                 scored_refs
                     .into_iter()
                     .map(|(item, score)| (item.clone(), score)),
             );
-            results.sort_by(|a, b| b.1.cmp(&a.1));
+            results.sort_by_key(|x| std::cmp::Reverse(x.1));
             results.truncate(max_results);
             return results;
         }
@@ -617,14 +617,14 @@ impl ProviderManager {
             scored_refs.select_nth_unstable_by(max_results, |a, b| b.1.cmp(&a.1));
             scored_refs.truncate(max_results);
         }
-        scored_refs.sort_by(|a, b| b.1.cmp(&a.1));
+        scored_refs.sort_by_key(|x| std::cmp::Reverse(x.1));
 
         results.extend(
             scored_refs
                 .into_iter()
                 .map(|(item, score)| (item.clone(), score)),
         );
-        results.sort_by(|a, b| b.1.cmp(&a.1));
+        results.sort_by_key(|x| std::cmp::Reverse(x.1));
         results.truncate(max_results);
 
         #[cfg(feature = "dev-logging")]

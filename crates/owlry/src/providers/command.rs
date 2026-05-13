@@ -99,8 +99,7 @@ impl Provider for CommandProvider {
         debug!("Found {} commands in PATH", self.items.len());
 
         // Sort alphabetically
-        self.items
-            .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        self.items.sort_by_key(|i| i.name.to_lowercase());
     }
 
     fn items(&self) -> &[LaunchItem] {
