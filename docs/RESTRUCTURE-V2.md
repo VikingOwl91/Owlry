@@ -454,7 +454,35 @@ This section captures in-progress state. Update freely as work proceeds.
   - `1d20754` — TDD characterization pass (+36 tests)
   - `0a4a090` — Workspace collapse: owlry-core merged into owlry (task #2)
   - `eb8a65f` — systemd provider converted (issue #5 functional fix in v2)
-  - (next) — Remaining 6 plugins converted in parallel: bookmarks, clipboard, emoji, filesearch, ssh, websearch (tasks #6 + #7)
+  - `cb2ea59` — Remaining 6 plugins converted in parallel: bookmarks, clipboard, emoji, filesearch, ssh, websearch (tasks #6 + #7)
+  - `d1c3270` + `1ba0a97` — sys → power rename (task #8)
+  - `27e2683` — CLI subcommand restructure + doctor/providers/config/migrate-config (task #9)
+  - `e9f310d` — auto-mode integration test (task #10)
+  - `c48efaa` — cargo fmt pass
+
+**Phase 1 status: COMPLETE** — 11/11 tasks done. Ready for Phase 2 (AUR republish as 2.0.0).
+
+Phase 1 acceptance results:
+- ✅ `cargo check --workspace` (no default features) — clean
+- ✅ `cargo check --workspace --features full` — clean
+- ✅ `cargo build --release --features full` — 1m 19s
+- ✅ `cargo test --workspace --features full` — **252 tests pass** (225 unit + 5 auto-mode + 14 ipc + 8 server)
+- ✅ `cargo clippy --workspace --features full` — only 10 style warnings (`sort_by_key` suggestions, all benign)
+- ✅ `cargo fmt --all --check` — clean after `c48efaa`
+- ✅ Workspace contains only `crates/owlry` member
+- ✅ `crates/owlry-core/`, `crates/owlry-plugin-api/`, `crates/owlry-lua/`, `crates/owlry-rune/` removed
+- ✅ No occurrences of `owlry_plugin_api`, `mlua`, `libloading`, `liblua.so`, `librune.so`
+- ✅ `target/release/owlry --help` shows new subcommand structure
+- ✅ `owlry -d` starts daemon, socket binds at `$XDG_RUNTIME_DIR/owlry/owlry.sock`
+- ✅ `owlry doctor` reports config + socket + 8 provider IDs
+- ✅ `owlry providers` lists all registered providers; `owlry providers uuctl` shows the systemd provider details (id, prefix, icon, etc.)
+- ✅ Issue #5 functionally fixed: systemd provider is compiled in (verified by parse-output unit tests; full live verification needs the binary installed against real systemd, but the C-ABI failure mode physically can't recur)
+- ⚠️ Daemon double-spawn: pre-existing PIDs 3042 + 3278 still around (not Phase 1 work; addressed in Phase 5 hygiene)
+
+Known follow-ups (deferred, not blocking 2.0.0 ship):
+- Dynamic providers (calc, conv, filesearch, websearch) don't appear in `available_providers()` — pre-existing behavior matched the old impl. Worth surfacing in `doctor` later.
+- 10 clippy `sort_by_key` style warnings — Phase 5 cleanup.
+- `refresh_widgets()` no-op stub in `backend.rs` — remove when widgets are revisited (D20 work).
 - **Tasks done:** #1 inventory, #3 delete C-ABI, #4 delete Rune+Lua crates, #5 delete config_editor (scripts never lived in this repo)
 - **Tasks remaining (Phase 1):** #2 workspace collapse, #6 convert 8 plugins, #7 cargo features, #8 sys→power rename, #9 CLI subcommands, #10 auto-mode test, #11 final build+smoke
 - **Stray processes from inventory phase:**
