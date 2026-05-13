@@ -13,6 +13,8 @@ pub mod config;
 pub mod data;
 pub mod filter;
 pub mod ipc;
+#[cfg(feature = "lua")]
+pub mod lua;
 pub mod notify;
 pub mod paths;
 pub mod providers;
