@@ -1,4 +1,8 @@
 use crate::backend::SearchBackend;
+use crate::config::Config;
+use crate::filter::ProviderFilter;
+use crate::ipc::ProviderDesc;
+use crate::providers::{ItemSource, LaunchItem, ProviderType};
 use crate::ui::ResultRow;
 use crate::ui::provider_meta;
 use crate::ui::submenu;
@@ -9,10 +13,6 @@ use gtk4::{
     ListBoxRow, Orientation, ScrolledWindow, SelectionMode, ToggleButton,
 };
 use log::info;
-use owlry_core::config::Config;
-use owlry_core::filter::ProviderFilter;
-use owlry_core::ipc::ProviderDesc;
-use owlry_core::providers::{ItemSource, LaunchItem, ProviderType};
 
 #[cfg(feature = "dev-logging")]
 use log::debug;
@@ -156,10 +156,7 @@ impl MainWindow {
         let provider_descs = Rc::new(provider_descs);
 
         // Update mode label with resolved plugin name (if applicable)
-        mode_label.set_label(&Self::mode_display_name(
-            &filter.borrow(),
-            &provider_descs,
-        ));
+        mode_label.set_label(&Self::mode_display_name(&filter.borrow(), &provider_descs));
 
         // Create toggle buttons for each enabled provider
         let filter_buttons =
@@ -339,10 +336,7 @@ impl MainWindow {
     }
 
     /// Get the mode display name, resolving plugin names via IPC metadata.
-    fn mode_display_name(
-        filter: &ProviderFilter,
-        descs: &HashMap<String, ProviderDesc>,
-    ) -> String {
+    fn mode_display_name(filter: &ProviderFilter, descs: &HashMap<String, ProviderDesc>) -> String {
         let base = filter.mode_display_name();
         // "Plugin" is the generic fallback — resolve it to the actual name
         if base == "Plugin" {
@@ -366,10 +360,7 @@ impl MainWindow {
         provider_meta::resolve(provider, desc)
     }
 
-    fn build_placeholder(
-        filter: &ProviderFilter,
-        descs: &HashMap<String, ProviderDesc>,
-    ) -> String {
+    fn build_placeholder(filter: &ProviderFilter, descs: &HashMap<String, ProviderDesc>) -> String {
         let active: Vec<String> = filter
             .enabled_providers()
             .iter()
@@ -382,7 +373,7 @@ impl MainWindow {
     /// Build hints string for the status bar based on enabled built-in providers.
     /// Plugin trigger hints (? web, / files, etc.) are not included here since
     /// plugin availability is not tracked in ProvidersConfig.
-    fn build_hints(config: &owlry_core::config::ProvidersConfig) -> String {
+    fn build_hints(config: &crate::config::ProvidersConfig) -> String {
         let mut parts: Vec<String> = vec![
             "Tab: cycle".to_string(),
             "↑↓: nav".to_string(),
@@ -396,8 +387,8 @@ impl MainWindow {
         if config.converter {
             parts.push("> conv".to_string());
         }
-        if config.system {
-            parts.push(":sys".to_string());
+        if config.power {
+            parts.push(":power".to_string());
         }
 
         parts.join("  ")
@@ -507,10 +498,7 @@ impl MainWindow {
         // Restore UI
         mode_label.set_label(&Self::mode_display_name(&filter.borrow(), descs));
         hints_label.set_label(&Self::build_hints(&config.borrow().providers));
-        search_entry.set_placeholder_text(Some(&Self::build_placeholder(
-            &filter.borrow(),
-            descs,
-        )));
+        search_entry.set_placeholder_text(Some(&Self::build_placeholder(&filter.borrow(), descs)));
         search_entry.set_text(&saved_search);
 
         // Trigger refresh by emitting changed signal
@@ -595,7 +583,7 @@ impl MainWindow {
                         "pomodoro" => "pomodoro",
                         "scripts" => "scripts",
                         "ssh" => "SSH hosts",
-                        "system" => "system",
+                        "power" | "system" => "power actions",
                         "uuctl" => "uuctl units",
                         "weather" => "weather",
                         "websearch" => "web",
@@ -641,13 +629,7 @@ impl MainWindow {
                         let be = backend.borrow();
                         let f = filter.borrow();
                         let c = config.borrow();
-                        be.query_async(
-                            &query_str,
-                            max_results,
-                            &f,
-                            &c,
-                            tag.as_deref(),
-                        )
+                        be.query_async(&query_str, max_results, &f, &c, tag.as_deref())
                     };
 
                     if let Some(rx) = receiver {
@@ -669,22 +651,18 @@ impl MainWindow {
                                 results_list_cb.remove_all();
 
                                 let items = result.items;
-                                let initial_count =
-                                    INITIAL_RESULTS.min(items.len());
+                                let initial_count = INITIAL_RESULTS.min(items.len());
 
                                 for item in items.iter().take(initial_count) {
                                     let row = ResultRow::new(item, &query_for_highlight);
                                     results_list_cb.append(&row);
                                 }
 
-                                if let Some(first_row) =
-                                    results_list_cb.row_at_index(0)
-                                {
+                                if let Some(first_row) = results_list_cb.row_at_index(0) {
                                     results_list_cb.select_row(Some(&first_row));
                                 }
 
-                                *current_results_cb.borrow_mut() =
-                                    items[..initial_count].to_vec();
+                                *current_results_cb.borrow_mut() = items[..initial_count].to_vec();
                                 let mut lazy = lazy_state_cb.borrow_mut();
                                 lazy.all_results = items;
                                 lazy.displayed_count = initial_count;
@@ -714,8 +692,7 @@ impl MainWindow {
                             results_list.select_row(Some(&first_row));
                         }
 
-                        *current_results.borrow_mut() =
-                            results[..initial_count].to_vec();
+                        *current_results.borrow_mut() = results[..initial_count].to_vec();
                         let mut lazy = lazy_state.borrow_mut();
                         lazy.all_results = results;
                         lazy.query = query_str;
@@ -837,10 +814,8 @@ impl MainWindow {
                     }
                 }
                 mode_label.set_label(&Self::mode_display_name(&filter.borrow(), &descs));
-                search_entry.set_placeholder_text(Some(&Self::build_placeholder(
-                    &filter.borrow(),
-                    &descs,
-                )));
+                search_entry
+                    .set_placeholder_text(Some(&Self::build_placeholder(&filter.borrow(), &descs)));
                 search_entry.emit_by_name::<()>("changed", &[]);
             });
         }
@@ -927,7 +902,12 @@ impl MainWindow {
                         let next_index = current.index() + 1;
                         if let Some(next_row) = results_list.row_at_index(next_index) {
                             results_list.select_row(Some(&next_row));
-                            Self::scroll_to_row(&scrolled, &results_list, &next_row, &lazy_state_for_keys);
+                            Self::scroll_to_row(
+                                &scrolled,
+                                &results_list,
+                                &next_row,
+                                &lazy_state_for_keys,
+                            );
                         }
                     }
                     gtk4::glib::Propagation::Stop
@@ -939,7 +919,12 @@ impl MainWindow {
                             && let Some(prev_row) = results_list.row_at_index(prev_index)
                         {
                             results_list.select_row(Some(&prev_row));
-                            Self::scroll_to_row(&scrolled, &results_list, &prev_row, &lazy_state_for_keys);
+                            Self::scroll_to_row(
+                                &scrolled,
+                                &results_list,
+                                &prev_row,
+                                &lazy_state_for_keys,
+                            );
                         }
                     }
                     gtk4::glib::Propagation::Stop
@@ -1212,12 +1197,10 @@ impl MainWindow {
             let max_results = cfg.general.max_results;
             drop(cfg);
 
-            let results = backend.borrow_mut().search(
-                "",
-                max_results,
-                &filter.borrow(),
-                &config.borrow(),
-            );
+            let results =
+                backend
+                    .borrow_mut()
+                    .search("", max_results, &filter.borrow(), &config.borrow());
 
             // Clear existing results
             results_list.remove_all();
@@ -1366,7 +1349,7 @@ impl MainWindow {
                     item.name, cmd
                 );
                 log::warn!("{}", msg);
-                owlry_core::notify::notify("Command blocked", &msg);
+                crate::notify::notify("Command blocked", &msg);
                 return;
             }
         }
@@ -1375,7 +1358,7 @@ impl MainWindow {
         if item.command.is_empty() && !matches!(item.provider, ProviderType::Application) {
             let msg = format!("Item '{}' has no command; cannot launch", item.name);
             log::warn!("{}", msg);
-            owlry_core::notify::notify("Launch failed", &msg);
+            crate::notify::notify("Launch failed", &msg);
             return;
         }
 
@@ -1397,7 +1380,7 @@ impl MainWindow {
         if let Err(e) = result {
             let msg = format!("Failed to launch '{}': {}", item.name, e);
             log::error!("{}", msg);
-            owlry_core::notify::notify("Launch failed", &msg);
+            crate::notify::notify("Launch failed", &msg);
         }
     }
 
@@ -1418,7 +1401,7 @@ impl MainWindow {
         if !Path::new(desktop_path).exists() {
             let msg = format!("Desktop file not found: {}", desktop_path);
             log::error!("{}", msg);
-            owlry_core::notify::notify("Launch failed", &msg);
+            crate::notify::notify("Launch failed", &msg);
             return Err(std::io::Error::new(std::io::ErrorKind::NotFound, msg));
         }
 
@@ -1435,7 +1418,7 @@ impl MainWindow {
             if !uwsm_available {
                 let msg = "uwsm is enabled in config but not installed";
                 log::error!("{}", msg);
-                owlry_core::notify::notify("Launch failed", msg);
+                crate::notify::notify("Launch failed", msg);
                 return Err(std::io::Error::new(std::io::ErrorKind::NotFound, msg));
             }
 

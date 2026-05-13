@@ -1,18 +1,18 @@
 use crate::backend::SearchBackend;
 use crate::cli::CliArgs;
 use crate::client::CoreClient;
+use crate::config::Config;
+use crate::data::FrecencyStore;
+use crate::filter::ProviderFilter;
+use crate::paths;
 use crate::providers::DmenuProvider;
+use crate::providers::{Provider, ProviderManager, ProviderType};
 use crate::theme;
 use crate::ui::MainWindow;
 use gtk4::prelude::*;
 use gtk4::{Application, CssProvider, gio};
 use gtk4_layer_shell::{Edge, Layer, LayerShell};
 use log::{debug, info, warn};
-use owlry_core::config::Config;
-use owlry_core::data::FrecencyStore;
-use owlry_core::filter::ProviderFilter;
-use owlry_core::paths;
-use owlry_core::providers::{Provider, ProviderManager, ProviderType};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -144,41 +144,19 @@ impl OwlryApp {
     }
 
     /// Create a local backend as fallback when daemon is unavailable.
-    /// Loads native plugins and creates providers locally.
-    fn create_local_backend(config: &Config) -> SearchBackend {
-        use owlry_core::plugins::native_loader::NativePluginLoader;
-        use owlry_core::providers::native_provider::NativeProvider;
-        use owlry_core::providers::{ApplicationProvider, CommandProvider};
-        use std::sync::Arc;
-
-        // Load native plugins
-        let mut loader = NativePluginLoader::new();
-        loader.set_disabled(config.plugins.disabled_plugins.clone());
-
-        let native_providers: Vec<NativeProvider> = match loader.discover() {
-            Ok(count) if count > 0 => {
-                info!("Discovered {} native plugin(s) for local fallback", count);
-                let plugins: Vec<Arc<owlry_core::plugins::native_loader::NativePlugin>> =
-                    loader.into_plugins();
-                let mut providers = Vec::new();
-                for plugin in plugins {
-                    for provider_info in &plugin.providers {
-                        let provider =
-                            NativeProvider::new(Arc::clone(&plugin), provider_info.clone());
-                        providers.push(provider);
-                    }
-                }
-                providers
-            }
-            _ => Vec::new(),
-        };
+    ///
+    /// Only built-in providers run locally — dmenu mode is the typical use case.
+    /// All other providers belong to the daemon (Phase 1 keeps the daemon as the
+    /// primary path).
+    fn create_local_backend(_config: &Config) -> SearchBackend {
+        use crate::providers::{ApplicationProvider, CommandProvider};
 
         let core_providers: Vec<Box<dyn Provider>> = vec![
             Box::new(ApplicationProvider::new()),
             Box::new(CommandProvider::new()),
         ];
 
-        let provider_manager = ProviderManager::new(core_providers, native_providers);
+        let provider_manager = ProviderManager::new(core_providers, Vec::new());
         let frecency = FrecencyStore::load_or_default();
 
         SearchBackend::Local {

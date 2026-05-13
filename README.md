@@ -6,157 +6,118 @@
 [![GTK4](https://img.shields.io/badge/GTK-4.12-green.svg)](https://gtk.org/)
 [![Wayland](https://img.shields.io/badge/Wayland-native-blueviolet.svg)](https://wayland.freedesktop.org/)
 
-A lightweight, owl-themed application launcher for Wayland, built with GTK4 and Layer Shell.
+A lightweight, owl-themed application launcher for Wayland, built with GTK4 and Layer Shell. Single-binary, configurable, fast.
+
+> **2.0 highlights.** Owlry collapsed from 15 AUR packages and a dynamic plugin system into one binary. All providers (apps, commands, calculator, converter, power, bookmarks, clipboard, emoji, ssh, systemd, websearch, filesearch) are compiled in and gated by cargo features. The AUR build ships everything; `cargo install` consumers can pick a subset. See [`docs/RESTRUCTURE-V2.md`](docs/RESTRUCTURE-V2.md) for the full rewrite story.
 
 ## Features
 
-- **Client/daemon architecture** — Instant window appearance, providers stay loaded in memory
-- **Built-in providers** — Calculator, unit/currency converter, and system actions out of the box
-- **Built-in settings editor** — Configure everything from within the launcher (`:config`)
-- **11 optional plugins** — Clipboard, emoji, weather, media, bookmarks, and more
-- **Widget providers** — Weather, media controls, and pomodoro timer at the top of results
-- **Fuzzy search with tags** — Fast matching across names, descriptions, and category tags
+- **Single binary** — UI client, daemon, and providers in one `/usr/bin/owlry`
+- **Client/daemon architecture** — Daemon (`owlry -d`) keeps providers warm; UI appears instantly
+- **Built-in providers** — Apps, PATH commands, calculator, unit/currency converter, power actions
+- **Optional providers** (compiled in via `--features full` on AUR) — Clipboard history, emoji, SSH hosts, systemd user units, web search, filesystem search
+- **Fuzzy search with tags** — Fast matching across names, descriptions, category tags
 - **Config profiles** — Named mode presets for different workflows
-- **Filter prefixes** — Scope searches with `:app`, `:cmd`, `:config`, `:tag:X`, etc.
+- **Filter prefixes** — Scope searches with `:app`, `:cmd`, `:power`, `:uuctl`, `:tag:X`, etc.
 - **Frecency ranking** — Frequently/recently used items rank higher
 - **Toggle behavior** — Bind one key to open/close the launcher
-- **GTK4 theming** — System theme by default, with 10 built-in themes
+- **GTK4 theming** — System theme by default, 10 built-in themes shipped
 - **Wayland native** — Uses Layer Shell for proper overlay behavior
-- **dmenu compatible** — Pipe-based selection mode, no daemon required
-- **Extensible** — Create custom plugins in Lua or Rune
+- **dmenu compatible** — Pipe-based selection, no daemon required
 
 ## Installation
 
 ### Arch Linux (AUR)
 
 ```bash
-# Core (includes calculator, converter, system actions, settings editor)
-yay -S owlry
-
-# Add individual plugins as needed
-yay -S owlry-plugin-bookmarks owlry-plugin-weather owlry-plugin-clipboard
-
-# For custom Lua/Rune user plugins
-yay -S owlry-lua   # Lua 5.4 runtime
-yay -S owlry-rune  # Rune runtime
+paru -S owlry         # or yay -S owlry
 ```
 
-### Available Packages
-
-**Core packages** (this repo):
-
-| Package | Description |
-|---------|-------------|
-| `owlry` | GTK4 UI client |
-| `owlry-core` | Daemon (`owlryd`) with built-in calculator, converter, system, and settings providers |
-| `owlry-lua` | Lua 5.4 script runtime for user plugins |
-| `owlry-rune` | Rune script runtime for user plugins |
-
-**Plugin packages** ([owlry-plugins](https://somegit.dev/Owlibou/owlry-plugins) repo):
-
-| Package | Description |
-|---------|-------------|
-| `owlry-plugin-bookmarks` | Firefox, Chrome, Brave, Edge bookmarks |
-| `owlry-plugin-clipboard` | History via cliphist |
-| `owlry-plugin-emoji` | 400+ searchable emoji |
-| `owlry-plugin-filesearch` | File search (`/ filename`) |
-| `owlry-plugin-media` | MPRIS media controls |
-| `owlry-plugin-pomodoro` | Pomodoro timer widget |
-| `owlry-plugin-scripts` | User scripts |
-| `owlry-plugin-ssh` | SSH hosts from `~/.ssh/config` |
-| `owlry-plugin-systemd` | User services with actions |
-| `owlry-plugin-weather` | Weather widget |
-| `owlry-plugin-websearch` | Web search (`? query`) |
-
-> **Note:** Calculator, converter, and system actions are built into `owlry-core` and do not require separate packages.
+Upgrading from 1.x: paru/pacman transparently swaps the old `owlry-core`, `owlry-lua`, `owlry-rune`, and every `owlry-plugin-*` and `owlry-meta-*` package for the new unified `owlry`. The `.install` hook prints a banner with the systemd unit rename instructions (`owlryd.{service,socket}` → `owlry.{service,socket}`).
 
 ### Build from Source
 
-**Dependencies:**
+**System dependencies:**
+
 ```bash
-# Arch Linux
+# Arch
 sudo pacman -S gtk4 gtk4-layer-shell
 
-# Ubuntu/Debian
+# Ubuntu / Debian
 sudo apt install libgtk-4-dev libgtk4-layer-shell-dev
 
 # Fedora
 sudo dnf install gtk4-devel gtk4-layer-shell-devel
 ```
 
-**Build (requires Rust 1.90+):**
+**Rust 1.90+:**
+
 ```bash
 git clone https://somegit.dev/Owlibou/owlry.git
 cd owlry
-
-# Build daemon + UI
-cargo build --release -p owlry -p owlry-core
-
-# Build runtimes (for user plugins)
-cargo build --release -p owlry-lua -p owlry-rune
-
-# Build everything in this workspace
-cargo build --release --workspace
+cargo build --release --features full     # full = all providers (matches the AUR build)
+just install-local                        # installs binary + systemd units (sudo)
 ```
 
-**Plugins** are in a [separate repo](https://somegit.dev/Owlibou/owlry-plugins):
+Cargo features (pick a subset if you don't need everything):
+
+| Feature       | Provider                                  | Default? |
+|---|---|---|
+| `app`         | XDG desktop applications                  | yes |
+| `cmd`         | Executables on `$PATH`                    | yes |
+| `calc`        | Calculator                                | yes |
+| `conv`        | Unit & currency converter                 | yes |
+| `power`       | Shutdown/reboot/lock                      | yes |
+| `dmenu`       | Pipe-based selection                      | yes |
+| `clipboard`   | Clipboard history (`cliphist`)            | opt-in |
+| `emoji`       | Emoji picker (`wl-clipboard`)             | opt-in |
+| `ssh`         | SSH hosts from `~/.ssh/config`            | opt-in |
+| `systemd`     | systemd user units (type_id: `uuctl`)     | opt-in |
+| `websearch`   | Web search (DuckDuckGo / configurable)    | opt-in |
+| `filesearch`  | `fd` / `mlocate` shellout                 | opt-in |
+| `full`        | All of the above                          | — |
+
 ```bash
-git clone https://somegit.dev/Owlibou/owlry-plugins.git
-cd owlry-plugins
-cargo build --release -p owlry-plugin-bookmarks  # or any plugin
+cargo build --release --no-default-features --features "app,cmd,calc,conv,power,dmenu,systemd"
 ```
-
-**Install locally:**
-```bash
-just install-local
-```
-
-This installs the UI (`owlry`), daemon (`owlryd`), runtimes, and systemd service files.
 
 ## Getting Started
 
-Owlry uses a client/daemon architecture. The daemon (`owlryd`) loads providers and plugins into memory. The UI client (`owlry`) connects to the daemon over a Unix socket for instant results.
-
 ### Starting the Daemon
 
-Choose one of three methods:
+Three options:
 
-**1. Compositor autostart (recommended for most users)**
-
-Add to your compositor config:
+**1. Systemd user service (recommended)**
 
 ```bash
-# Hyprland (~/.config/hypr/hyprland.conf)
-exec-once = owlryd
-
-# Sway (~/.config/sway/config)
-exec owlryd
+systemctl --user enable --now owlry.service
 ```
 
-**2. Systemd user service**
+Reload config from disk without restarting:
 
 ```bash
-systemctl --user enable --now owlryd.service
+systemctl --user reload owlry.service     # or: kill -HUP $(pidof owlry)
 ```
 
-The daemon reloads its configuration on `SIGHUP` without restarting — useful when editing `config.toml` directly:
+**2. Socket activation**
 
 ```bash
-systemctl --user reload owlryd.service
-# or: kill -HUP $(pidof owlryd)
+systemctl --user enable owlry.socket
 ```
 
-**3. Socket activation (auto-start on first use)**
+Daemon starts the first time the UI connects.
 
-```bash
-systemctl --user enable owlryd.socket
+**3. Compositor autostart**
+
 ```
+# Hyprland
+exec-once = owlry -d
 
-The daemon starts automatically when the UI client first connects.
+# Sway
+exec owlry -d
+```
 
 ### Launching the UI
-
-Bind `owlry` to a key in your compositor:
 
 ```bash
 # Hyprland
@@ -166,58 +127,42 @@ bind = SUPER, Space, exec, owlry
 bindsym $mod+space exec owlry
 ```
 
-Running `owlry` a second time while it is already open sends a toggle command — the window closes. A single keybind acts as open/close.
-
-If the daemon is not running when the UI launches, it will attempt to start it via systemd automatically.
+Running `owlry` while a window is already open sends a toggle command — single keybind acts as open/close. If the daemon isn't running, the UI tries to start it via systemd.
 
 ## Usage
 
-```bash
-owlry                      # Launch with all providers
-owlry -m app               # Applications only
-owlry -m cmd               # PATH commands only
-owlry -m calc              # Calculator only
-owlry --profile dev        # Use a named profile from config
-owlry --help               # Show all options with examples
+```
+owlry                          launch UI, auto mode
+owlry -m auto                  launch UI, auto mode (explicit alias)
+owlry -m <mode>                launch UI in single-provider mode
+owlry --profile <name>         launch UI with a named profile
+
+owlry -d                       run the daemon (alias: `owlry daemon`)
+owlry dmenu [-p <prompt>]      dmenu mode (reads stdin, prints selection)
+owlry doctor                   diagnostics: config + socket + providers
+owlry providers [<id>]         list providers (or show details for one)
+owlry config validate          parse config, report errors
+owlry config show              print the resolved effective config as TOML
+owlry migrate-config           TOML → init.lua (stub in 2.0; lands in a later 2.x release)
 ```
 
 ### Profiles
-
-Profiles are named sets of modes defined in your config:
 
 ```toml
 [profiles.dev]
 modes = ["app", "cmd", "ssh"]
 
 [profiles.media]
-modes = ["media", "emoji"]
-
-[profiles.minimal]
-modes = ["app"]
+modes = ["emoji", "clipboard"]
 ```
-
-Launch with a profile:
 
 ```bash
 owlry --profile dev
 ```
 
-You can bind different profiles to different keys:
-
-```bash
-# Hyprland
-bind = SUPER, Space, exec, owlry
-bind = SUPER, D, exec, owlry --profile dev
-bind = SUPER, M, exec, owlry --profile media
-```
-
-Profiles can also be managed from the launcher itself — see [Settings Editor](#settings-editor).
-
 ### dmenu Mode
 
-Owlry is dmenu-compatible. Pipe input for interactive selection — the selected item is printed to stdout (not executed), so you pipe the output to execute it.
-
-dmenu mode is self-contained: it does not use the daemon and works without `owlryd` running.
+`owlry dmenu` (or the legacy `owlry -m dmenu`) reads stdin and prints the selection to stdout. It runs locally — no daemon required.
 
 ```bash
 # Screenshot menu
@@ -225,23 +170,21 @@ printf '%s\n' \
   "grimblast --notify copy screen" \
   "grimblast --notify copy area" \
   "grimblast --notify edit screen" \
-  | owlry -m dmenu -p "Screenshot" \
+  | owlry dmenu -p "Screenshot" \
   | sh
 
 # Git branch checkout
-git branch | owlry -m dmenu -p "checkout" | xargs git checkout
+git branch | owlry dmenu -p "checkout" | xargs git checkout
 
 # Kill a process
-ps -eo comm | sort -u | owlry -m dmenu -p "kill" | xargs pkill
+ps -eo comm | sort -u | owlry dmenu -p "kill" | xargs pkill
 
-# Select and open a project
-find ~/projects -maxdepth 1 -type d | owlry -m dmenu | xargs code
+# Open a project
+find ~/projects -maxdepth 1 -type d | owlry dmenu | xargs code
 
-# Package manager search
-pacman -Ssq | owlry -m dmenu -p "install" | xargs sudo pacman -S
+# Package manager
+pacman -Ssq | owlry dmenu -p "install" | xargs sudo pacman -S
 ```
-
-The `-p` / `--prompt` flag sets a custom label for the search input.
 
 ### Keyboard Shortcuts
 
@@ -254,56 +197,31 @@ The `-p` / `--prompt` flag sets a custom label for the search input.
 | `Shift+Tab` | Cycle filter tabs (reverse) |
 | `Ctrl+1..9` | Toggle tab by position |
 
-### Settings Editor
-
-Type `:config` to browse and modify settings without editing files:
-
-| Command | What it does |
-|---------|-------------|
-| `:config` | Show all setting categories |
-| `:config providers` | Toggle built-in providers on/off (calculator, converter, system, frecency) |
-| `:config theme` | Select color theme |
-| `:config engine` | Select web search engine |
-| `:config frecency` | Toggle frecency, set weight |
-| `:config fontsize 16` | Set font size (restart to apply) |
-| `:config profiles` | List profiles |
-| `:config profile create dev` | Create a new profile |
-| `:config profile dev modes` | Edit which modes a profile includes |
-
-Changes are saved to `config.toml` immediately. Some settings (theme, frecency) take effect on the next search. Others (font size, dimensions) require a restart.
-
-> **Note:** `:config providers` only covers built-in providers. To enable or disable plugins, use `owlry plugin enable/disable <name>` or set `disabled_plugins` in `[plugins]`.
-
 ### Search Prefixes
 
 | Prefix | Provider | Example |
 |--------|----------|---------|
 | `:app` | Applications | `:app firefox` |
 | `:cmd` | PATH commands | `:cmd git` |
-| `:sys` | System actions | `:sys shutdown` |
-| `:ssh` | SSH hosts | `:ssh server` |
-| `:clip` | Clipboard | `:clip password` |
-| `:bm` | Bookmarks | `:bm github` |
-| `:emoji` | Emoji | `:emoji heart` |
-| `:script` | Scripts | `:script backup` |
-| `:file` | Files | `:file config` |
+| `:power` (`:sys`, `:system`) | Power & session actions | `:power shutdown` |
 | `:calc` | Calculator | `:calc sqrt(16)` |
+| `:conv` | Converter | `:conv 5 ft to m` |
+| `:clip` | Clipboard | `:clip password` |
+| `:emoji` | Emoji | `:emoji heart` |
+| `:ssh` | SSH hosts | `:ssh server` |
+| `:uuctl` (`:systemd`) | systemd user units | `:uuctl dbus` |
 | `:web` | Web search | `:web rust docs` |
-| `:uuctl` | systemd | `:uuctl docker` |
-| `:config` | Settings | `:config theme` |
-| `:tag:X` | Filter by tag | `:tag:development` |
+| `:file` | Files | `:file config` |
+| `:tag:X` | Filter all results by tag | `:tag:development` |
 
 ### Trigger Prefixes
 
 | Trigger | Provider | Example |
 |---------|----------|---------|
 | `=` | Calculator | `= 5+3` |
-| `calc ` | Calculator | `calc sqrt(16)` |
 | `>` | Converter | `> 20 km to mi` |
 | `?` | Web search | `? rust programming` |
-| `web ` | Web search | `web linux tips` |
 | `/` | File search | `/ .bashrc` |
-| `find ` | File search | `find config` |
 
 ## Configuration
 
@@ -314,27 +232,19 @@ Owlry follows the [XDG Base Directory Specification](https://specifications.free
 | `~/.config/owlry/config.toml` | Main configuration |
 | `~/.config/owlry/themes/*.css` | Custom themes |
 | `~/.config/owlry/style.css` | CSS overrides |
-| `~/.config/owlry/plugins/` | User plugins (Lua/Rune) |
-| `~/.local/share/owlry/scripts/` | User scripts |
 | `~/.local/share/owlry/frecency.json` | Usage history |
-
-System locations:
-
-| Path | Purpose |
-|------|---------|
-| `/usr/lib/owlry/plugins/*.so` | Installed native plugins |
-| `/usr/lib/owlry/runtimes/*.so` | Lua/Rune script runtimes |
+| `$XDG_RUNTIME_DIR/owlry/owlry.sock` | IPC socket (overridable via `$OWLRY_SOCKET`) |
 | `/usr/share/doc/owlry/config.example.toml` | Example configuration |
+| `/usr/share/owlry/themes/` | Bundled themes |
 
 ### Quick Start
 
 ```bash
-# Copy example config
 mkdir -p ~/.config/owlry
 cp /usr/share/doc/owlry/config.example.toml ~/.config/owlry/config.toml
+$EDITOR ~/.config/owlry/config.toml
+owlry config validate
 ```
-
-Or configure from within the launcher: type `:config` to interactively change settings.
 
 ### Example Configuration
 
@@ -342,156 +252,53 @@ Or configure from within the launcher: type `:config` to interactively change se
 [general]
 show_icons = true
 max_results = 100
-tabs = ["app", "cmd", "uuctl"]  # Provider tabs shown in the header bar
-# terminal_command = "kitty"    # Auto-detected; overrides $TERMINAL and xdg-terminal-exec
-# use_uwsm = false              # Enable for systemd session integration (uwsm app --)
+tabs = ["app", "cmd", "uuctl"]   # tabs shown in the header bar
+# terminal_command = "kitty"      # auto-detected; overrides $TERMINAL and xdg-terminal-exec
+# use_uwsm = false                # enable for systemd session integration (uwsm app --)
 
 [appearance]
 width = 850
 height = 650
 font_size = 14
 border_radius = 12
-# theme = "owl"  # Or: catppuccin-mocha, nord, dracula, etc. (see Theming section)
+# theme = "owl"                   # or: catppuccin-mocha, nord, dracula, ... (see Theming)
 
-# Optional per-element color overrides — all fields are optional, unset inherits from theme
+# Optional per-element color overrides. All fields are optional; unset inherits from the theme.
 # [appearance.colors]
 # background = "#1e1e2e"
-# background_secondary = "#313244"
-# border = "#45475a"
-# text = "#cdd6f4"
 # accent = "#cba6f7"
-# badge_app = "#a6e3a1"     # All badge_* keys: app, cmd, clip, ssh, emoji, file,
-# badge_web = "#89dceb"     #   script, sys, uuctl, web, calc, bm, dmenu,
-# badge_media = "#f38ba8"   #   media, weather, pomo
+# badge_app = "#a6e3a1"            # badge_* keys: app, cmd, clip, ssh, emoji, file,
+# badge_web = "#89dceb"            #   power (alias: badge_sys), uuctl, web, calc, bm, dmenu
 
 [providers]
-applications = true    # .desktop files
-commands = true        # PATH executables
-calculator = true      # Built-in math expressions (= or calc trigger)
-converter = true       # Built-in unit/currency converter (> trigger)
-system = true          # Built-in shutdown/reboot/lock actions
-frecency = true        # Boost frequently used items
-frecency_weight = 0.3  # 0.0 = disabled, 1.0 = strong boost
+applications = true               # .desktop files
+commands = true                   # PATH executables
+calculator = true                 # `=` or :calc
+converter = true                  # `>` or :conv
+power = true                      # `:power` shutdown/reboot/lock (alias: system)
+systemd = true                    # `:uuctl` user units (alias: uuctl)
+clipboard = true                  # via cliphist
+emoji = true                      # picker via wl-clipboard
+ssh = true                        # ~/.ssh/config hosts
+websearch = true                  # `?` or :web
+filesearch = true                 # `/` or :file
+frecency = true                   # boost frequently used items
+frecency_weight = 0.3             # 0.0 disabled .. 1.0 strong
 
 # Web search engine: google, duckduckgo, bing, startpage, searxng, brave, ecosia
 # Or a custom URL with a {query} placeholder: "https://example.com/search?q={query}"
 search_engine = "duckduckgo"
 
-[plugins]
-# disabled_plugins = ["emoji", "pomodoro"]  # Plugin IDs to disable
-# registry_url = "https://..."              # Custom plugin registry URL
-
-# Sandboxing for Lua/Rune user plugins (~/.config/owlry/plugins/)
-# [plugins.sandbox]
-# allow_filesystem = false   # Allow access outside plugin directory
-# allow_network = false      # Allow outbound network requests
-# allow_commands = false     # Allow shell command execution
-# memory_limit = 67108864    # Lua memory cap in bytes (default: 64 MB)
-
-# Per-plugin config (for plugins that expose configurable options)
-# [plugin_config.my-plugin]
-# option = "value"
-
-# Profiles: named sets of modes
+# Profiles — named mode sets
 [profiles.dev]
 modes = ["app", "cmd", "ssh"]
-
-[profiles.media]
-modes = ["media", "emoji"]
+[profiles.minimal]
+modes = ["app"]
 ```
 
-See `/usr/share/doc/owlry/config.example.toml` for all options with documentation.
+See `/usr/share/doc/owlry/config.example.toml` for every option with documentation.
 
-## Plugin System
-
-Owlry uses a modular plugin architecture. Plugins are loaded by the daemon from:
-
-- `/usr/lib/owlry/plugins/*.so` — System plugins (AUR packages)
-- `~/.config/owlry/plugins/` — User plugins (requires `owlry-lua` or `owlry-rune`)
-
-### Disabling Plugins
-
-Add plugin IDs to the disabled list in your config:
-
-```toml
-[plugins]
-disabled_plugins = ["emoji", "pomodoro"]
-```
-
-Or use the CLI:
-
-```bash
-owlry plugin disable emoji
-owlry plugin enable emoji
-```
-
-> **Note:** `:config providers` in the launcher only manages built-in providers (calculator, converter, system). Use `disabled_plugins` or `owlry plugin disable` for plugins.
-
-### Plugin Management CLI
-
-```bash
-# List installed plugins (shows both native .so plugins and user script plugins)
-owlry plugin list
-owlry plugin list --enabled        # Only enabled
-owlry plugin list --available      # Show registry plugins
-
-# Search registry
-owlry plugin search "weather"
-
-# Install/remove
-owlry plugin install <name>        # From registry
-owlry plugin install ./my-plugin   # From local path
-owlry plugin remove <name>
-
-# Enable/disable
-owlry plugin enable <name>
-owlry plugin disable <name>
-
-# Plugin info
-owlry plugin info <name>
-owlry plugin commands <name>       # List plugin CLI commands
-
-# Create new plugin
-owlry plugin create my-plugin              # Lua (default)
-owlry plugin create my-plugin -r rune      # Rune
-
-# Run plugin command
-owlry plugin run <plugin-id> <command> [args...]
-```
-
-### Plugin Display Metadata
-
-Plugins can declare how they appear in the UI via their `plugin.toml`. Without these fields, the tab label and search placeholder default to a capitalized version of the `type_id`.
-
-```toml
-[[providers]]
-id = "my-plugin"
-name = "My Plugin"
-type_id = "myplugin"
-tab_label = "My Plugin"        # Tab button and page title
-search_noun = "plugin items"   # Search placeholder: "Search plugin items..."
-```
-
-Both fields are optional. If omitted, the UI auto-generates from `type_id` (e.g., `type_id = "hs"` shows "Hs" as the tab label).
-
-Lua plugins can also set these at runtime via `owlry.provider.register()`:
-
-```lua
-owlry.provider.register({
-    id = "my-plugin",
-    name = "My Plugin",
-    tab_label = "My Plugin",
-    search_noun = "plugin items",
-})
-```
-
-### Creating Custom Plugins
-
-See [docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) for:
-- Native plugin development (Rust)
-- Lua plugin development
-- Rune plugin development
-- Available APIs
+`owlry config show` prints the resolved effective config (defaults merged with your file). `owlry config validate` parses it and reports errors.
 
 ## Theming
 
@@ -514,8 +321,6 @@ See [docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) for:
 [appearance]
 theme = "catppuccin-mocha"
 ```
-
-Or select interactively: type `:config theme` in the launcher.
 
 ### Custom Theme
 
@@ -548,29 +353,33 @@ Create `~/.config/owlry/themes/mytheme.css`:
 
 ## Architecture
 
-Owlry uses a client/daemon split:
-
 ```
-owlryd (daemon)                        owlry (GTK4 UI client)
-├── Loads config + plugins             ├── Connects to daemon via Unix socket
-├── Built-in providers                 ├── Renders results in GTK4 window
-│   ├── Applications (.desktop)        ├── Handles keyboard input
-│   ├── Commands (PATH)                ├── Toggle: second launch closes window
-│   ├── Calculator (math)              └── dmenu mode (self-contained, no daemon)
-│   ├── Converter (units/currency)
-│   ├── System (power/session)
-│   └── Config editor (settings)
-├── Plugin loader
-│   ├── /usr/lib/owlry/plugins/*.so
-│   ├── /usr/lib/owlry/runtimes/
-│   └── ~/.config/owlry/plugins/
-├── Frecency tracking (auto-saved every 5 min; flushed on shutdown)
-└── IPC server (Unix socket)
-         │
-         └── $XDG_RUNTIME_DIR/owlry/owlry.sock
+owlry  (single binary)
+├── default invocation         GTK4 UI client (connects to daemon over socket)
+├── owlry -d / owlry daemon    IPC daemon (loads providers, listens on the socket)
+├── owlry dmenu                stdin → selection (no daemon)
+└── owlry doctor / providers / config   diagnostics & config tools
+
+Daemon:
+├── Built-in providers     applications, commands, power, calculator, converter
+├── Optional providers     bookmarks, clipboard, emoji, ssh, systemd, websearch, filesearch
+│                          (compiled in per cargo feature)
+├── Frecency tracking      auto-saved every 5 min; flushed on SIGTERM/SIGINT
+└── IPC server             $XDG_RUNTIME_DIR/owlry/owlry.sock (newline-delimited JSON)
 ```
 
-The daemon keeps providers and plugins loaded in memory, so the UI appears instantly when launched. The UI client is a thin GTK4 layer that sends queries and receives results over the socket.
+The daemon keeps providers and items warm in memory; the UI launches instantly because there's no work to do at startup. The UI client is a thin GTK4 layer that streams queries and renders results.
+
+Set `OWLRY_SOCKET=/path/to/sock` to override the socket location — useful for running a development daemon alongside a production one.
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for feature ideas and [docs/RESTRUCTURE-V2.md](docs/RESTRUCTURE-V2.md) for the v2 rewrite story.
+
+Headline upcoming work:
+- **Lua-driven configuration** (2.1 / 3.0) — `~/.config/owlry/init.lua` replaces TOML. User-defined providers via `owlry.provider {}` in the same file (Hyprland-style configs-as-code). `owlry migrate-config` lands at the same time.
+- **Widget providers return** — weather, MPRIS media controls, pomodoro timer. Deferred from 2.0 while the UI positioning is reworked.
+- **Bookmarks return** — Firefox + Chromium. Deferred from 2.0 to avoid a hard rusqlite/`libsqlite3-sys` dep in the chroot build path; returns with a pure-Rust reader (likely via Firefox's JSON backup files).
 
 ## License
 
@@ -580,5 +389,5 @@ GNU General Public License v3.0 — see [LICENSE](LICENSE).
 
 - [GTK4](https://gtk.org/) — UI toolkit
 - [gtk4-layer-shell](https://github.com/wmww/gtk4-layer-shell) — Wayland Layer Shell
-- [abi_stable](https://crates.io/crates/abi_stable) — ABI-stable Rust plugins
 - [fuzzy-matcher](https://crates.io/crates/fuzzy-matcher) — Fuzzy search
+- [expr-solver-lib](https://crates.io/crates/expr-solver-lib) — Calculator backend

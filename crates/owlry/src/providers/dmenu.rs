@@ -1,5 +1,5 @@
+use crate::providers::{ItemSource, LaunchItem, Provider, ProviderType};
 use log::debug;
-use owlry_core::providers::{ItemSource, LaunchItem, Provider, ProviderType};
 use std::io::{self, BufRead};
 
 /// Provider for dmenu-style input from stdin

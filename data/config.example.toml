@@ -61,7 +61,7 @@ max_results = 100
 
 # Header tabs — provider tabs shown in the UI bar (Ctrl+1..9 to toggle)
 # Core values: app, cmd, dmenu
-# Plugin values: uuctl, calc, clip, emoji, file, script, ssh, sys, web, bm
+# Plugin values: uuctl, calc, clip, emoji, file, ssh, power, web, bm
 # Any installed plugin's type_id is valid (e.g. "weather", "media")
 tabs = ["app", "cmd", "uuctl"]
 
@@ -101,7 +101,7 @@ border_radius = 12
 # badge_file = "#73daca"
 # badge_script = "#ff9e64"
 # badge_ssh = "#2ac3de"
-# badge_sys = "#f7768e"
+# badge_power = "#f7768e"     # alias: badge_sys
 # badge_uuctl = "#9ece6a"
 # badge_web = "#7aa2f7"
 # badge_media = "#bb9af7"
@@ -153,7 +153,7 @@ commands = true          # Executables from $PATH
 # Built-in providers (compiled into owlry-core)
 calculator = true        # Math expressions (= or calc trigger)
 converter = true         # Unit/currency conversion (> trigger)
-system = true            # System actions: shutdown, reboot, lock, etc.
+power = true             # Power actions: shutdown, reboot, lock, etc. (alias: system)
 
 # Frecency — boost frequently/recently used items
 # Data stored in: ~/.local/share/owlry/frecency.json

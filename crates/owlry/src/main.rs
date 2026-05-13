@@ -1,16 +1,9 @@
-mod app;
-mod backend;
-mod cli;
-pub mod client;
-mod plugin_commands;
-mod providers;
-mod theme;
-mod ui;
-
-use app::OwlryApp;
-use cli::{CliArgs, Command};
 use log::{info, warn};
 use std::os::unix::io::AsRawFd;
+
+use owlry::app::OwlryApp;
+use owlry::cli::{CliArgs, Command};
+use owlry::{client, commands, paths};
 
 #[cfg(feature = "dev-logging")]
 use log::debug;
@@ -23,12 +16,8 @@ use log::debug;
 fn try_acquire_lock() -> Option<std::fs::File> {
     use std::os::unix::fs::OpenOptionsExt;
 
-    let lock_path = owlry_core::paths::socket_path()
-        .parent()
-        .unwrap()
-        .join("owlry-ui.lock");
+    let lock_path = paths::socket_path().parent().unwrap().join("owlry-ui.lock");
 
-    // Ensure the parent directory exists
     if let Some(parent) = lock_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -50,30 +39,34 @@ fn try_acquire_lock() -> Option<std::fs::File> {
 fn main() {
     let args = CliArgs::parse_args();
 
-    // Handle subcommands before initializing the full app
-    if let Some(command) = &args.command {
-        // CLI commands don't need full logging
-        match command {
-            Command::Plugin(plugin_cmd) => {
-                if let Err(e) = plugin_commands::execute(plugin_cmd.clone()) {
-                    eprintln!("Error: {}", e);
-                    std::process::exit(1);
-                }
-                std::process::exit(0);
-            }
+    // Subcommand dispatch. Each commands::* function calls std::process::exit
+    // and never returns. Daemon mode also installs env_logger; the other
+    // subcommands stay quiet by default.
+    if args.daemon {
+        init_logger();
+        commands::run_daemon();
+    }
+
+    match args.command.clone() {
+        Some(Command::Daemon) => {
+            init_logger();
+            commands::run_daemon();
+        }
+        Some(Command::Doctor) => commands::run_doctor(),
+        Some(Command::Providers { id }) => commands::run_providers(id),
+        Some(Command::Config { action }) => commands::run_config(action),
+        Some(Command::MigrateConfig) => commands::run_migrate_config(),
+        Some(Command::Dmenu { prompt }) => {
+            init_logger();
+            commands::run_dmenu(prompt);
+        }
+        None => {
+            // Fall through to UI launch below.
         }
     }
 
-    // No subcommand - launch the app
-    let default_level = if cfg!(feature = "dev-logging") {
-        "debug"
-    } else {
-        "info"
-    };
-
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(default_level))
-        .format_timestamp_millis()
-        .init();
+    // Default: launch the UI.
+    init_logger();
 
     #[cfg(feature = "dev-logging")]
     {
@@ -88,7 +81,6 @@ fn main() {
     let _lock_guard = match try_acquire_lock() {
         Some(file) => file,
         None => {
-            // Another instance holds the lock — send toggle to daemon and exit
             info!("Another owlry instance detected, sending toggle");
             let socket_path = client::CoreClient::socket_path();
             if let Ok(mut client) = client::CoreClient::connect(&socket_path) {
@@ -106,7 +98,7 @@ fn main() {
 
     info!("Starting Owlry launcher");
 
-    // Diagnostic: log critical environment variables
+    // Diagnostic: log critical environment variables.
     let home = std::env::var("HOME").unwrap_or_else(|_| "<not set>".to_string());
     let path = std::env::var("PATH").unwrap_or_else(|_| "<not set>".to_string());
     let xdg_data = std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| "<not set>".to_string());
@@ -120,4 +112,16 @@ fn main() {
 
     let app = OwlryApp::new(args);
     std::process::exit(app.run());
+}
+
+fn init_logger() {
+    let default_level = if cfg!(feature = "dev-logging") {
+        "debug"
+    } else {
+        "info"
+    };
+    let _ =
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(default_level))
+            .format_timestamp_millis()
+            .try_init();
 }

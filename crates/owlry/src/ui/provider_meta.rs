@@ -1,5 +1,5 @@
-use owlry_core::ipc::ProviderDesc;
-use owlry_core::providers::ProviderType;
+use crate::ipc::ProviderDesc;
+use crate::providers::ProviderType;
 
 /// Display metadata for a provider.
 pub struct ProviderMeta {
@@ -86,10 +86,10 @@ fn hardcoded(provider: &ProviderType) -> ProviderMeta {
                 css_class: "owlry-filter-ssh".to_string(),
                 search_noun: "SSH hosts".to_string(),
             },
-            "system" => ProviderMeta {
-                tab_label: "System".to_string(),
-                css_class: "owlry-filter-sys".to_string(),
-                search_noun: "system".to_string(),
+            "power" | "system" => ProviderMeta {
+                tab_label: "Power".to_string(),
+                css_class: "owlry-filter-power".to_string(),
+                search_noun: "power actions".to_string(),
             },
             "uuctl" => ProviderMeta {
                 tab_label: "uuctl".to_string(),

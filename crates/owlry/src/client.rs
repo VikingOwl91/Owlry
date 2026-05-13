@@ -3,7 +3,7 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use owlry_core::ipc::{PluginEntry, ProviderDesc, Request, Response, ResultItem};
+use crate::ipc::{ProviderDesc, Request, Response, ResultItem};
 
 /// Maximum allowed size for a single IPC response line (4 MiB).
 /// Larger than the request limit because responses carry result sets.
@@ -77,15 +77,13 @@ impl CoreClient {
 
         // Socket not available — try to start the daemon.
         let status = std::process::Command::new("systemctl")
-            .args(["--user", "start", "owlryd"])
+            .args(["--user", "start", "owlry.service"])
             .status()
-            .map_err(|e| {
-                io::Error::other(format!("failed to start owlryd via systemd: {e}"))
-            })?;
+            .map_err(|e| io::Error::other(format!("failed to start owlry.service via systemd: {e}")))?;
 
         if !status.success() {
             return Err(io::Error::other(format!(
-                "systemctl --user start owlryd exited with status {}",
+                "systemctl --user start owlry.service exited with status {}",
                 status
             )));
         }
@@ -111,10 +109,10 @@ impl CoreClient {
 
     /// Default socket path: `$XDG_RUNTIME_DIR/owlry/owlry.sock`.
     ///
-    /// Delegates to `owlry_core::paths::socket_path()` to keep a single
+    /// Delegates to `crate::paths::socket_path()` to keep a single
     /// source of truth.
     pub fn socket_path() -> PathBuf {
-        owlry_core::paths::socket_path()
+        crate::paths::socket_path()
     }
 
     /// Send a search query and return matching results.
@@ -196,19 +194,6 @@ impl CoreClient {
         }
     }
 
-    /// Query the daemon's native plugin registry (loaded + suppressed entries).
-    pub fn plugin_list(&mut self) -> io::Result<Vec<PluginEntry>> {
-        self.send(&Request::PluginList)?;
-        match self.receive()? {
-            Response::PluginList { entries } => Ok(entries),
-            Response::Error { message } => Err(io::Error::other(message)),
-            other => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("unexpected response to PluginList: {other:?}"),
-            )),
-        }
-    }
-
     /// Query a plugin's submenu actions.
     pub fn submenu(&mut self, plugin_id: &str, data: &str) -> io::Result<Vec<ResultItem>> {
         self.send(&Request::Submenu {
@@ -244,7 +229,7 @@ impl CoreClient {
                 return Err(io::Error::new(
                     io::ErrorKind::UnexpectedEof,
                     "daemon closed the connection",
-                ))
+                ));
             }
         };
         serde_json::from_str(line.trim()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
