@@ -1,0 +1,21 @@
+# Pin the linker to GNU ld.bfd for x86_64 builds.
+#
+# Background: Arch's `extra/rust` package patches rustc to default to
+# `-fuse-ld=lld`. mlua-sys + lua-src emit `cargo:rustc-link-lib=static:-bundle=lua5.4`
+# (negative-bundle = "static, don't pack into the rlib") plus a separate
+# `cargo:rustc-link-search=native=$OUT_DIR/lib`. rustc serialises these into
+# the final linker invocation with `-llua5.4` appearing BEFORE `-L .../out/lib`.
+# Single-pass linkers like LLD process args in order and can't satisfy
+# `-llua5.4` because the search path it's in hasn't been added yet — the
+# entire chroot build fails with 60+ undefined-symbol errors out of mlua.
+#
+# `ld.bfd` does multi-pass resolution and finds the archive regardless of
+# argument order, matching the behaviour of rustup's default-linker rustc
+# binaries used outside Arch packaging. binutils (which provides bfd) is
+# already a build-essential dep of the chroot, so this adds no install cost.
+#
+# Local cargo (rustup toolchain) doesn't suffer from the ordering bug, but
+# pinning bfd here keeps both environments byte-identical.
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=bfd"]
