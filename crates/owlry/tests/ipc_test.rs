@@ -5,6 +5,7 @@ fn test_query_request_roundtrip() {
     let req = Request::Query {
         text: "fire".into(),
         modes: Some(vec!["app".into(), "cmd".into()]),
+        prefix: None,
     };
     let json = serde_json::to_string(&req).unwrap();
     let parsed: Request = serde_json::from_str(&json).unwrap();
@@ -16,6 +17,7 @@ fn test_query_request_without_modes() {
     let req = Request::Query {
         text: "fire".into(),
         modes: None,
+        prefix: None,
     };
     let json = serde_json::to_string(&req).unwrap();
     assert!(!json.contains("modes"));

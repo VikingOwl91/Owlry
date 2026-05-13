@@ -18,6 +18,11 @@ pub struct QueryParams {
     #[allow(dead_code)]
     pub max_results: usize,
     pub modes: Option<Vec<String>>,
+    /// Provider-narrowing prefix (e.g. `"smoke"`, `"calc"`). Mirrors the
+    /// `prefix` field of [`crate::filter::ParsedQuery`] after `parse_query`
+    /// strips the `:foo ` from the entry. Daemon applies it as
+    /// `filter.set_prefix` before searching.
+    pub prefix: Option<String>,
     pub tag_filter: Option<String>,
 }
 
@@ -62,7 +67,7 @@ impl DaemonHandle {
                     } else {
                         params.query
                     };
-                    match c.query(&effective_query, params.modes) {
+                    match c.query(&effective_query, params.modes, params.prefix) {
                         Ok(items) => items.into_iter().map(result_to_launch_item).collect(),
                         Err(e) => {
                             warn!("IPC query failed: {}", e);
@@ -115,6 +120,15 @@ impl SearchBackend {
         }
     }
 
+    /// Extract the active-prefix parameter for IPC. Mirrors the
+    /// `active_prefix` on the local filter so the daemon's filter can be
+    /// narrowed identically. `set_prefix` doesn't touch `accept_all` /
+    /// `enabled`, so without this the prefix would be silently lost in
+    /// translation (task #28).
+    fn build_prefix_param(filter: &ProviderFilter) -> Option<String> {
+        filter.active_prefix().map(|p| p.to_string())
+    }
+
     /// Search for items matching the query.
     ///
     /// In daemon mode, sends query over IPC. The modes list is derived from
@@ -131,8 +145,9 @@ impl SearchBackend {
         match self {
             SearchBackend::Daemon(handle) => {
                 let modes_param = Self::build_modes_param(filter);
+                let prefix_param = Self::build_prefix_param(filter);
                 match handle.client.lock() {
-                    Ok(mut client) => match client.query(query, modes_param) {
+                    Ok(mut client) => match client.query(query, modes_param, prefix_param) {
                         Ok(items) => items.into_iter().map(result_to_launch_item).collect(),
                         Err(e) => {
                             warn!("IPC query failed: {}", e);
@@ -194,8 +209,9 @@ impl SearchBackend {
                 };
 
                 let modes_param = Self::build_modes_param(filter);
+                let prefix_param = Self::build_prefix_param(filter);
                 match handle.client.lock() {
-                    Ok(mut client) => match client.query(&effective_query, modes_param) {
+                    Ok(mut client) => match client.query(&effective_query, modes_param, prefix_param) {
                         Ok(items) => items.into_iter().map(result_to_launch_item).collect(),
                         Err(e) => {
                             warn!("IPC query failed: {}", e);
@@ -255,6 +271,7 @@ impl SearchBackend {
                     query: query.to_string(),
                     max_results,
                     modes: Self::build_modes_param(filter),
+                    prefix: Self::build_prefix_param(filter),
                     tag_filter: tag_filter.map(|s| s.to_string()),
                 };
                 Some(handle.query_async(params))

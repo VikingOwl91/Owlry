@@ -32,6 +32,10 @@ Optional modes (depend on cargo features at build time):
 .TP
 .BI \-\-profile " NAME"
 Launch the UI with a named profile. Profiles are defined under
+.B owlry.profiles
+in
+.IR ~/.config/owlry/owlry.lua
+or
 .B [profiles.<NAME>]
 in
 .IR ~/.config/owlry/config.toml .
@@ -64,18 +68,45 @@ List all registered providers, or print details (icon, prefix, position, tab
 label, search noun) for one. Requires a running daemon.
 .TP
 .B "config validate"
-Parse the config file and report errors. Exits 0 on success, 1 on parse failure.
+Parse the config file and report errors and warnings. When
+.I ~/.config/owlry/owlry.lua
+exists it is evaluated and the snapshot is checked for unknown keys,
+unknown provider ids, tabs not in
+.BR owlry.providers ,
+duplicate
+.B owlry.provider
+ids, and providers compiled out of the running build. Exit codes:
+.B 0
+clean,
+.B 1
+on errors (syntax / eval / TOML parse failure),
+.B 2
+on warnings only.
 .TP
 .B "config show"
 Print the resolved effective configuration (defaults merged with the user file)
 as TOML.
 .TP
-.B migrate-config
-Migrate TOML configuration to a future
-.B init.lua
-format. Stub in 2.0; functional once the Lua config layer lands in a later 2.x
-release. See
-.IR docs/RESTRUCTURE-V2.md .
+.BR "migrate-config " [\fB\-\-force\fR]
+Migrate
+.I ~/.config/owlry/config.toml
+to
+.I ~/.config/owlry/owlry.lua
+with equivalent settings. Output is deterministic and minimal — only values
+differing from the built-in defaults are emitted. Pre-v2 aliases
+.RB ( system " \(-> " power ,
+.B badge_sys
+\(->
+.BR badge_power )
+are normalised to v2 names. The migrator refuses to overwrite an existing
+.B owlry.lua
+unless
+.B \-\-force
+(or
+.BR \-f )
+is passed. See
+.IR docs/lua-api.md
+\(sc9 for the full mapping.
 .SH ENVIRONMENT
 .TP
 .B XDG_RUNTIME_DIR
@@ -102,8 +133,19 @@ Auto-detected terminal for items marked as needing a terminal. Overridden by
 in the config.
 .SH FILES
 .TP
+.I ~/.config/owlry/owlry.lua
+Lua configuration (preferred from 2.1). Takes precedence over
+.B config.toml
+when both exist; an info log notes this at daemon start. The daemon
+hot-reloads on save; broken edits surface as desktop notifications and
+keep the previous state alive. See
+.IR docs/lua-api.md
+for the API.
+.TP
 .I ~/.config/owlry/config.toml
-Main configuration. See
+TOML configuration (legacy; ignored when
+.B owlry.lua
+exists). See
 .B owlry config show
 for the effective state.
 .TP
@@ -122,8 +164,11 @@ IPC Unix socket. See
 .B OWLRY_SOCKET
 to override.
 .TP
+.I /usr/share/doc/owlry/owlry.example.lua
+Annotated example Lua configuration.
+.TP
 .I /usr/share/doc/owlry/config.example.toml
-Annotated example configuration.
+Annotated example TOML configuration.
 .TP
 .I /usr/share/owlry/themes/
 Bundled themes.

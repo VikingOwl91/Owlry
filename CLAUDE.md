@@ -20,7 +20,17 @@ crates/owlry/                  -- everything
 │   ├── backend.rs             -- SearchBackend abstraction
 │   ├── app.rs                 -- GTK4 setup
 │   ├── ui/                    -- GTK widgets
-│   ├── config/                -- TOML config loader
+│   ├── config/                -- TOML + Lua config loader; defines LoadedConfig
+│   ├── lua/                   -- Lua config layer (feature: lua)
+│   │   ├── api.rs             -- owlry.set / providers / tabs / provider / theme / profiles
+│   │   ├── config.rs          -- LuaConfig accumulator + merge_into(Config)
+│   │   ├── error.rs           -- LuaConfigError (thiserror)
+│   │   ├── migrate.rs         -- TOML → owlry.lua serializer (deterministic)
+│   │   ├── provider.rs        -- LuaProvider impl Provider
+│   │   ├── runtime.rs         -- LuaContext (Arc<Lua>) + eval_file/snapshot
+│   │   ├── util.rs            -- owlry.util.{shell, read_file, glob, env, hostname, …}
+│   │   ├── validate.rs        -- ValidationReport with categorised findings
+│   │   └── watcher.rs         -- notify-based hot reload (desktop-notification errors)
 │   ├── data/                  -- FrecencyStore
 │   ├── filter.rs              -- ProviderFilter + prefix parser
 │   ├── ipc.rs                 -- Request/Response types
@@ -47,26 +57,35 @@ There is no `crates/owlry-core`, `owlry-plugin-api`, `owlry-lua`, or `owlry-rune
 ## Build & development
 
 ```bash
-# Default features (minimal — app, cmd, calc, conv, power, dmenu)
+# Default features (minimal — app, cmd, calc, conv, power, dmenu, systemd)
 cargo build
 
-# Full features (matches AUR build)
+# Full features (matches AUR build) — includes lua + every optional provider
 cargo build --release --features full
 
+# Lua-only opt-in on top of the default minimal set
+cargo build --features lua
+
 # Tests
-cargo test --workspace --features full     # 252+ tests
-cargo test --workspace --no-default-features
+cargo test --features full           # 350+ tests including lua + watcher + migrate
+cargo test --no-default-features
 
 # Verbose dev logging
 cargo run -- --features dev-logging -- -d
 
 # Format + lint
 cargo fmt --all
-cargo clippy --workspace --features full
+cargo clippy --features full
+cargo clippy --no-default-features    # must also stay silent
 
 # Install locally (sudo)
 just install-local
 ```
+
+The `lua` cargo feature pulls in `mlua` (vendored Lua 5.4), `glob` (for
+`owlry.util.glob`), and `notify` (for hot reload). It's part of the `full`
+set; minimal builds (`cargo install` without flags) compile without it
+and the `migrate-config` / Lua-load paths gracefully fall back to TOML.
 
 The daemon binary is `owlry`. There is no separate `owlryd` binary anywhere — the daemon is `owlry -d` (or `owlry daemon`). The systemd user unit is `owlry.service` (pre-2.0 name: `owlryd.service`).
 
@@ -94,12 +113,36 @@ owlry daemon                   run the daemon (alias: -d)
 owlry dmenu [-p <prompt>]      dmenu mode (reads stdin, prints selection)
 owlry doctor                   config + socket + providers status
 owlry providers [<id>]         list providers (or show one)
-owlry config validate          parse config, report errors
+owlry config validate          parse config, report errors (1) and warnings (2)
 owlry config show              print resolved effective config
-owlry migrate-config           TOML → init.lua (stub; lands with Lua config)
+owlry migrate-config [--force] TOML → owlry.lua (functional from 2.1; --force to overwrite)
 ```
 
 The `owlry plugin ...` subcommand tree from 1.x is **gone** in 2.0. Nothing to install, manage, or run via the CLI.
+
+## Lua config layer (2.1+)
+
+`~/.config/owlry/owlry.lua` is the canonical config from 2.1 onwards.
+`config.toml` remains supported but is ignored entirely when `owlry.lua`
+exists (an info log at daemon start surfaces this). The daemon spawns a
+`notify` watcher on the config dir; saves are debounced (200ms),
+re-evaluated in a fresh `LuaContext`, and hot-swapped atomically. Eval
+failures are kept off the live state and surfaced via both the journal
+**and** a `notify-rust` desktop notification with the precise mlua
+line/column. See [`docs/lua-api.md`](docs/lua-api.md) for the full API
+surface (`owlry.set`, `owlry.providers`, `owlry.tabs`, `owlry.provider`,
+`owlry.theme`, `owlry.profiles`, `owlry.util.*`).
+
+Implementation notes worth keeping straight:
+- `LuaContext::lua: Arc<Lua>` — `mlua::Function` references don't bump
+  the Lua refcount, so user providers hold their own `Arc<Lua>` clone
+  via `LuaContext::lua_handle()` to outlive the context.
+- `LoadedConfig` (in `config/mod.rs`) is the resolution result that
+  keeps the `LuaContext` alive past `Config::load`. The daemon uses
+  this; `Config::load` itself drops the context after merging scalars
+  (so it can't be used to wire user providers — only `LoadedConfig`).
+- `owlry config validate` runs `lua::validate::validate` against the
+  snapshot and exits 0 / 1 / 2 per `docs/lua-api.md` §8.
 
 ## Provider model
 

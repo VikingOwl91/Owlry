@@ -92,6 +92,7 @@ fn test_server_handles_query_request() {
     let req = Request::Query {
         text: "nonexistent_query_xyz".into(),
         modes: None,
+        prefix: None,
     };
     let resp = roundtrip(&mut stream, &req);
 

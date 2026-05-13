@@ -33,6 +33,107 @@ pub fn run_daemon() -> ! {
     }
 }
 
+/// Print which config source is active (Lua / TOML / defaults) and nudge
+/// the user toward the canonical 2.1+ format when they're still on TOML.
+/// Also surfaces pre-v2 plugin / scripts artifacts in the same pass so the
+/// user sees everything in one place rather than only on `migrate-config`.
+fn print_config_source_info(out: &mut impl Write) {
+    let lua_path = paths::lua_config_file();
+    let toml_path = paths::config_file();
+
+    let lua_exists = lua_path.as_deref().is_some_and(|p| p.exists());
+    let toml_exists = toml_path.as_deref().is_some_and(|p| p.exists());
+
+    #[cfg(feature = "lua")]
+    {
+        if lua_exists {
+            let _ = writeln!(
+                out,
+                "  source: Lua ({})",
+                lua_path.as_ref().unwrap().display()
+            );
+            if toml_exists {
+                let _ = writeln!(
+                    out,
+                    "  note:   {} is present alongside owlry.lua — ignored.",
+                    toml_path.as_ref().unwrap().display()
+                );
+            }
+        } else if toml_exists {
+            let _ = writeln!(
+                out,
+                "  source: TOML ({})",
+                toml_path.as_ref().unwrap().display()
+            );
+            let _ = writeln!(
+                out,
+                "  hint:   `owlry migrate-config` rewrites it as owlry.lua, the canonical"
+            );
+            let _ = writeln!(
+                out,
+                "          format from 2.1 onwards. TOML works until 3.0; the migrator is"
+            );
+            let _ = writeln!(out, "          deterministic and pass `--force` to overwrite.");
+        } else {
+            let _ = writeln!(out, "  source: built-in defaults (no user config found)");
+        }
+
+        // Legacy plugin/scripts artifacts — same scan migrate-config uses.
+        if let Some(toml_p) = toml_path.as_deref() {
+            let config_dir = toml_p.parent().unwrap_or_else(|| std::path::Path::new("."));
+            let artifacts = crate::lua::migrate::scan_legacy_artifacts(config_dir);
+            if !artifacts.is_empty() {
+                let _ = writeln!(out);
+                let _ = writeln!(
+                    out,
+                    "  legacy: {} pre-v2 {} detected in your config dir.",
+                    artifacts.len(),
+                    if artifacts.len() == 1 { "artifact" } else { "artifacts" }
+                );
+                for a in &artifacts {
+                    use crate::lua::migrate::LegacyKind;
+                    match &a.kind {
+                        LegacyKind::Plugin { id, .. } => {
+                            let _ = writeln!(out, "          - plugin `{}` at {}", id, a.path.display());
+                        }
+                        LegacyKind::ScriptsDir { entries } => {
+                            let _ = writeln!(
+                                out,
+                                "          - scripts dir ({} {}) at {}",
+                                entries.len(),
+                                if entries.len() == 1 { "entry" } else { "entries" },
+                                a.path.display()
+                            );
+                        }
+                    }
+                }
+                let _ = writeln!(
+                    out,
+                    "          Run `owlry migrate-config` for paste-ready owlry.provider {{}} skeletons."
+                );
+            }
+        }
+    }
+
+    #[cfg(not(feature = "lua"))]
+    {
+        if toml_exists {
+            let _ = writeln!(
+                out,
+                "  source: TOML ({})",
+                toml_path.as_ref().unwrap().display()
+            );
+            let _ = writeln!(
+                out,
+                "  note:   this build was compiled without the `lua` feature — owlry.lua is ignored."
+            );
+        } else {
+            let _ = writeln!(out, "  source: built-in defaults (no user config found)");
+        }
+        let _ = lua_exists; // suppress unused-var on non-lua builds
+    }
+}
+
 /// `owlry doctor`: print the daemon socket status, loaded provider list, and
 /// config status. Useful for confirming an install is wired correctly.
 pub fn run_doctor() -> ! {
@@ -48,6 +149,7 @@ pub fn run_doctor() -> ! {
     match Config::load() {
         Ok(_) => {
             let _ = writeln!(out, "  OK");
+            print_config_source_info(&mut out);
         }
         Err(e) => {
             let _ = writeln!(out, "  ERROR: {e}");
@@ -146,11 +248,34 @@ fn print_provider_list(out: &mut impl Write, list: &[ProviderDesc]) {
     }
 }
 
-/// `owlry config validate`: parse the config file and report errors.
+/// `owlry config validate`: parse the config file and report errors and
+/// warnings per docs/lua-api.md §8.
+///
+/// Resolution order matches `Config::load`:
+/// 1. If `owlry.lua` exists, evaluate it. Eval errors → exit 1. Otherwise
+///    run [`crate::lua::validate::validate`] on the snapshot and surface
+///    every warning category (unknown set/theme keys, unknown provider
+///    ids, tabs ⊄ providers, duplicate provider ids, compiled-out
+///    providers, unknown ids inside profiles).
+/// 2. Otherwise fall back to the TOML check.
+///
+/// Exit codes: 0 clean, 1 errors (eval / TOML parse failure), 2
+/// warnings-only.
 pub fn run_config_validate() -> ! {
+    #[cfg(feature = "lua")]
+    {
+        if let Some(lua_path) = paths::lua_config_file()
+            && lua_path.exists()
+        {
+            let exit = run_config_validate_lua(&lua_path);
+            std::process::exit(exit);
+        }
+    }
+
+    // No owlry.lua → fall back to TOML.
     match Config::load() {
         Ok(_) => {
-            println!("config: OK");
+            println!("config: OK (TOML)");
             std::process::exit(0);
         }
         Err(e) => {
@@ -158,6 +283,57 @@ pub fn run_config_validate() -> ! {
             std::process::exit(1);
         }
     }
+}
+
+#[cfg(feature = "lua")]
+fn run_config_validate_lua(lua_path: &std::path::Path) -> i32 {
+    use crate::config::LoadedConfig;
+    use crate::lua::validate;
+
+    let loaded = match LoadedConfig::load_lua_path(lua_path) {
+        Ok(lc) => lc,
+        Err(e) => {
+            // Eval failure — report the chain (mlua error has line/col info).
+            let mut msg = e.to_string();
+            let mut cur: Option<&dyn std::error::Error> = e.source();
+            while let Some(c) = cur {
+                msg.push_str(": ");
+                msg.push_str(&c.to_string());
+                cur = c.source();
+            }
+            eprintln!("config: ERROR — {}", msg);
+            return 1;
+        }
+    };
+    let snapshot = match loaded.lua.as_ref() {
+        Some(ctx) => ctx.snapshot(),
+        None => {
+            eprintln!("config: ERROR — internal: Lua context missing after load");
+            return 1;
+        }
+    };
+
+    let report = validate::validate(&snapshot);
+
+    if report.is_clean() {
+        println!("config: OK (Lua, {})", lua_path.display());
+        return 0;
+    }
+
+    println!("config: validating {}", lua_path.display());
+    if !report.warnings.is_empty() {
+        println!("  {} warning(s):", report.warnings.len());
+        for w in &report.warnings {
+            println!("    - {}", w);
+        }
+    }
+    if !report.errors.is_empty() {
+        println!("  {} error(s):", report.errors.len());
+        for e in &report.errors {
+            println!("    - {}", e);
+        }
+    }
+    report.exit_code()
 }
 
 /// `owlry config show`: serialize the effective config to stdout as TOML.
@@ -182,14 +358,213 @@ pub fn run_config(action: ConfigAction) -> ! {
     }
 }
 
-/// `owlry migrate-config`: TOML → init.lua. Lands in Phase 3 (Lua config).
-pub fn run_migrate_config() -> ! {
-    eprintln!(
-        "migrate-config: not yet implemented.\n\
-         The Lua config layer lands in 2.1+ (or 3.0). TOML config remains the\n\
-         active format in 2.0. See docs/RESTRUCTURE-V2.md (phase 3) for status."
+/// `owlry migrate-config [--force]`: TOML → `owlry.lua`.
+///
+/// Reads `$XDG_CONFIG_HOME/owlry/config.toml`, parses it (pre-v2 aliases
+/// like `system` / `badge_sys` normalise to v2 names via the existing
+/// serde aliases), and writes `$XDG_CONFIG_HOME/owlry/owlry.lua` with
+/// the equivalent settings. Output is deterministic and minimal —
+/// values matching `Config::default()` are omitted. See
+/// `docs/lua-api.md` §9 for the mapping table.
+///
+/// Builds without `--features lua` fall through to a clear stub: the
+/// migration generates Lua code, which is only meaningful when the
+/// runtime is present.
+pub fn run_migrate_config(force: bool) -> ! {
+    #[cfg(feature = "lua")]
+    {
+        let exit_code = run_migrate_config_impl(force);
+        std::process::exit(exit_code);
+    }
+    #[cfg(not(feature = "lua"))]
+    {
+        let _ = force;
+        eprintln!(
+            "migrate-config: this owlry was built without the `lua` feature.\n\
+             Rebuild with `cargo build --features lua` (or `--features full`)\n\
+             to use the migrator. TOML config remains the active format until\n\
+             3.0; see docs/lua-api.md §11."
+        );
+        std::process::exit(2);
+    }
+}
+
+#[cfg(feature = "lua")]
+fn run_migrate_config_impl(force: bool) -> i32 {
+    let toml_path = match paths::config_file() {
+        Some(p) => p,
+        None => {
+            eprintln!("migrate-config: cannot resolve $XDG_CONFIG_HOME/owlry/config.toml");
+            return 2;
+        }
+    };
+    let lua_path = match paths::lua_config_file() {
+        Some(p) => p,
+        None => {
+            eprintln!("migrate-config: cannot resolve $XDG_CONFIG_HOME/owlry/owlry.lua");
+            return 2;
+        }
+    };
+
+    let req = crate::lua::MigrateRequest {
+        toml_path: &toml_path,
+        lua_path: &lua_path,
+        force,
+    };
+
+    match crate::lua::migrate::migrate(&req) {
+        Ok(out) => {
+            println!(
+                "owlry migrate-config: wrote {} ({} bytes) from {}",
+                out.lua_path.display(),
+                out.bytes_written,
+                toml_path.display(),
+            );
+            println!(
+                "owlry.lua now takes precedence over config.toml (see docs/lua-api.md §2)."
+            );
+            report_legacy_artifacts(&out.legacy_artifacts);
+            0
+        }
+        Err(crate::lua::MigrateError::DestExists(_)) => {
+            eprintln!(
+                "migrate-config: {} already exists.\n\
+                 Pass --force to overwrite, or delete it first.",
+                lua_path.display()
+            );
+            1
+        }
+        Err(crate::lua::MigrateError::NoToml(_)) => {
+            eprintln!(
+                "migrate-config: no TOML config at {}.\n\
+                 Nothing to migrate — write an owlry.lua directly, or\n\
+                 copy /usr/share/doc/owlry/config.example.toml as a starting point.",
+                toml_path.display()
+            );
+            1
+        }
+        Err(e) => {
+            eprintln!("migrate-config: {}", e);
+            2
+        }
+    }
+}
+
+/// Print a heads-up block for each pre-v2 artifact the migrator detected
+/// in the config dir. Plugins (Rune / C-ABI) and the `scripts/` directory
+/// can't be auto-translated — the user has to recreate them as
+/// `owlry.provider {}` entries inside `owlry.lua`. We surface what we
+/// found, including the original prefix / icon when known, so the user
+/// has a paste-able starting point.
+#[cfg(feature = "lua")]
+fn report_legacy_artifacts(artifacts: &[crate::lua::migrate::LegacyArtifact]) {
+    if artifacts.is_empty() {
+        return;
+    }
+    use crate::lua::migrate::LegacyKind;
+
+    println!();
+    println!(
+        "Heads up: detected {} pre-v2 {} in your config dir that the migrator",
+        artifacts.len(),
+        if artifacts.len() == 1 { "artifact" } else { "artifacts" }
     );
-    std::process::exit(2);
+    println!(
+        "did NOT translate. They aren't loaded by 2.1+ — they're just files sitting"
+    );
+    println!("there from your 1.x install. Recreate them in owlry.lua if you still use them:");
+
+    for artifact in artifacts {
+        println!();
+        match &artifact.kind {
+            LegacyKind::Plugin {
+                id,
+                name,
+                prefix,
+                icon,
+                entry_point,
+            } => {
+                println!("  ── plugin: {} ─────────────────────────────────", id);
+                println!("     path: {}", artifact.path.display());
+                if let Some(n) = name {
+                    println!("     name: {}", n);
+                }
+                if let Some(p) = prefix {
+                    println!("     prefix: {}", p);
+                }
+                if let Some(i) = icon {
+                    println!("     icon: {}", i);
+                }
+                if let Some(ep) = entry_point {
+                    println!("     entry_point: {} (Rune / C-ABI; unsupported in 2.1)", ep);
+                }
+                println!("     ──");
+                println!("     Recreate as a user provider in owlry.lua:");
+                println!();
+                println!("       owlry.provider {{");
+                println!("         id = \"{}\",", id);
+                if let Some(p) = prefix {
+                    println!("         prefix = \"{}\",", p);
+                }
+                if let Some(i) = icon {
+                    println!("         icon = \"{}\",", i);
+                }
+                println!("         items = function()");
+                println!(
+                    "           return {{ -- translate {} here",
+                    entry_point.as_deref().unwrap_or("the plugin")
+                );
+                println!("             -- {{ name = \"…\", command = \"…\" }},");
+                println!("           }}");
+                println!("         end,");
+                println!("       }}");
+            }
+            LegacyKind::ScriptsDir { entries } => {
+                println!("  ── legacy `scripts/` directory ─────────────────");
+                println!("     path: {}", artifact.path.display());
+                println!(
+                    "     {} {}: {}",
+                    entries.len(),
+                    if entries.len() == 1 { "file" } else { "files" },
+                    if entries.is_empty() {
+                        "(empty)".to_string()
+                    } else {
+                        entries.join(", ")
+                    }
+                );
+                println!("     ──");
+                println!(
+                    "     The standalone `scripts` provider was removed in 2.0. Wrap each"
+                );
+                println!("     script in an `owlry.provider {{}}` block, e.g.:");
+                println!();
+                println!("       owlry.provider {{");
+                println!("         id = \"my-scripts\",");
+                println!("         prefix = \":sh\",");
+                println!("         items = function()");
+                println!("           local items = {{}}");
+                println!(
+                    "           for _, name in ipairs(owlry.util.shell_lines(\"ls {}\")) do",
+                    artifact.path.display()
+                );
+                println!("             table.insert(items, {{");
+                println!("               name = name,");
+                println!(
+                    "               command = \"{}/\" .. name,",
+                    artifact.path.display()
+                );
+                println!("             }})");
+                println!("           end");
+                println!("           return items");
+                println!("         end,");
+                println!("       }}");
+            }
+        }
+    }
+    println!();
+    println!(
+        "  See `docs/lua-api.md` §4.4 (user providers) and §5.1 (owlry.util.*)."
+    );
 }
 
 /// `owlry dmenu`: delegate to the UI's dmenu pipeline.

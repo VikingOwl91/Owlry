@@ -61,6 +61,15 @@ pub fn config_file() -> Option<PathBuf> {
     owlry_config_dir().map(|p| p.join("config.toml"))
 }
 
+/// Lua config file: `$XDG_CONFIG_HOME/owlry/owlry.lua`.
+///
+/// Takes precedence over `config.toml` when both exist (per
+/// `docs/lua-api.md` §2 — Lua wins; TOML is ignored entirely in that case).
+/// Named `owlry.lua` rather than `init.lua` for brand identity (D23).
+pub fn lua_config_file() -> Option<PathBuf> {
+    owlry_config_dir().map(|p| p.join("owlry.lua"))
+}
+
 /// Custom user stylesheet: `$XDG_CONFIG_HOME/owlry/style.css`
 pub fn custom_style_file() -> Option<PathBuf> {
     owlry_config_dir().map(|p| p.join("style.css"))

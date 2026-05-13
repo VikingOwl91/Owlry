@@ -63,6 +63,26 @@ reqwest = { version = "0.13", default-features = false, features = ["native-tls"
 # Async oneshot channel (background thread -> main loop)
 futures-channel = "0.3"
 
+# Lua 5.4 runtime for user configuration (Phase 3 — opt-in preview in 2.1).
+# Vendored C source so AUR clean-chroot builds don't depend on a system Lua.
+#
+# NOT optional. Initial designs gated mlua/glob/notify behind `optional = true`
+# so non-lua builds wouldn't pay for them, but cargo's feature resolver in
+# clean chroots (`cargo build --frozen` under makepkg) silently fails to
+# propagate `mlua/vendored` across the optional boundary — the build script
+# ends up emitting `-llua5.4` against a non-existent system liblua. Inlining
+# the features on a *non-optional* dep dodges that footgun entirely. The cost
+# is a few MB of extra compile time for minimal builds; the `lua` cargo
+# feature still gates whether the `lua` module is compiled at all.
+mlua = { version = "0.11", features = ["lua54", "vendored", "send", "serialize"] }
+
+# Glob pattern support for `owlry.util.glob` (Phase 3.6). Pure-Rust; small.
+glob = "0.3"
+
+# Filesystem watching for owlry.lua hot reload (Phase 3.7). On Linux the
+# inotify backend is unconditional, so default features are fine.
+notify = "6"
+
 [build-dependencies]
 # GResource compilation for bundled icons
 glib-build-tools = "0.20"
@@ -85,6 +105,12 @@ ssh = []
 systemd = []
 websearch = []
 
+# Lua config layer (Phase 3 — opt-in preview in 2.1, default in 2.2, mandatory in 3.0).
+# Pure marker feature: gates the `lua` module compilation via cfg. Deps
+# (mlua / glob / notify) are unconditionally pulled in to dodge the chroot
+# feature-propagation footgun documented on the mlua line above.
+lua = []
+
 # Bookmarks deferred for 2.0 alongside the widget providers (D20+).
 # Returns in a later 2.x release with a pure-Rust path that doesn't pull
 # in libsqlite3-sys for Firefox's places.sqlite.
@@ -93,6 +119,7 @@ full = [
     "clipboard",
     "emoji",
     "filesearch",
+    "lua",
     "ssh",
     "systemd",
     "websearch",

@@ -4,6 +4,8 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
+#[cfg(feature = "lua")]
+use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
@@ -80,10 +82,12 @@ fn read_bounded_line(reader: &mut BufReader<UnixStream>, max: usize) -> io::Resu
 use log::{error, info, warn};
 
 use crate::config::Config;
+#[cfg(feature = "lua")]
+use crate::config::LoadedConfig;
 use crate::data::FrecencyStore;
 use crate::filter::ProviderFilter;
 use crate::ipc::{ProviderDesc, Request, Response, ResultItem};
-use crate::providers::{LaunchItem, ProviderManager};
+use crate::providers::{LaunchItem, Provider, ProviderManager};
 
 /// IPC server that listens on a Unix domain socket and dispatches
 /// requests to the provider system.
@@ -93,6 +97,16 @@ pub struct Server {
     provider_manager: Arc<RwLock<ProviderManager>>,
     frecency: Arc<RwLock<FrecencyStore>>,
     config: Arc<RwLock<Config>>,
+    /// Keeps the Lua runtime alive for the daemon's lifetime so user
+    /// providers (their `items` closures) remain callable. Wrapped so the
+    /// hot-reload watcher (Phase 3.7) can atomically replace the context
+    /// when `owlry.lua` is saved.
+    #[cfg(feature = "lua")]
+    _lua_ctx: Arc<Mutex<Option<crate::lua::LuaContext>>>,
+    /// Filesystem watcher driving hot reload. Dropping this stops the
+    /// watcher thread; kept alive for the daemon's lifetime.
+    #[cfg(feature = "lua")]
+    _lua_watcher: Option<crate::lua::ConfigWatcher>,
 }
 
 impl Server {
@@ -110,16 +124,76 @@ impl Server {
         std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o600))?;
         info!("IPC server listening on {:?}", socket_path);
 
-        let config = Arc::new(RwLock::new(Config::load_or_default()));
-        let provider_manager = ProviderManager::new_with_config(Arc::clone(&config));
+        // Resolve config + any Lua-defined user providers in a single pass.
+        // When the `lua` feature is off the daemon falls back to the
+        // TOML-only loader used pre-Phase-3.
+        #[cfg(feature = "lua")]
+        let (config, user_providers, lua_ctx, lua_path) = {
+            let loaded = LoadedConfig::load_or_default();
+            let user_providers: Vec<Box<dyn Provider>> = if let Some(ctx) = &loaded.lua {
+                loaded
+                    .user_providers
+                    .iter()
+                    .cloned()
+                    .map(|spec| {
+                        Box::new(crate::lua::LuaProvider::new(spec, ctx.lua_handle()))
+                            as Box<dyn Provider>
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            (
+                Arc::new(RwLock::new(loaded.config)),
+                user_providers,
+                Arc::new(Mutex::new(loaded.lua)),
+                loaded.lua_path,
+            )
+        };
+
+        #[cfg(not(feature = "lua"))]
+        let (config, user_providers) = (
+            Arc::new(RwLock::new(Config::load_or_default())),
+            Vec::<Box<dyn Provider>>::new(),
+        );
+
+        let provider_manager =
+            ProviderManager::new_with_config(Arc::clone(&config), user_providers);
         let frecency = FrecencyStore::new();
+        let provider_manager = Arc::new(RwLock::new(provider_manager));
+
+        // Spawn the hot-reload watcher when an owlry.lua was actually loaded.
+        // Disabled silently for TOML/defaults — no Lua → nothing to watch.
+        #[cfg(feature = "lua")]
+        let _lua_watcher = match lua_path {
+            Some(path) => match crate::lua::ConfigWatcher::spawn(
+                path,
+                Arc::clone(&config),
+                Arc::clone(&provider_manager),
+                Arc::clone(&lua_ctx),
+            ) {
+                Ok(w) => Some(w),
+                Err(e) => {
+                    warn!(
+                        "hot-reload disabled: failed to start filesystem watcher — {}",
+                        e
+                    );
+                    None
+                }
+            },
+            None => None,
+        };
 
         Ok(Self {
             listener,
             socket_path: socket_path.to_path_buf(),
-            provider_manager: Arc::new(RwLock::new(provider_manager)),
+            provider_manager,
             frecency: Arc::new(RwLock::new(frecency)),
             config,
+            #[cfg(feature = "lua")]
+            _lua_ctx: lua_ctx,
+            #[cfg(feature = "lua")]
+            _lua_watcher,
         })
     }
 
@@ -311,11 +385,24 @@ impl Server {
         config: &Arc<RwLock<Config>>,
     ) -> Response {
         match request {
-            Request::Query { text, modes } => {
-                let filter = match modes {
+            Request::Query {
+                text,
+                modes,
+                prefix,
+            } => {
+                let mut filter = match modes {
                     Some(m) => ProviderFilter::from_mode_strings(m),
                     None => ProviderFilter::all(),
                 };
+                if let Some(prefix_str) = prefix {
+                    // Mirrors UI-side parse_query → set_prefix. Tolerates
+                    // unknown ids by emitting Plugin(prefix_str) — that's
+                    // what the dynamic-prefix-fallback in parse_query does.
+                    use std::str::FromStr;
+                    if let Ok(prefix_type) = crate::providers::ProviderType::from_str(prefix_str) {
+                        filter.set_prefix(Some(prefix_type));
+                    }
+                }
                 let (max, weight) = {
                     let cfg = match config.read() {
                         Ok(g) => g,

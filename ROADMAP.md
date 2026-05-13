@@ -4,20 +4,28 @@ Feature ideas and future development plans. For the v2 rewrite story (where 14 p
 
 ## Locked-in for an upcoming 2.x release
 
-### Lua-driven configuration (Phase 3)
-Replace `config.toml` with `~/.config/owlry/init.lua`. The config is real Lua, evaluated at startup via embedded `mlua` (Lua 5.4). User-defined providers, keybindings, and theme overrides all live in the same file — Hyprland-style configs-as-code. Ships with `owlry migrate-config` (TOML → init.lua) and hot-reload on save.
+### Lua-driven configuration — **shipped in 2.1**
+`~/.config/owlry/owlry.lua` is the canonical config from 2.1 onwards (TOML stays supported as a back-compat fallback until 3.0). Real Lua 5.4 via vendored `mlua`. The full surface is documented in [`docs/lua-api.md`](docs/lua-api.md):
+
+- `owlry.set` / `owlry.providers` / `owlry.tabs` / `owlry.theme` / `owlry.profiles` for declarative config
+- `owlry.provider {}` for user-defined providers (Hyprland-style configs-as-code)
+- `owlry.util.{shell, shell_lines, read_file, glob, env, hostname}` host helpers inside provider callbacks
+- Hot reload on save via the `notify` crate — broken edits surface as desktop notifications and keep the previous state live
+- `owlry migrate-config [--force]` — deterministic TOML → Lua migration
+- `owlry config validate` — categorised report (errors exit 1, warnings exit 2)
 
 ```lua
-local owlry = require("owlry")
-
-owlry.set { theme = "owl", width = 850, tabs = { "app", "cmd", "uuctl" } }
-owlry.providers { "app", "cmd", "power", "bookmarks", "systemd" }
+owlry.set { theme = "owl", width = 850 }
+owlry.providers { "app", "cmd", "power", "systemd" }
+owlry.tabs { "app", "cmd", "uuctl" }
 
 owlry.provider {
   id = "hs", prefix = ":hs", tab_label = "Shutdown",
   items = function() return { { name = "Lock", command = "hyprlock" } } end,
 }
 ```
+
+**2.2 follow-ups:** dynamic (per-keystroke) Lua providers via `dynamic = true`; `owlry.bind` for runtime keybindings; `owlry.util.http_get`.
 
 ### Widget providers return
 Weather, MPRIS media controls, and pomodoro timer were deferred from 2.0 while the widget-row UI is redesigned. They'll come back as a feature group once the placement model is settled. ([D20 in the v2 plan](docs/RESTRUCTURE-V2.md).)

@@ -8,6 +8,12 @@ pub struct DmenuProvider {
     enabled: bool,
 }
 
+impl Default for DmenuProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DmenuProvider {
     pub fn new() -> Self {
         Self {
