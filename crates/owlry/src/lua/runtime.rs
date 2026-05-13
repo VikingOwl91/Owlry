@@ -496,6 +496,57 @@ mod tests {
     }
 
     #[test]
+    fn owlry_util_is_attached_to_owlry_table() {
+        // owlry.util.* lands via api::install — verify the sub-table exists
+        // and a representative function is callable end-to-end.
+        let ctx = LuaContext::new().expect("must build");
+        ctx.eval_str(
+            r#"
+            assert(type(owlry.util) == "table", "owlry.util must be a table")
+            assert(type(owlry.util.shell) == "function", "owlry.util.shell must be a function")
+            assert(type(owlry.util.shell_lines) == "function")
+            assert(type(owlry.util.read_file) == "function")
+            assert(type(owlry.util.glob) == "function")
+            assert(type(owlry.util.env) == "function")
+            assert(type(owlry.util.hostname) == "function")
+            assert(owlry.util.shell("echo end-to-end") == "end-to-end")
+            "#,
+        )
+        .expect("util surface must be live");
+    }
+
+    #[test]
+    fn util_helpers_can_feed_into_user_provider_items() {
+        // Realistic shape from docs/lua-api.md §3: build items via shell.
+        let ctx = LuaContext::new().expect("must build");
+        ctx.eval_str(
+            r#"
+            owlry.provider {
+              id = "hosts",
+              items = function()
+                local h = owlry.util.hostname()
+                return {
+                  { name = "current host: " .. h, command = "true" },
+                }
+              end,
+            }
+            "#,
+        )
+        .expect("registration must succeed");
+        let cfg = ctx.snapshot();
+        assert_eq!(cfg.user_providers.len(), 1);
+        // Build the LuaProvider, refresh, and assert hostname appeared.
+        use crate::lua::LuaProvider;
+        use crate::providers::Provider;
+        let mut p = LuaProvider::new(cfg.user_providers[0].clone(), ctx.lua_handle());
+        p.refresh();
+        let items = p.items();
+        assert_eq!(items.len(), 1);
+        assert!(items[0].name.starts_with("current host: "));
+        assert!(items[0].name.len() > "current host: ".len());
+    }
+
+    #[test]
     fn profiles_coerce_numeric_entries_via_lua_tostring() {
         // mlua's String::from_lua follows Lua semantics (tostring coercion),
         // so `{ "app", 42 }` becomes ["app", "42"]. Document the behaviour

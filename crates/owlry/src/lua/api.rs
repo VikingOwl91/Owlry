@@ -12,6 +12,9 @@
 //!   - `owlry.theme(name_or_table)` — theme name and/or inline colour overrides
 //!   - `owlry.profiles(table)`      — named provider-id sets for `--profile`
 //!
+//! Phase 3.6 adds the `owlry.util.*` sub-table (shell, read_file, glob, env,
+//! hostname). Built by [`super::util::build`] and attached here.
+//!
 //! Each closure shares an `Arc<Mutex<LuaConfig>>` with [`super::runtime`].
 
 use std::collections::HashMap;
@@ -36,6 +39,9 @@ pub(crate) fn install(lua: &Lua, state: Arc<Mutex<LuaConfig>>) -> Result<(), Lua
     register_provider(lua, &owlry, Arc::clone(&state))?;
     register_theme(lua, &owlry, Arc::clone(&state))?;
     register_profiles(lua, &owlry, Arc::clone(&state))?;
+
+    // owlry.util.* host helpers — stateless, no LuaConfig access needed.
+    owlry.set("util", super::util::build(lua)?)?;
 
     lua.globals().set("owlry", owlry)?;
 

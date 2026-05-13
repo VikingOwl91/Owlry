@@ -67,6 +67,9 @@ futures-channel = "0.3"
 # Vendored C source so AUR clean-chroot builds don't depend on a system Lua.
 mlua = { version = "0.11", features = ["lua54", "vendored", "send", "serialize"], optional = true }
 
+# Glob pattern support for `owlry.util.glob` (Phase 3.6). Pure-Rust; small.
+glob = { version = "0.3", optional = true }
+
 [build-dependencies]
 # GResource compilation for bundled icons
 glib-build-tools = "0.20"
@@ -90,8 +93,8 @@ systemd = []
 websearch = []
 
 # Lua config layer (Phase 3 — opt-in preview in 2.1, default in 2.2, mandatory in 3.0).
-# Pulls in mlua's vendored Lua 5.4 runtime.
-lua = ["dep:mlua"]
+# Pulls in mlua's vendored Lua 5.4 runtime and the glob crate for owlry.util.glob.
+lua = ["dep:mlua", "dep:glob"]
 
 # Bookmarks deferred for 2.0 alongside the widget providers (D20+).
 # Returns in a later 2.x release with a pure-Rust path that doesn't pull
