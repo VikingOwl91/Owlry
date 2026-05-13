@@ -67,6 +67,12 @@ provides=("${_v2_replaced[@]}")
 
 install=owlry.install
 
+# Cargo's release profile strips the binary at compile time (strip = true
+# in workspace Cargo.toml), so there are no debug symbols left for makepkg
+# to extract into an owlry-debug subpackage. Disable debug splitting so the
+# build doesn't ship a 0-byte debug package.
+options=('!debug')
+
 source=("$pkgname-$pkgver.tar.gz::https://somegit.dev/Owlibou/owlry/archive/owlry-v$pkgver.tar.gz")
 b2sums=('SKIP')  # populated by `just aur-update-pkg owlry` once the tag is pushed
 
