@@ -34,17 +34,28 @@ _v2_replaced=(
     'owlry-core'
     'owlry-lua'
     'owlry-rune'
+    # Plugins folded into owlry as feature-gated modules.
     'owlry-plugin-bookmarks'
     'owlry-plugin-clipboard'
     'owlry-plugin-emoji'
     'owlry-plugin-filesearch'
-    'owlry-plugin-media'
-    'owlry-plugin-pomodoro'
-    'owlry-plugin-scripts'
     'owlry-plugin-ssh'
     'owlry-plugin-systemd'
-    'owlry-plugin-weather'
     'owlry-plugin-websearch'
+    # Deferred providers (D20); package replaced so users get a clean
+    # transition. Functionality returns in a later 2.x release.
+    'owlry-plugin-media'
+    'owlry-plugin-pomodoro'
+    'owlry-plugin-weather'
+    # Replaced by user Lua config (D12), Phase 3+.
+    'owlry-plugin-scripts'
+    # Pre-v2 transitional stubs (pkgrel -99) where calc/conv/power were
+    # already folded into owlry-core. Listed so any straggler installs
+    # are swept up by the v2 upgrade.
+    'owlry-plugin-calculator'
+    'owlry-plugin-converter'
+    'owlry-plugin-system'
+    # Meta-bundles superseded by the single owlry package.
     'owlry-meta-essentials'
     'owlry-meta-widgets'
     'owlry-meta-tools'
