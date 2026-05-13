@@ -12,6 +12,7 @@
 pub mod api;
 pub mod config;
 pub mod error;
+pub mod migrate;
 pub mod provider;
 pub mod runtime;
 pub mod util;
@@ -19,6 +20,7 @@ pub mod watcher;
 
 pub use config::{LuaConfig, LuaProviderSpec};
 pub use error::LuaConfigError;
+pub use migrate::{MigrateError, MigrateOutcome, MigrateRequest};
 pub use provider::LuaProvider;
 pub use runtime::LuaContext;
 pub use watcher::ConfigWatcher;

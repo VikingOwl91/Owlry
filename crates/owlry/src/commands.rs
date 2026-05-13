@@ -182,14 +182,95 @@ pub fn run_config(action: ConfigAction) -> ! {
     }
 }
 
-/// `owlry migrate-config`: TOML → init.lua. Lands in Phase 3 (Lua config).
-pub fn run_migrate_config() -> ! {
-    eprintln!(
-        "migrate-config: not yet implemented.\n\
-         The Lua config layer lands in 2.1+ (or 3.0). TOML config remains the\n\
-         active format in 2.0. See docs/RESTRUCTURE-V2.md (phase 3) for status."
-    );
-    std::process::exit(2);
+/// `owlry migrate-config [--force]`: TOML → `owlry.lua`.
+///
+/// Reads `$XDG_CONFIG_HOME/owlry/config.toml`, parses it (pre-v2 aliases
+/// like `system` / `badge_sys` normalise to v2 names via the existing
+/// serde aliases), and writes `$XDG_CONFIG_HOME/owlry/owlry.lua` with
+/// the equivalent settings. Output is deterministic and minimal —
+/// values matching `Config::default()` are omitted. See
+/// `docs/lua-api.md` §9 for the mapping table.
+///
+/// Builds without `--features lua` fall through to a clear stub: the
+/// migration generates Lua code, which is only meaningful when the
+/// runtime is present.
+pub fn run_migrate_config(force: bool) -> ! {
+    #[cfg(feature = "lua")]
+    {
+        let exit_code = run_migrate_config_impl(force);
+        std::process::exit(exit_code);
+    }
+    #[cfg(not(feature = "lua"))]
+    {
+        let _ = force;
+        eprintln!(
+            "migrate-config: this owlry was built without the `lua` feature.\n\
+             Rebuild with `cargo build --features lua` (or `--features full`)\n\
+             to use the migrator. TOML config remains the active format until\n\
+             3.0; see docs/lua-api.md §11."
+        );
+        std::process::exit(2);
+    }
+}
+
+#[cfg(feature = "lua")]
+fn run_migrate_config_impl(force: bool) -> i32 {
+    let toml_path = match paths::config_file() {
+        Some(p) => p,
+        None => {
+            eprintln!("migrate-config: cannot resolve $XDG_CONFIG_HOME/owlry/config.toml");
+            return 2;
+        }
+    };
+    let lua_path = match paths::lua_config_file() {
+        Some(p) => p,
+        None => {
+            eprintln!("migrate-config: cannot resolve $XDG_CONFIG_HOME/owlry/owlry.lua");
+            return 2;
+        }
+    };
+
+    let req = crate::lua::MigrateRequest {
+        toml_path: &toml_path,
+        lua_path: &lua_path,
+        force,
+    };
+
+    match crate::lua::migrate::migrate(&req) {
+        Ok(out) => {
+            println!(
+                "owlry migrate-config: wrote {} ({} bytes) from {}",
+                out.lua_path.display(),
+                out.bytes_written,
+                toml_path.display(),
+            );
+            println!(
+                "owlry.lua now takes precedence over config.toml (see docs/lua-api.md §2)."
+            );
+            0
+        }
+        Err(crate::lua::MigrateError::DestExists(_)) => {
+            eprintln!(
+                "migrate-config: {} already exists.\n\
+                 Pass --force to overwrite, or delete it first.",
+                lua_path.display()
+            );
+            1
+        }
+        Err(crate::lua::MigrateError::NoToml(_)) => {
+            eprintln!(
+                "migrate-config: no TOML config at {}.\n\
+                 Nothing to migrate — write an owlry.lua directly, or\n\
+                 copy /usr/share/doc/owlry/config.example.toml as a starting point.",
+                toml_path.display()
+            );
+            1
+        }
+        Err(e) => {
+            eprintln!("migrate-config: {}", e);
+            2
+        }
+    }
 }
 
 /// `owlry dmenu`: delegate to the UI's dmenu pipeline.

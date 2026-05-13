@@ -87,8 +87,13 @@ pub enum Command {
         action: ConfigAction,
     },
 
-    /// Migrate TOML config to init.lua. Stub in 2.0; lands with Phase 3 (Lua config).
-    MigrateConfig,
+    /// Migrate `config.toml` to `owlry.lua`. Refuses to overwrite an existing
+    /// `owlry.lua` unless `--force` is passed. See `docs/lua-api.md` §9.
+    MigrateConfig {
+        /// Overwrite an existing `owlry.lua` if it's already on disk.
+        #[arg(long, short = 'f')]
+        force: bool,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -241,6 +246,23 @@ mod tests {
     #[test]
     fn migrate_config_subcommand_parses() {
         let args = CliArgs::try_parse_from(["owlry", "migrate-config"]).unwrap();
-        assert!(matches!(args.command, Some(Command::MigrateConfig)));
+        assert!(matches!(
+            args.command,
+            Some(Command::MigrateConfig { force: false })
+        ));
+    }
+
+    #[test]
+    fn migrate_config_accepts_force_flag() {
+        let args = CliArgs::try_parse_from(["owlry", "migrate-config", "--force"]).unwrap();
+        assert!(matches!(
+            args.command,
+            Some(Command::MigrateConfig { force: true })
+        ));
+        let args = CliArgs::try_parse_from(["owlry", "migrate-config", "-f"]).unwrap();
+        assert!(matches!(
+            args.command,
+            Some(Command::MigrateConfig { force: true })
+        ));
     }
 }
