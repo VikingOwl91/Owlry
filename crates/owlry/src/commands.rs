@@ -33,6 +33,107 @@ pub fn run_daemon() -> ! {
     }
 }
 
+/// Print which config source is active (Lua / TOML / defaults) and nudge
+/// the user toward the canonical 2.1+ format when they're still on TOML.
+/// Also surfaces pre-v2 plugin / scripts artifacts in the same pass so the
+/// user sees everything in one place rather than only on `migrate-config`.
+fn print_config_source_info(out: &mut impl Write) {
+    let lua_path = paths::lua_config_file();
+    let toml_path = paths::config_file();
+
+    let lua_exists = lua_path.as_deref().is_some_and(|p| p.exists());
+    let toml_exists = toml_path.as_deref().is_some_and(|p| p.exists());
+
+    #[cfg(feature = "lua")]
+    {
+        if lua_exists {
+            let _ = writeln!(
+                out,
+                "  source: Lua ({})",
+                lua_path.as_ref().unwrap().display()
+            );
+            if toml_exists {
+                let _ = writeln!(
+                    out,
+                    "  note:   {} is present alongside owlry.lua — ignored.",
+                    toml_path.as_ref().unwrap().display()
+                );
+            }
+        } else if toml_exists {
+            let _ = writeln!(
+                out,
+                "  source: TOML ({})",
+                toml_path.as_ref().unwrap().display()
+            );
+            let _ = writeln!(
+                out,
+                "  hint:   `owlry migrate-config` rewrites it as owlry.lua, the canonical"
+            );
+            let _ = writeln!(
+                out,
+                "          format from 2.1 onwards. TOML works until 3.0; the migrator is"
+            );
+            let _ = writeln!(out, "          deterministic and pass `--force` to overwrite.");
+        } else {
+            let _ = writeln!(out, "  source: built-in defaults (no user config found)");
+        }
+
+        // Legacy plugin/scripts artifacts — same scan migrate-config uses.
+        if let Some(toml_p) = toml_path.as_deref() {
+            let config_dir = toml_p.parent().unwrap_or_else(|| std::path::Path::new("."));
+            let artifacts = crate::lua::migrate::scan_legacy_artifacts(config_dir);
+            if !artifacts.is_empty() {
+                let _ = writeln!(out);
+                let _ = writeln!(
+                    out,
+                    "  legacy: {} pre-v2 {} detected in your config dir.",
+                    artifacts.len(),
+                    if artifacts.len() == 1 { "artifact" } else { "artifacts" }
+                );
+                for a in &artifacts {
+                    use crate::lua::migrate::LegacyKind;
+                    match &a.kind {
+                        LegacyKind::Plugin { id, .. } => {
+                            let _ = writeln!(out, "          - plugin `{}` at {}", id, a.path.display());
+                        }
+                        LegacyKind::ScriptsDir { entries } => {
+                            let _ = writeln!(
+                                out,
+                                "          - scripts dir ({} {}) at {}",
+                                entries.len(),
+                                if entries.len() == 1 { "entry" } else { "entries" },
+                                a.path.display()
+                            );
+                        }
+                    }
+                }
+                let _ = writeln!(
+                    out,
+                    "          Run `owlry migrate-config` for paste-ready owlry.provider {{}} skeletons."
+                );
+            }
+        }
+    }
+
+    #[cfg(not(feature = "lua"))]
+    {
+        if toml_exists {
+            let _ = writeln!(
+                out,
+                "  source: TOML ({})",
+                toml_path.as_ref().unwrap().display()
+            );
+            let _ = writeln!(
+                out,
+                "  note:   this build was compiled without the `lua` feature — owlry.lua is ignored."
+            );
+        } else {
+            let _ = writeln!(out, "  source: built-in defaults (no user config found)");
+        }
+        let _ = lua_exists; // suppress unused-var on non-lua builds
+    }
+}
+
 /// `owlry doctor`: print the daemon socket status, loaded provider list, and
 /// config status. Useful for confirming an install is wired correctly.
 pub fn run_doctor() -> ! {
@@ -48,6 +149,7 @@ pub fn run_doctor() -> ! {
     match Config::load() {
         Ok(_) => {
             let _ = writeln!(out, "  OK");
+            print_config_source_info(&mut out);
         }
         Err(e) => {
             let _ = writeln!(out, "  ERROR: {e}");
@@ -363,8 +465,9 @@ fn report_legacy_artifacts(artifacts: &[crate::lua::migrate::LegacyArtifact]) {
 
     println!();
     println!(
-        "Heads up: detected {} pre-v2 artifact(s) in your config dir that the migrator",
-        artifacts.len()
+        "Heads up: detected {} pre-v2 {} in your config dir that the migrator",
+        artifacts.len(),
+        if artifacts.len() == 1 { "artifact" } else { "artifacts" }
     );
     println!(
         "did NOT translate. They aren't loaded by 2.1+ — they're just files sitting"
