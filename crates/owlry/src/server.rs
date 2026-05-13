@@ -352,11 +352,24 @@ impl Server {
         config: &Arc<RwLock<Config>>,
     ) -> Response {
         match request {
-            Request::Query { text, modes } => {
-                let filter = match modes {
+            Request::Query {
+                text,
+                modes,
+                prefix,
+            } => {
+                let mut filter = match modes {
                     Some(m) => ProviderFilter::from_mode_strings(m),
                     None => ProviderFilter::all(),
                 };
+                if let Some(prefix_str) = prefix {
+                    // Mirrors UI-side parse_query → set_prefix. Tolerates
+                    // unknown ids by emitting Plugin(prefix_str) — that's
+                    // what the dynamic-prefix-fallback in parse_query does.
+                    use std::str::FromStr;
+                    if let Ok(prefix_type) = crate::providers::ProviderType::from_str(prefix_str) {
+                        filter.set_prefix(Some(prefix_type));
+                    }
+                }
                 let (max, weight) = {
                     let cfg = match config.read() {
                         Ok(g) => g,

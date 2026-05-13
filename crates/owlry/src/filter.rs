@@ -484,6 +484,39 @@ mod tests {
     }
 
     #[test]
+    fn parse_query_routes_unknown_prefix_to_plugin_type_id() {
+        // Locks in the dynamic-prefix-fallback path (filter.rs:319-347): a
+        // prefix not in the hardcoded core/plugin tables — e.g. a user
+        // provider's `:smoke` — must still produce Plugin("smoke"). This is
+        // what makes user-defined providers reachable by prefix.
+        let result = ProviderFilter::parse_query(":smoke item");
+        assert_eq!(
+            result.prefix,
+            Some(ProviderType::Plugin("smoke".to_string()))
+        );
+        assert_eq!(result.query, "item");
+
+        let bare = ProviderFilter::parse_query(":smoke");
+        assert_eq!(
+            bare.prefix,
+            Some(ProviderType::Plugin("smoke".to_string()))
+        );
+        assert_eq!(bare.query, "");
+    }
+
+    #[test]
+    fn build_prefix_param_round_trips_through_provider_type() {
+        // The wire format is ProviderType's Display impl; the daemon parses
+        // it back via FromStr. Verify both ends agree for a user provider.
+        use std::str::FromStr;
+        let plugin_smoke = ProviderType::Plugin("smoke".to_string());
+        let wire = plugin_smoke.to_string();
+        assert_eq!(wire, "smoke");
+        let parsed = ProviderType::from_str(&wire).unwrap();
+        assert_eq!(parsed, plugin_smoke);
+    }
+
+    #[test]
     fn test_toggle_ensures_one_enabled() {
         let mut filter = ProviderFilter::apps_only();
         filter.toggle(ProviderType::Application);

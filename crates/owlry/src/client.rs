@@ -116,10 +116,21 @@ impl CoreClient {
     }
 
     /// Send a search query and return matching results.
-    pub fn query(&mut self, text: &str, modes: Option<Vec<String>>) -> io::Result<Vec<ResultItem>> {
+    ///
+    /// `prefix` (when `Some`) narrows the daemon-side search to a single
+    /// provider — typically the `prefix` field from
+    /// [`crate::filter::ProviderFilter::parse_query`]. Pass `None` for the
+    /// unrestricted case (the daemon falls back to `modes` or accept-all).
+    pub fn query(
+        &mut self,
+        text: &str,
+        modes: Option<Vec<String>>,
+        prefix: Option<String>,
+    ) -> io::Result<Vec<ResultItem>> {
         self.send(&Request::Query {
             text: text.to_string(),
             modes,
+            prefix,
         })?;
 
         match self.receive()? {
@@ -245,6 +256,38 @@ mod tests {
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
 
+    /// Spawn a mock server that accepts one connection, captures the request,
+    /// and replies with the given canned response. Returns the socket path and
+    /// a Receiver that will yield the request line after the test sends.
+    fn mock_server_capturing(response: Response) -> (PathBuf, std::sync::mpsc::Receiver<String>) {
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("owlry-test-{}-{}", std::process::id(), n));
+        let _ = std::fs::create_dir_all(&dir);
+        let sock = dir.join("test.sock");
+        let _ = std::fs::remove_file(&sock);
+
+        let listener = UnixListener::bind(&sock).expect("bind mock socket");
+        let sock_clone = sock.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("accept");
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut writer = stream;
+            let mut line = String::new();
+            reader.read_line(&mut line).expect("read request");
+            let _ = tx.send(line);
+            let mut json = serde_json::to_string(&response).unwrap();
+            json.push('\n');
+            writer.write_all(json.as_bytes()).unwrap();
+            writer.flush().unwrap();
+            let _ = std::fs::remove_file(&sock_clone);
+            let _ = std::fs::remove_dir(dir);
+        });
+
+        (sock, rx)
+    }
+
     /// Spawn a mock server that accepts one connection, reads one request,
     /// and replies with the given canned response. Each call gets a unique
     /// socket path to avoid collisions when tests run in parallel.
@@ -303,12 +346,50 @@ mod tests {
         thread::sleep(Duration::from_millis(50));
 
         let mut client = CoreClient::connect(&sock).expect("connect");
-        let results = client.query("fire", None).expect("query");
+        let results = client.query("fire", None, None).expect("query");
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, "firefox");
         assert_eq!(results[0].title, "Firefox");
         assert_eq!(results[0].score, 100);
+    }
+
+    #[test]
+    fn query_sends_prefix_field_in_request() {
+        let canned = Response::Results { items: vec![] };
+        let (sock, rx) = mock_server_capturing(canned);
+        thread::sleep(Duration::from_millis(50));
+
+        let mut client = CoreClient::connect(&sock).expect("connect");
+        let _ = client
+            .query("foo", None, Some("smoke".into()))
+            .expect("query");
+
+        let request_line = rx.recv_timeout(Duration::from_secs(2)).expect("captured");
+        let parsed: serde_json::Value = serde_json::from_str(&request_line).expect("parse json");
+        assert_eq!(parsed["type"], "query");
+        assert_eq!(parsed["text"], "foo");
+        assert_eq!(
+            parsed["prefix"], "smoke",
+            "prefix must be present in the request"
+        );
+    }
+
+    #[test]
+    fn query_without_prefix_omits_field_from_request() {
+        let canned = Response::Results { items: vec![] };
+        let (sock, rx) = mock_server_capturing(canned);
+        thread::sleep(Duration::from_millis(50));
+
+        let mut client = CoreClient::connect(&sock).expect("connect");
+        let _ = client.query("foo", None, None).expect("query");
+
+        let request_line = rx.recv_timeout(Duration::from_secs(2)).expect("captured");
+        assert!(
+            !request_line.contains("prefix"),
+            "prefix field must be omitted when None; got: {}",
+            request_line
+        );
     }
 
     #[test]
@@ -392,7 +473,7 @@ mod tests {
         thread::sleep(Duration::from_millis(50));
 
         let mut client = CoreClient::connect(&sock).expect("connect");
-        let err = client.query("test", None).unwrap_err();
+        let err = client.query("test", None, None).unwrap_err();
 
         let msg = err.to_string();
         assert!(
