@@ -7,16 +7,21 @@
 use std::path::PathBuf;
 use thiserror::Error;
 
+// Display strings here intentionally OMIT `{source}` — the wrapping is done
+// elsewhere by walking `.source()`. Embedding it twice (once in Display,
+// once via the chain) produced duplicated text in hot-reload error
+// notifications (Phase 3.7).
+
 #[derive(Debug, Error)]
 pub enum LuaConfigError {
-    #[error("failed to read Lua config at {path}: {source}")]
+    #[error("failed to read Lua config at {path}")]
     Read {
         path: PathBuf,
         #[source]
         source: std::io::Error,
     },
 
-    #[error("Lua evaluation error in {path}: {source}")]
+    #[error("Lua evaluation error in {path}")]
     Eval {
         path: PathBuf,
         #[source]

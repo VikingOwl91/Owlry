@@ -70,6 +70,10 @@ mlua = { version = "0.11", features = ["lua54", "vendored", "send", "serialize"]
 # Glob pattern support for `owlry.util.glob` (Phase 3.6). Pure-Rust; small.
 glob = { version = "0.3", optional = true }
 
+# Filesystem watching for owlry.lua hot reload (Phase 3.7). On Linux the
+# inotify backend is unconditional, so default features are fine.
+notify = { version = "6", optional = true }
+
 [build-dependencies]
 # GResource compilation for bundled icons
 glib-build-tools = "0.20"
@@ -93,8 +97,9 @@ systemd = []
 websearch = []
 
 # Lua config layer (Phase 3 — opt-in preview in 2.1, default in 2.2, mandatory in 3.0).
-# Pulls in mlua's vendored Lua 5.4 runtime and the glob crate for owlry.util.glob.
-lua = ["dep:mlua", "dep:glob"]
+# Pulls in mlua's vendored Lua 5.4 runtime, glob for owlry.util.glob, and
+# notify for owlry.lua hot reload.
+lua = ["dep:mlua", "dep:glob", "dep:notify"]
 
 # Bookmarks deferred for 2.0 alongside the widget providers (D20+).
 # Returns in a later 2.x release with a pure-Rust path that doesn't pull
