@@ -1,0 +1,193 @@
+.TH OWLRY 1 "2026-05-13" "owlry 2.0.0" "User Commands"
+.SH NAME
+owlry \- Wayland application launcher with daemon and built-in providers
+.SH SYNOPSIS
+.B owlry
+[\fIOPTIONS\fR] [\fICOMMAND\fR]
+.SH DESCRIPTION
+.B owlry
+is a lightweight Wayland application launcher built with GTK4 and Layer Shell.
+It runs as a single binary that hosts both the GTK4 UI client and the IPC
+daemon, and ships every provider compiled in.
+
+Invoked with no arguments,
+.B owlry
+launches the UI client in auto mode (results from all enabled providers).
+Subcommands run the daemon, dmenu pipeline, diagnostics, or config tools.
+.SH OPTIONS
+.TP
+.B \-d, \-\-daemon
+Run the IPC daemon instead of the UI. Equivalent to the
+.B daemon
+subcommand. Conflicts with
+.BR \-m ", " \-\-profile ", " \-p .
+.TP
+.BI \-m " MODE\fR, " \-\-mode " MODE"
+Start the UI in single-provider mode. Core modes:
+.BR app ", " cmd ", " dmenu ", " auto .
+Built-in modes:
+.BR calc ", " conv ", " power .
+Optional modes (depend on cargo features at build time):
+.BR bm ", " clip ", " emoji ", " ssh ", " systemd ", " uuctl ", " web ", " file .
+.TP
+.BI \-\-profile " NAME"
+Launch the UI with a named profile. Profiles are defined under
+.B [profiles.<NAME>]
+in
+.IR ~/.config/owlry/config.toml .
+.TP
+.BI \-p " TEXT\fR, " \-\-prompt " TEXT"
+Custom prompt text for the search input. Most useful in dmenu mode.
+.TP
+.B \-h, \-\-help
+Print help with examples.
+.TP
+.B \-V, \-\-version
+Print the version.
+.SH COMMANDS
+.TP
+.B daemon
+Run the IPC daemon. Binds the socket and serves queries until killed.
+Equivalent to
+.BR "owlry \-d" .
+.TP
+.BR "dmenu " [\fB\-p\fR\ \fIPROMPT\fR]
+Read items from standard input, present them in the launcher UI, print the
+selection to standard output. Runs locally; the daemon is not required.
+.TP
+.B doctor
+Print diagnostics: config status, daemon socket reachability, and the list of
+registered providers. Non-destructive.
+.TP
+.BR "providers " [\fIID\fR]
+List all registered providers, or print details (icon, prefix, position, tab
+label, search noun) for one. Requires a running daemon.
+.TP
+.B "config validate"
+Parse the config file and report errors. Exits 0 on success, 1 on parse failure.
+.TP
+.B "config show"
+Print the resolved effective configuration (defaults merged with the user file)
+as TOML.
+.TP
+.B migrate-config
+Migrate TOML configuration to a future
+.B init.lua
+format. Stub in 2.0; functional once the Lua config layer lands in a later 2.x
+release. See
+.IR docs/RESTRUCTURE-V2.md .
+.SH ENVIRONMENT
+.TP
+.B XDG_RUNTIME_DIR
+Used to derive the default IPC socket path
+.RI ( $XDG_RUNTIME_DIR/owlry/owlry.sock ).
+.TP
+.B OWLRY_SOCKET
+Full path override for the IPC socket. When set, the daemon binds and the UI
+client connects to this exact path, bypassing
+.BR XDG_RUNTIME_DIR .
+Useful for running a development daemon alongside a production instance.
+.TP
+.B XDG_CONFIG_HOME
+Config root. Defaults to
+.IR ~/.config .
+.TP
+.B XDG_DATA_HOME
+Frecency data root. Defaults to
+.IR ~/.local/share .
+.TP
+.B TERMINAL
+Auto-detected terminal for items marked as needing a terminal. Overridden by
+.B general.terminal_command
+in the config.
+.SH FILES
+.TP
+.I ~/.config/owlry/config.toml
+Main configuration. See
+.B owlry config show
+for the effective state.
+.TP
+.I ~/.config/owlry/themes/
+User CSS themes (referenced from
+.BR appearance.theme ).
+.TP
+.I ~/.config/owlry/style.css
+CSS overrides applied last in the cascade.
+.TP
+.I ~/.local/share/owlry/frecency.json
+Frecency state — auto-saved every 5 minutes and on SIGTERM/SIGINT.
+.TP
+.I $XDG_RUNTIME_DIR/owlry/owlry.sock
+IPC Unix socket. See
+.B OWLRY_SOCKET
+to override.
+.TP
+.I /usr/share/doc/owlry/config.example.toml
+Annotated example configuration.
+.TP
+.I /usr/share/owlry/themes/
+Bundled themes.
+.TP
+.I /usr/lib/systemd/user/owlry.service
+systemd user service. Enable with
+.BR "systemctl \-\-user enable \-\-now owlry.service" .
+.SH EXAMPLES
+.PP
+Launch the UI (auto mode):
+.PP
+.RS
+.EX
+owlry
+.EE
+.RE
+.PP
+Run the daemon explicitly (background):
+.PP
+.RS
+.EX
+owlry \-d &
+.EE
+.RE
+.PP
+dmenu-style script pipeline:
+.PP
+.RS
+.EX
+git branch | owlry dmenu \-p "checkout" | xargs git checkout
+.EE
+.RE
+.PP
+Diagnose an install:
+.PP
+.RS
+.EX
+owlry doctor
+.EE
+.RE
+.PP
+Run a development daemon on a separate socket:
+.PP
+.RS
+.EX
+OWLRY_SOCKET=/tmp/owlry-dev.sock owlry \-d &
+OWLRY_SOCKET=/tmp/owlry-dev.sock owlry providers
+.EE
+.RE
+.SH SEE ALSO
+.BR systemctl (1),
+.BR systemd.unit (5),
+.BR cliphist (1),
+.BR wl-copy (1),
+.BR fd (1)
+.PP
+Project homepage:
+.UR https://somegit.dev/Owlibou/owlry
+.UE
+.SH BUGS
+Report issues at
+.UR https://somegit.dev/Owlibou/owlry/issues
+.UE
+.SH AUTHORS
+Owlibou — see
+.I /usr/share/doc/owlry/README.md
+for acknowledgments.

@@ -108,6 +108,9 @@ package() {
     install -Dm644 data/config.example.toml "$pkgdir/usr/share/doc/$pkgname/config.example.toml"
     install -Dm644 data/style.example.css "$pkgdir/usr/share/doc/$pkgname/style.example.css"
 
+    # Man page.
+    install -Dm644 data/owlry.1 "$pkgdir/usr/share/man/man1/owlry.1"
+
     # Themes.
     install -d "$pkgdir/usr/share/$pkgname/themes"
     install -Dm644 data/themes/*.css "$pkgdir/usr/share/$pkgname/themes/"
