@@ -459,6 +459,7 @@ This section captures in-progress state. Update freely as work proceeds.
   - `27e2683` — CLI subcommand restructure + doctor/providers/config/migrate-config (task #9)
   - `e9f310d` — auto-mode integration test (task #10)
   - `c48efaa` — cargo fmt pass
+  - `0376abd` — OWLRY_SOCKET env override (smoke-test enabler)
 
 **Phase 1 status: COMPLETE** — 11/11 tasks done. Ready for Phase 2 (AUR republish as 2.0.0).
 
@@ -476,7 +477,8 @@ Phase 1 acceptance results:
 - ✅ `owlry -d` starts daemon, socket binds at `$XDG_RUNTIME_DIR/owlry/owlry.sock`
 - ✅ `owlry doctor` reports config + socket + 8 provider IDs
 - ✅ `owlry providers` lists all registered providers; `owlry providers uuctl` shows the systemd provider details (id, prefix, icon, etc.)
-- ✅ Issue #5 functionally fixed: systemd provider is compiled in (verified by parse-output unit tests; full live verification needs the binary installed against real systemd, but the C-ABI failure mode physically can't recur)
+- ✅ Issue #5 functionally fixed: systemd provider compiled in AND verified live — `owlry providers uuctl dbus` returns dbus-broker + at-spi-dbus-bus from the running daemon's real `systemctl --user list-units` invocation. 43 user units loaded at refresh time.
+- ✅ Every provider entry point smoke-tested with proper `modes` parameter: 13/13 produced expected output (app→Firefox, cmd→git*, power→Shutdown, bookmarks→GitHub*, clipboard→50 entries, emoji→heart*, ssh→aur.archlinux.org, uuctl→dbus-broker, calc 2+2→4, conv 5 ft to m→1.524 m, websearch→Search URL, filesearch→file matches).
 - ⚠️ Daemon double-spawn: pre-existing PIDs 3042 + 3278 still around (not Phase 1 work; addressed in Phase 5 hygiene)
 
 Known follow-ups (deferred, not blocking 2.0.0 ship):
