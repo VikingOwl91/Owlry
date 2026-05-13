@@ -10,9 +10,11 @@
 //! call sites yet. Wiring happens in 3.2+.
 
 pub mod api;
+pub mod config;
 pub mod error;
 pub mod runtime;
 pub mod util;
 
+pub use config::LuaConfig;
 pub use error::LuaConfigError;
 pub use runtime::LuaContext;
