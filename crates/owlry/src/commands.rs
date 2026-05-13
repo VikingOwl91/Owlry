@@ -146,11 +146,34 @@ fn print_provider_list(out: &mut impl Write, list: &[ProviderDesc]) {
     }
 }
 
-/// `owlry config validate`: parse the config file and report errors.
+/// `owlry config validate`: parse the config file and report errors and
+/// warnings per docs/lua-api.md §8.
+///
+/// Resolution order matches `Config::load`:
+/// 1. If `owlry.lua` exists, evaluate it. Eval errors → exit 1. Otherwise
+///    run [`crate::lua::validate::validate`] on the snapshot and surface
+///    every warning category (unknown set/theme keys, unknown provider
+///    ids, tabs ⊄ providers, duplicate provider ids, compiled-out
+///    providers, unknown ids inside profiles).
+/// 2. Otherwise fall back to the TOML check.
+///
+/// Exit codes: 0 clean, 1 errors (eval / TOML parse failure), 2
+/// warnings-only.
 pub fn run_config_validate() -> ! {
+    #[cfg(feature = "lua")]
+    {
+        if let Some(lua_path) = paths::lua_config_file()
+            && lua_path.exists()
+        {
+            let exit = run_config_validate_lua(&lua_path);
+            std::process::exit(exit);
+        }
+    }
+
+    // No owlry.lua → fall back to TOML.
     match Config::load() {
         Ok(_) => {
-            println!("config: OK");
+            println!("config: OK (TOML)");
             std::process::exit(0);
         }
         Err(e) => {
@@ -158,6 +181,57 @@ pub fn run_config_validate() -> ! {
             std::process::exit(1);
         }
     }
+}
+
+#[cfg(feature = "lua")]
+fn run_config_validate_lua(lua_path: &std::path::Path) -> i32 {
+    use crate::config::LoadedConfig;
+    use crate::lua::validate;
+
+    let loaded = match LoadedConfig::load_lua_path(lua_path) {
+        Ok(lc) => lc,
+        Err(e) => {
+            // Eval failure — report the chain (mlua error has line/col info).
+            let mut msg = e.to_string();
+            let mut cur: Option<&dyn std::error::Error> = e.source();
+            while let Some(c) = cur {
+                msg.push_str(": ");
+                msg.push_str(&c.to_string());
+                cur = c.source();
+            }
+            eprintln!("config: ERROR — {}", msg);
+            return 1;
+        }
+    };
+    let snapshot = match loaded.lua.as_ref() {
+        Some(ctx) => ctx.snapshot(),
+        None => {
+            eprintln!("config: ERROR — internal: Lua context missing after load");
+            return 1;
+        }
+    };
+
+    let report = validate::validate(&snapshot);
+
+    if report.is_clean() {
+        println!("config: OK (Lua, {})", lua_path.display());
+        return 0;
+    }
+
+    println!("config: validating {}", lua_path.display());
+    if !report.warnings.is_empty() {
+        println!("  {} warning(s):", report.warnings.len());
+        for w in &report.warnings {
+            println!("    - {}", w);
+        }
+    }
+    if !report.errors.is_empty() {
+        println!("  {} error(s):", report.errors.len());
+        for e in &report.errors {
+            println!("    - {}", e);
+        }
+    }
+    report.exit_code()
 }
 
 /// `owlry config show`: serialize the effective config to stdout as TOML.

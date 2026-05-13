@@ -232,13 +232,17 @@ fn apply_provider(cfg: &mut LuaConfig, t: Table) -> mlua::Result<()> {
         items_fn,
     };
 
-    // Duplicate id → second wins, warning emitted (spec §6.4).
+    // Duplicate id → second wins, warning emitted (spec §6.4). Also recorded
+    // on the snapshot for `owlry config validate` to surface.
     if let Some(pos) = cfg.user_providers.iter().position(|s| s.id == id) {
         warn!(
             "owlry.provider: duplicate id '{}' — second definition replaces the first",
             id
         );
         cfg.user_providers[pos] = spec;
+        if !cfg.duplicate_user_provider_ids.contains(&id) {
+            cfg.duplicate_user_provider_ids.push(id);
+        }
     } else {
         cfg.user_providers.push(spec);
     }

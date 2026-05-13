@@ -16,6 +16,7 @@ pub mod migrate;
 pub mod provider;
 pub mod runtime;
 pub mod util;
+pub mod validate;
 pub mod watcher;
 
 pub use config::{LuaConfig, LuaProviderSpec};
@@ -23,4 +24,5 @@ pub use error::LuaConfigError;
 pub use migrate::{MigrateError, MigrateOutcome, MigrateRequest};
 pub use provider::LuaProvider;
 pub use runtime::LuaContext;
+pub use validate::ValidationReport;
 pub use watcher::ConfigWatcher;

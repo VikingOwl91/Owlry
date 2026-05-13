@@ -46,6 +46,12 @@ pub struct LuaConfig {
     /// later wins, earlier is dropped (warning logged).
     pub user_providers: Vec<LuaProviderSpec>,
 
+    /// IDs that appeared more than once in `owlry.provider { ... }` calls.
+    /// Stored separately so `owlry config validate` (Phase 3.9) can surface
+    /// them — the dedup in [`super::api::apply_provider`] would otherwise
+    /// erase the evidence by the time the snapshot is read.
+    pub duplicate_user_provider_ids: Vec<String>,
+
     // ─── owlry.theme(...) ─────────────────────────────────────────────────
     /// Theme name from the string form `owlry.theme("nord")`. Last write wins
     /// across multiple calls (string forms merge with table forms — see
