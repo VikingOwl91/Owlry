@@ -71,8 +71,10 @@ pub fn generate_variables_css(config: &AppearanceConfig) -> String {
     if let Some(ref badge_ssh) = config.colors.badge_ssh {
         css.push_str(&format!("    --owlry-badge-ssh: {};\n", badge_ssh));
     }
-    if let Some(ref badge_sys) = config.colors.badge_sys {
-        css.push_str(&format!("    --owlry-badge-sys: {};\n", badge_sys));
+    if let Some(ref badge_power) = config.colors.badge_power {
+        // Emit both for transition: pre-v2 stylesheets reference --owlry-badge-sys.
+        css.push_str(&format!("    --owlry-badge-power: {};\n", badge_power));
+        css.push_str(&format!("    --owlry-badge-sys: {};\n", badge_power));
     }
     if let Some(ref badge_uuctl) = config.colors.badge_uuctl {
         css.push_str(&format!("    --owlry-badge-uuctl: {};\n", badge_uuctl));

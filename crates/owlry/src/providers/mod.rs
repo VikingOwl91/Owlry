@@ -4,7 +4,7 @@ mod command;
 pub mod dmenu;
 pub(crate) mod calculator;
 pub(crate) mod converter;
-pub(crate) mod system;
+pub(crate) mod power;
 
 // Optional feature-gated providers
 #[cfg(feature = "bookmarks")]
@@ -137,6 +137,10 @@ impl std::str::FromStr for ProviderType {
             "app" | "apps" | "application" | "applications" => Ok(ProviderType::Application),
             "cmd" | "cmds" | "command" | "commands" => Ok(ProviderType::Command),
             "dmenu" => Ok(ProviderType::Dmenu),
+            // Power provider — `sys` and `system` are pre-v2 muscle-memory aliases.
+            "power" | "sys" | "system" => Ok(ProviderType::Plugin("power".into())),
+            // systemd provider — type_id is `uuctl` (CLI back-compat).
+            "uuctl" | "systemd" => Ok(ProviderType::Plugin("uuctl".into())),
             other => Ok(ProviderType::Plugin(other.to_string())),
         }
     }
@@ -268,9 +272,9 @@ impl ProviderManager {
             Box::new(CommandProvider::new()),
         ];
 
-        if cfg_snapshot.system {
-            core_providers.push(Box::new(system::SystemProvider::new()));
-            info!("Registered built-in system provider");
+        if cfg_snapshot.power {
+            core_providers.push(Box::new(power::PowerProvider::new()));
+            info!("Registered built-in power provider");
         }
 
         #[cfg(feature = "bookmarks")]
@@ -935,6 +939,41 @@ mod tests {
     fn provider_position_as_str_matches_ipc_strings() {
         assert_eq!(ProviderPosition::Normal.as_str(), "normal");
         assert_eq!(ProviderPosition::Widget.as_str(), "widget");
+    }
+
+    #[test]
+    fn provider_type_from_str_maps_power_aliases() {
+        // v2 renamed `sys` -> `power`. `sys` and `system` are kept as aliases
+        // for muscle memory; they must all resolve to Plugin("power"), never
+        // Plugin("sys") or Plugin("system").
+        use std::str::FromStr;
+        assert_eq!(
+            ProviderType::from_str("power").unwrap(),
+            ProviderType::Plugin("power".into())
+        );
+        assert_eq!(
+            ProviderType::from_str("sys").unwrap(),
+            ProviderType::Plugin("power".into())
+        );
+        assert_eq!(
+            ProviderType::from_str("system").unwrap(),
+            ProviderType::Plugin("power".into())
+        );
+    }
+
+    #[test]
+    fn provider_type_from_str_maps_systemd_aliases() {
+        // systemd provider's type_id is `uuctl` (CLI back-compat from pre-v2).
+        // Both `uuctl` and `systemd` must resolve to Plugin("uuctl").
+        use std::str::FromStr;
+        assert_eq!(
+            ProviderType::from_str("uuctl").unwrap(),
+            ProviderType::Plugin("uuctl".into())
+        );
+        assert_eq!(
+            ProviderType::from_str("systemd").unwrap(),
+            ProviderType::Plugin("uuctl".into())
+        );
     }
 
     #[test]

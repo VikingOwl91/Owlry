@@ -103,7 +103,8 @@ pub struct ThemeColors {
     pub badge_file: Option<String>,
     pub badge_script: Option<String>,
     pub badge_ssh: Option<String>,
-    pub badge_sys: Option<String>,
+    #[serde(alias = "badge_sys")]
+    pub badge_power: Option<String>,
     pub badge_uuctl: Option<String>,
     pub badge_web: Option<String>,
     // Widget badge colors
@@ -168,9 +169,10 @@ pub struct ProvidersConfig {
     /// Enable built-in unit/currency converter (> trigger)
     #[serde(default = "default_true")]
     pub converter: bool,
-    /// Enable built-in system actions (shutdown, reboot, lock, etc.)
-    #[serde(default = "default_true")]
-    pub system: bool,
+    /// Enable built-in power actions (shutdown, reboot, lock, etc.)
+    /// Pre-v2 config key `system` is still accepted as an alias.
+    #[serde(default = "default_true", alias = "system", alias = "sys")]
+    pub power: bool,
     /// Enable systemd user units provider (alias: uuctl)
     #[serde(default = "default_true", alias = "uuctl")]
     pub systemd: bool,
@@ -212,7 +214,7 @@ impl Default for ProvidersConfig {
             commands: true,
             calculator: true,
             converter: true,
-            system: true,
+            power: true,
             systemd: true,
             bookmarks: true,
             clipboard: true,
@@ -610,5 +612,40 @@ mod tests {
     #[test]
     fn command_exists_rejects_nonexistent() {
         assert!(!super::command_exists("owlry_nonexistent_binary_abc123"));
+    }
+}
+
+#[cfg(test)]
+mod v2_rename_tests {
+    use super::*;
+
+    #[test]
+    fn providers_config_accepts_power_key() {
+        let toml = r#"[providers]
+power = false
+"#;
+        let cfg: Config = toml::from_str(toml).expect("must parse");
+        assert!(!cfg.providers.power);
+    }
+
+    #[test]
+    fn providers_config_accepts_pre_v2_system_alias() {
+        // Pre-v2 configs used `system = ...`. Serde alias keeps them working.
+        let toml = r#"[providers]
+system = false
+"#;
+        let cfg: Config = toml::from_str(toml).expect("must parse");
+        assert!(!cfg.providers.power);
+    }
+
+    #[test]
+    fn theme_colors_accepts_pre_v2_badge_sys_alias() {
+        // Pre-v2 stylesheets named the color `badge_sys`. Serde alias keeps
+        // existing user configs working.
+        let toml = r##"[appearance.colors]
+badge_sys = "#ff8800"
+"##;
+        let cfg: Config = toml::from_str(toml).expect("must parse");
+        assert_eq!(cfg.appearance.colors.badge_power.as_deref(), Some("#ff8800"));
     }
 }

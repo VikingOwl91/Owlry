@@ -396,8 +396,8 @@ impl MainWindow {
         if config.converter {
             parts.push("> conv".to_string());
         }
-        if config.system {
-            parts.push(":sys".to_string());
+        if config.power {
+            parts.push(":power".to_string());
         }
 
         parts.join("  ")
@@ -595,7 +595,7 @@ impl MainWindow {
                         "pomodoro" => "pomodoro",
                         "scripts" => "scripts",
                         "ssh" => "SSH hosts",
-                        "system" => "system",
+                        "power" | "system" => "power actions",
                         "uuctl" => "uuctl units",
                         "weather" => "weather",
                         "websearch" => "web",

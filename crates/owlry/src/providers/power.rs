@@ -1,13 +1,20 @@
 use super::{ItemSource, LaunchItem, Provider, ProviderType};
 
-/// Built-in system provider. Returns a fixed set of power and session management actions.
+/// Built-in power & session provider. Returns a fixed set of shutdown / reboot /
+/// suspend / lock / logout actions.
 ///
-/// This is a static provider — items are populated in `new()` and `refresh()` is a no-op.
-pub(crate) struct SystemProvider {
+/// Static provider — items are populated in `new()` and `refresh()` is a no-op.
+///
+/// type_id is `"power"`. CLI aliases `:sys` and `:system` still resolve here for
+/// muscle-memory back-compat (see [`crate::providers::ProviderType::FromStr`]
+/// and [`crate::filter::ProviderFilter::parse_query`]).
+pub(crate) struct PowerProvider {
     items: Vec<LaunchItem>,
 }
 
-impl SystemProvider {
+const TYPE_ID: &str = "power";
+
+impl PowerProvider {
     pub fn new() -> Self {
         let commands: &[(&str, &str, &str, &str, &str)] = &[
             (
@@ -64,14 +71,14 @@ impl SystemProvider {
         let items = commands
             .iter()
             .map(|(action_id, name, description, icon, command)| LaunchItem {
-                id: format!("sys:{}", action_id),
+                id: format!("power:{}", action_id),
                 name: name.to_string(),
                 description: Some(description.to_string()),
                 icon: Some(icon.to_string()),
-                provider: ProviderType::Plugin("sys".into()),
+                provider: ProviderType::Plugin(TYPE_ID.into()),
                 command: command.to_string(),
                 terminal: false,
-                tags: vec!["system".into()],
+                tags: vec!["power".into()],
                 source: ItemSource::Core,
             })
             .collect();
@@ -80,13 +87,13 @@ impl SystemProvider {
     }
 }
 
-impl Provider for SystemProvider {
+impl Provider for PowerProvider {
     fn name(&self) -> &str {
-        "System"
+        "Power"
     }
 
     fn provider_type(&self) -> ProviderType {
-        ProviderType::Plugin("sys".into())
+        ProviderType::Plugin(TYPE_ID.into())
     }
 
     fn refresh(&mut self) {
@@ -96,6 +103,22 @@ impl Provider for SystemProvider {
     fn items(&self) -> &[LaunchItem] {
         &self.items
     }
+
+    fn prefix(&self) -> Option<&str> {
+        Some(":power")
+    }
+
+    fn icon(&self) -> &str {
+        "system-shutdown"
+    }
+
+    fn tab_label(&self) -> Option<&str> {
+        Some("Power")
+    }
+
+    fn search_noun(&self) -> Option<&str> {
+        Some("power actions")
+    }
 }
 
 #[cfg(test)]
@@ -104,13 +127,13 @@ mod tests {
 
     #[test]
     fn has_seven_actions() {
-        let provider = SystemProvider::new();
+        let provider = PowerProvider::new();
         assert_eq!(provider.items().len(), 7);
     }
 
     #[test]
     fn contains_expected_action_names() {
-        let provider = SystemProvider::new();
+        let provider = PowerProvider::new();
         let names: Vec<&str> = provider.items().iter().map(|i| i.name.as_str()).collect();
         assert!(names.contains(&"Shutdown"));
         assert!(names.contains(&"Reboot"));
@@ -119,14 +142,14 @@ mod tests {
     }
 
     #[test]
-    fn provider_type_is_sys_plugin() {
-        let provider = SystemProvider::new();
-        assert_eq!(provider.provider_type(), ProviderType::Plugin("sys".into()));
+    fn provider_type_is_power_plugin() {
+        let provider = PowerProvider::new();
+        assert_eq!(provider.provider_type(), ProviderType::Plugin("power".into()));
     }
 
     #[test]
     fn shutdown_command_is_correct() {
-        let provider = SystemProvider::new();
+        let provider = PowerProvider::new();
         let shutdown = provider
             .items()
             .iter()
@@ -136,13 +159,27 @@ mod tests {
     }
 
     #[test]
-    fn all_items_have_system_tag() {
-        let provider = SystemProvider::new();
+    fn all_items_have_power_tag() {
+        let provider = PowerProvider::new();
         for item in provider.items() {
             assert!(
-                item.tags.contains(&"system".to_string()),
-                "item '{}' is missing 'system' tag",
+                item.tags.contains(&"power".to_string()),
+                "item '{}' is missing 'power' tag",
                 item.name
+            );
+        }
+    }
+
+    #[test]
+    fn all_item_ids_use_power_prefix() {
+        // Frecency / IPC compatibility check: every item id must start with
+        // the canonical "power:" prefix after the v2 rename.
+        let provider = PowerProvider::new();
+        for item in provider.items() {
+            assert!(
+                item.id.starts_with("power:"),
+                "item id '{}' should start with 'power:'",
+                item.id
             );
         }
     }
