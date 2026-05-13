@@ -157,10 +157,17 @@ pub fn system_data_dirs() -> Vec<PathBuf> {
 // Runtime files
 // =============================================================================
 
-/// IPC socket path: `$XDG_RUNTIME_DIR/owlry/owlry.sock`
+/// IPC socket path.
 ///
-/// Falls back to `/tmp` if `$XDG_RUNTIME_DIR` is not set.
+/// Resolution order:
+/// 1. `$OWLRY_SOCKET` — full path override (useful for tests and side-by-side
+///    daemon instances).
+/// 2. `$XDG_RUNTIME_DIR/owlry/owlry.sock` (the normal case).
+/// 3. `/tmp/owlry/owlry.sock` as a last-resort fallback.
 pub fn socket_path() -> PathBuf {
+    if let Ok(custom) = std::env::var("OWLRY_SOCKET") {
+        return PathBuf::from(custom);
+    }
     let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("/tmp"));
@@ -199,6 +206,22 @@ mod tests {
         if let Some(path) = config_file() {
             assert!(path.ends_with("config.toml"));
             assert!(path.to_string_lossy().contains("owlry"));
+        }
+    }
+
+    #[test]
+    fn owlry_socket_env_overrides_xdg_runtime() {
+        // SAFETY: tests in this binary do not run in parallel against the env.
+        // Save / restore so other tests in this module aren't affected.
+        let prev = std::env::var_os("OWLRY_SOCKET");
+        unsafe { std::env::set_var("OWLRY_SOCKET", "/tmp/owlry-smoke/foo.sock") };
+        assert_eq!(
+            socket_path(),
+            PathBuf::from("/tmp/owlry-smoke/foo.sock")
+        );
+        match prev {
+            Some(v) => unsafe { std::env::set_var("OWLRY_SOCKET", v) },
+            None => unsafe { std::env::remove_var("OWLRY_SOCKET") },
         }
     }
 
