@@ -438,16 +438,20 @@ fn report_legacy_artifacts(artifacts: &[crate::lua::migrate::LegacyArtifact]) {
                 println!("         id = \"my-scripts\",");
                 println!("         prefix = \":sh\",");
                 println!("         items = function()");
+                println!("           local items = {{}}");
                 println!(
-                    "           return owlry.util.shell_lines(\"ls {}\")",
+                    "           for _, name in ipairs(owlry.util.shell_lines(\"ls {}\")) do",
                     artifact.path.display()
                 );
-                println!("             :map(function(name)");
+                println!("             table.insert(items, {{");
+                println!("               name = name,");
                 println!(
-                    "               return {{ name = name, command = \"{}/\" .. name }}",
+                    "               command = \"{}/\" .. name,",
                     artifact.path.display()
                 );
-                println!("             end)");
+                println!("             }})");
+                println!("           end");
+                println!("           return items");
                 println!("         end,");
                 println!("       }}");
             }
