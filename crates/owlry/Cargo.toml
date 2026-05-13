@@ -65,7 +65,12 @@ futures-channel = "0.3"
 
 # Lua 5.4 runtime for user configuration (Phase 3 — opt-in preview in 2.1).
 # Vendored C source so AUR clean-chroot builds don't depend on a system Lua.
-mlua = { version = "0.11", features = ["lua54", "vendored", "send", "serialize"], optional = true }
+# IMPORTANT: features live on the `lua` cargo feature row below, NOT inline
+# here. Inline `features = [...]` on an `optional = true` dep get dropped
+# by cargo's feature resolver in clean chroots (e.g. `cargo build --frozen`
+# under makepkg), producing a build that tries to link against a non-vendored
+# system liblua. Same gotcha we hit with rusqlite during the v2 migration.
+mlua = { version = "0.11", optional = true }
 
 # Glob pattern support for `owlry.util.glob` (Phase 3.6). Pure-Rust; small.
 glob = { version = "0.3", optional = true }
@@ -98,8 +103,17 @@ websearch = []
 
 # Lua config layer (Phase 3 — opt-in preview in 2.1, default in 2.2, mandatory in 3.0).
 # Pulls in mlua's vendored Lua 5.4 runtime, glob for owlry.util.glob, and
-# notify for owlry.lua hot reload.
-lua = ["dep:mlua", "dep:glob", "dep:notify"]
+# notify for owlry.lua hot reload. mlua features are listed here (not inline
+# on the dep above) so cargo's feature resolver keeps them in clean chroots.
+lua = [
+    "dep:mlua",
+    "mlua/lua54",
+    "mlua/vendored",
+    "mlua/send",
+    "mlua/serialize",
+    "dep:glob",
+    "dep:notify",
+]
 
 # Bookmarks deferred for 2.0 alongside the widget providers (D20+).
 # Returns in a later 2.x release with a pure-Rust path that doesn't pull
