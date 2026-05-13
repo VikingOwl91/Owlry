@@ -8,17 +8,8 @@ default:
 build:
     cargo build --workspace
 
-build-ui:
-    cargo build -p owlry
-
-build-daemon:
-    cargo build -p owlry-core
-
 release:
     cargo build --workspace --release
-
-release-daemon:
-    cargo build -p owlry-core --release
 
 # === Run ===
 
@@ -26,7 +17,7 @@ run *ARGS:
     cargo run -p owlry -- {{ARGS}}
 
 run-daemon *ARGS:
-    cargo run -p owlry-core -- {{ARGS}}
+    cargo run -p owlry -- -d {{ARGS}}
 
 # === Quality ===
 
@@ -50,25 +41,14 @@ install-local:
     set -euo pipefail
 
     echo "Building release..."
-    cargo build -p owlry --release --no-default-features
-    cargo build -p owlry-core --release
-    cargo build -p owlry-lua -p owlry-rune --release
+    cargo build -p owlry --release
 
-    echo "Creating directories..."
-    sudo mkdir -p /usr/lib/owlry/plugins
-    sudo mkdir -p /usr/lib/owlry/runtimes
-
-    echo "Installing binaries..."
+    echo "Installing binary..."
     sudo install -Dm755 target/release/owlry /usr/bin/owlry
-    sudo install -Dm755 target/release/owlryd /usr/bin/owlryd
-
-    echo "Installing runtimes..."
-    [ -f target/release/libowlry_lua.so ] && sudo install -Dm755 target/release/libowlry_lua.so /usr/lib/owlry/runtimes/liblua.so
-    [ -f target/release/libowlry_rune.so ] && sudo install -Dm755 target/release/libowlry_rune.so /usr/lib/owlry/runtimes/librune.so
 
     echo "Installing systemd service files..."
-    [ -f systemd/owlryd.service ] && sudo install -Dm644 systemd/owlryd.service /usr/lib/systemd/user/owlryd.service
-    [ -f systemd/owlryd.socket ] && sudo install -Dm644 systemd/owlryd.socket /usr/lib/systemd/user/owlryd.socket
+    sudo install -Dm644 systemd/owlryd.service /usr/lib/systemd/user/owlryd.service
+    sudo install -Dm644 systemd/owlryd.socket /usr/lib/systemd/user/owlryd.socket
 
     echo "Done. Start daemon: systemctl --user enable --now owlryd.service"
 

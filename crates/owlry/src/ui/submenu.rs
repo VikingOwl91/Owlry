@@ -46,7 +46,7 @@
 //! }
 //! ```
 
-use owlry_core::providers::LaunchItem;
+use crate::providers::LaunchItem;
 
 /// Parse a submenu command and extract plugin_id and data
 /// Returns (plugin_id, data) if command matches SUBMENU: format
@@ -66,7 +66,7 @@ pub fn is_submenu_item(item: &LaunchItem) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use owlry_core::providers::{ItemSource, ProviderType};
+    use crate::providers::{ItemSource, ProviderType};
 
     #[test]
     fn test_parse_submenu_command() {

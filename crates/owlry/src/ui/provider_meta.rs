@@ -1,5 +1,5 @@
-use owlry_core::ipc::ProviderDesc;
-use owlry_core::providers::ProviderType;
+use crate::ipc::ProviderDesc;
+use crate::providers::ProviderType;
 
 /// Display metadata for a provider.
 pub struct ProviderMeta {

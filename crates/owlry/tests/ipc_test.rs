@@ -1,4 +1,4 @@
-use owlry_core::ipc::{ProviderDesc, Request, Response, ResultItem};
+use owlry::ipc::{ProviderDesc, Request, Response, ResultItem};
 
 #[test]
 fn test_query_request_roundtrip() {

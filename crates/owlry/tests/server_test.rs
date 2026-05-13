@@ -2,8 +2,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::thread;
 
-use owlry_core::ipc::{Request, Response};
-use owlry_core::server::Server;
+use owlry::ipc::{Request, Response};
+use owlry::server::Server;
 
 /// Helper: send a JSON request line and read the JSON response line.
 fn roundtrip(stream: &mut UnixStream, request: &Request) -> Response {

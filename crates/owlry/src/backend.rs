@@ -5,11 +5,11 @@
 
 use crate::client::CoreClient;
 use log::warn;
-use owlry_core::config::Config;
-use owlry_core::data::FrecencyStore;
-use owlry_core::filter::ProviderFilter;
-use owlry_core::ipc::{ProviderDesc, ResultItem};
-use owlry_core::providers::{ItemSource, LaunchItem, ProviderManager, ProviderType};
+use crate::config::Config;
+use crate::data::FrecencyStore;
+use crate::filter::ProviderFilter;
+use crate::ipc::{ProviderDesc, ResultItem};
+use crate::providers::{ItemSource, LaunchItem, ProviderManager, ProviderType};
 use std::sync::{Arc, Mutex};
 
 /// Parameters needed to run a search query on a background thread.

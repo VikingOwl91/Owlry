@@ -5,7 +5,7 @@ After=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/owlryd
+ExecStart=/usr/bin/owlry -d
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=3

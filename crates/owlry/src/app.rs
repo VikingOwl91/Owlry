@@ -8,11 +8,11 @@ use gtk4::prelude::*;
 use gtk4::{Application, CssProvider, gio};
 use gtk4_layer_shell::{Edge, Layer, LayerShell};
 use log::{debug, info, warn};
-use owlry_core::config::Config;
-use owlry_core::data::FrecencyStore;
-use owlry_core::filter::ProviderFilter;
-use owlry_core::paths;
-use owlry_core::providers::{Provider, ProviderManager, ProviderType};
+use crate::config::Config;
+use crate::data::FrecencyStore;
+use crate::filter::ProviderFilter;
+use crate::paths;
+use crate::providers::{Provider, ProviderManager, ProviderType};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -149,7 +149,7 @@ impl OwlryApp {
     /// All other providers belong to the daemon (Phase 1 keeps the daemon as the
     /// primary path).
     fn create_local_backend(_config: &Config) -> SearchBackend {
-        use owlry_core::providers::{ApplicationProvider, CommandProvider};
+        use crate::providers::{ApplicationProvider, CommandProvider};
 
         let core_providers: Vec<Box<dyn Provider>> = vec![
             Box::new(ApplicationProvider::new()),

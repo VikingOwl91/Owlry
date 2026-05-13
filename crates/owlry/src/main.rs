@@ -1,15 +1,9 @@
-mod app;
-mod backend;
-mod cli;
-pub mod client;
-mod providers;
-mod theme;
-mod ui;
-
-use app::OwlryApp;
-use cli::CliArgs;
 use log::{info, warn};
 use std::os::unix::io::AsRawFd;
+
+use owlry::app::OwlryApp;
+use owlry::cli::CliArgs;
+use owlry::{client, paths, server};
 
 #[cfg(feature = "dev-logging")]
 use log::debug;
@@ -22,12 +16,11 @@ use log::debug;
 fn try_acquire_lock() -> Option<std::fs::File> {
     use std::os::unix::fs::OpenOptionsExt;
 
-    let lock_path = owlry_core::paths::socket_path()
+    let lock_path = paths::socket_path()
         .parent()
         .unwrap()
         .join("owlry-ui.lock");
 
-    // Ensure the parent directory exists
     if let Some(parent) = lock_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -51,17 +44,21 @@ fn main() {
 
     // -d / --daemon: run the daemon in-process and exit when it stops.
     if args.daemon {
-        let default_level = if cfg!(feature = "dev-logging") { "debug" } else { "info" };
+        let default_level = if cfg!(feature = "dev-logging") {
+            "debug"
+        } else {
+            "info"
+        };
         env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(default_level))
             .format_timestamp_millis()
             .init();
 
-        let sock = owlry_core::paths::socket_path();
-        if let Err(e) = owlry_core::paths::ensure_parent_dir(&sock) {
+        let sock = paths::socket_path();
+        if let Err(e) = paths::ensure_parent_dir(&sock) {
             eprintln!("Failed to create socket directory: {e}");
             std::process::exit(1);
         }
-        match owlry_core::server::Server::bind(&sock) {
+        match server::Server::bind(&sock) {
             Ok(server) => {
                 if let Err(e) = server.run() {
                     eprintln!("Server error: {e}");
@@ -76,7 +73,7 @@ fn main() {
         }
     }
 
-    // No subcommand - launch the app
+    // Default: launch the UI.
     let default_level = if cfg!(feature = "dev-logging") {
         "debug"
     } else {
@@ -100,7 +97,6 @@ fn main() {
     let _lock_guard = match try_acquire_lock() {
         Some(file) => file,
         None => {
-            // Another instance holds the lock — send toggle to daemon and exit
             info!("Another owlry instance detected, sending toggle");
             let socket_path = client::CoreClient::socket_path();
             if let Ok(mut client) = client::CoreClient::connect(&socket_path) {
@@ -118,7 +114,7 @@ fn main() {
 
     info!("Starting Owlry launcher");
 
-    // Diagnostic: log critical environment variables
+    // Diagnostic: log critical environment variables.
     let home = std::env::var("HOME").unwrap_or_else(|_| "<not set>".to_string());
     let path = std::env::var("PATH").unwrap_or_else(|_| "<not set>".to_string());
     let xdg_data = std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| "<not set>".to_string());

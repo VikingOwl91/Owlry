@@ -2,7 +2,7 @@
 
 use clap::Parser;
 
-use owlry_core::providers::ProviderType;
+use crate::providers::ProviderType;
 
 #[derive(Parser, Debug, Clone)]
 #[command(

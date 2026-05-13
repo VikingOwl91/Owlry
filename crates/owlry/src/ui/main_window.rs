@@ -9,10 +9,10 @@ use gtk4::{
     ListBoxRow, Orientation, ScrolledWindow, SelectionMode, ToggleButton,
 };
 use log::info;
-use owlry_core::config::Config;
-use owlry_core::filter::ProviderFilter;
-use owlry_core::ipc::ProviderDesc;
-use owlry_core::providers::{ItemSource, LaunchItem, ProviderType};
+use crate::config::Config;
+use crate::filter::ProviderFilter;
+use crate::ipc::ProviderDesc;
+use crate::providers::{ItemSource, LaunchItem, ProviderType};
 
 #[cfg(feature = "dev-logging")]
 use log::debug;
@@ -382,7 +382,7 @@ impl MainWindow {
     /// Build hints string for the status bar based on enabled built-in providers.
     /// Plugin trigger hints (? web, / files, etc.) are not included here since
     /// plugin availability is not tracked in ProvidersConfig.
-    fn build_hints(config: &owlry_core::config::ProvidersConfig) -> String {
+    fn build_hints(config: &crate::config::ProvidersConfig) -> String {
         let mut parts: Vec<String> = vec![
             "Tab: cycle".to_string(),
             "↑↓: nav".to_string(),
@@ -1366,7 +1366,7 @@ impl MainWindow {
                     item.name, cmd
                 );
                 log::warn!("{}", msg);
-                owlry_core::notify::notify("Command blocked", &msg);
+                crate::notify::notify("Command blocked", &msg);
                 return;
             }
         }
@@ -1375,7 +1375,7 @@ impl MainWindow {
         if item.command.is_empty() && !matches!(item.provider, ProviderType::Application) {
             let msg = format!("Item '{}' has no command; cannot launch", item.name);
             log::warn!("{}", msg);
-            owlry_core::notify::notify("Launch failed", &msg);
+            crate::notify::notify("Launch failed", &msg);
             return;
         }
 
@@ -1397,7 +1397,7 @@ impl MainWindow {
         if let Err(e) = result {
             let msg = format!("Failed to launch '{}': {}", item.name, e);
             log::error!("{}", msg);
-            owlry_core::notify::notify("Launch failed", &msg);
+            crate::notify::notify("Launch failed", &msg);
         }
     }
 
@@ -1418,7 +1418,7 @@ impl MainWindow {
         if !Path::new(desktop_path).exists() {
             let msg = format!("Desktop file not found: {}", desktop_path);
             log::error!("{}", msg);
-            owlry_core::notify::notify("Launch failed", &msg);
+            crate::notify::notify("Launch failed", &msg);
             return Err(std::io::Error::new(std::io::ErrorKind::NotFound, msg));
         }
 
@@ -1435,7 +1435,7 @@ impl MainWindow {
             if !uwsm_available {
                 let msg = "uwsm is enabled in config but not installed";
                 log::error!("{}", msg);
-                owlry_core::notify::notify("Launch failed", msg);
+                crate::notify::notify("Launch failed", msg);
                 return Err(std::io::Error::new(std::io::ErrorKind::NotFound, msg));
             }
 
