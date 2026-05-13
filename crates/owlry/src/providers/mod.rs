@@ -217,6 +217,23 @@ pub trait DynamicProvider: Send + Sync {
     fn query(&self, query: &str) -> Vec<LaunchItem>;
     fn priority(&self) -> u32;
 
+    /// Optional search prefix (e.g. ":calc"). None = no prefix.
+    fn prefix(&self) -> Option<&str> {
+        None
+    }
+    /// Icon name (XDG icon theme).
+    fn icon(&self) -> &str {
+        "application-x-addon"
+    }
+    /// Tab button label.
+    fn tab_label(&self) -> Option<&str> {
+        None
+    }
+    /// Search placeholder noun.
+    fn search_noun(&self) -> Option<&str> {
+        None
+    }
+
     /// Handle a plugin action command. Returns true if handled.
     fn execute_action(&self, _command: &str) -> bool {
         false
@@ -631,12 +648,19 @@ impl ProviderManager {
     }
 
     /// Get all available provider types (for UI tabs).
+    ///
+    /// Includes both static `Provider`s and dynamic `DynamicProvider`s so
+    /// callers like `owlry doctor` / `owlry providers` see the full picture.
     #[allow(dead_code)]
     pub fn available_provider_types(&self) -> Vec<ProviderType> {
-        self.providers.iter().map(|p| p.provider_type()).collect()
+        self.providers
+            .iter()
+            .map(|p| p.provider_type())
+            .chain(self.builtin_dynamic.iter().map(|p| p.provider_type()))
+            .collect()
     }
 
-    /// Get descriptors for all registered providers.
+    /// Get descriptors for all registered providers (static + dynamic).
     ///
     /// Used by the IPC server to report what providers are available to clients.
     pub fn available_providers(&self) -> Vec<ProviderDescriptor> {
@@ -670,6 +694,27 @@ impl ProviderManager {
                     }
                 },
                 position: provider.position().as_str().to_string(),
+                tab_label: provider.tab_label().map(String::from),
+                search_noun: provider.search_noun().map(String::from),
+            });
+        }
+
+        // Dynamic providers (calc, conv, websearch, filesearch). They're always
+        // ProviderType::Plugin(<type_id>) — the only other variants are
+        // Application/Command/Dmenu which are static-only.
+        for provider in &self.builtin_dynamic {
+            let id = match provider.provider_type() {
+                ProviderType::Plugin(type_id) => type_id,
+                // Defensive: keep the surface honest even if a future dynamic
+                // provider claims a non-Plugin type.
+                other => other.to_string(),
+            };
+            descs.push(ProviderDescriptor {
+                id,
+                name: provider.name().to_string(),
+                prefix: provider.prefix().map(String::from),
+                icon: provider.icon().to_string(),
+                position: ProviderPosition::Normal.as_str().to_string(),
                 tab_label: provider.tab_label().map(String::from),
                 search_noun: provider.search_noun().map(String::from),
             });
@@ -1184,6 +1229,106 @@ mod tests {
             })],
         );
         assert!(pm.execute_plugin_action("DYN:thing"));
+    }
+
+    #[test]
+    fn available_providers_includes_dynamic_providers() {
+        // Regression guard (2.0.1): dynamic providers must surface in the
+        // diagnostic list so `owlry doctor` and `owlry providers` can report
+        // them. Pre-2.0.1, only static providers were enumerated and the
+        // dynamic ones were silently absent despite running fine.
+        struct DynRich;
+        impl DynamicProvider for DynRich {
+            fn name(&self) -> &str {
+                "Rich Dynamic"
+            }
+            fn provider_type(&self) -> ProviderType {
+                ProviderType::Plugin("rich-dyn".into())
+            }
+            fn query(&self, _q: &str) -> Vec<LaunchItem> {
+                Vec::new()
+            }
+            fn priority(&self) -> u32 {
+                7_000
+            }
+            fn prefix(&self) -> Option<&str> {
+                Some(":rdyn")
+            }
+            fn icon(&self) -> &str {
+                "rich-dynamic-icon"
+            }
+            fn tab_label(&self) -> Option<&str> {
+                Some("Rich")
+            }
+            fn search_noun(&self) -> Option<&str> {
+                Some("rich queries")
+            }
+        }
+
+        let pm = ProviderManager::new(Vec::new(), vec![Box::new(DynRich)]);
+        let descs = pm.available_providers();
+        assert_eq!(descs.len(), 1);
+        let d = &descs[0];
+        assert_eq!(d.id, "rich-dyn");
+        assert_eq!(d.name, "Rich Dynamic");
+        assert_eq!(d.prefix.as_deref(), Some(":rdyn"));
+        assert_eq!(d.icon, "rich-dynamic-icon");
+        assert_eq!(d.position, "normal");
+        assert_eq!(d.tab_label.as_deref(), Some("Rich"));
+        assert_eq!(d.search_noun.as_deref(), Some("rich queries"));
+    }
+
+    #[test]
+    fn available_provider_types_includes_dynamic_providers() {
+        struct DynStub;
+        impl DynamicProvider for DynStub {
+            fn name(&self) -> &str {
+                "stub"
+            }
+            fn provider_type(&self) -> ProviderType {
+                ProviderType::Plugin("stub".into())
+            }
+            fn query(&self, _q: &str) -> Vec<LaunchItem> {
+                Vec::new()
+            }
+            fn priority(&self) -> u32 {
+                0
+            }
+        }
+
+        let mock = MockProvider::new("Apps", ProviderType::Application);
+        let pm = ProviderManager::new(vec![Box::new(mock)], vec![Box::new(DynStub)]);
+        let types = pm.available_provider_types();
+        assert_eq!(types.len(), 2);
+        assert!(types.contains(&ProviderType::Application));
+        assert!(types.contains(&ProviderType::Plugin("stub".into())));
+    }
+
+    #[test]
+    fn dynamic_provider_trait_defaults_return_documented_values() {
+        // 2.0.1 added prefix/icon/tab_label/search_noun as defaulted methods
+        // on DynamicProvider so the trait can describe its own UI metadata
+        // without falling back to a hardcoded match table.
+        struct Minimal;
+        impl DynamicProvider for Minimal {
+            fn name(&self) -> &str {
+                "m"
+            }
+            fn provider_type(&self) -> ProviderType {
+                ProviderType::Plugin("m".into())
+            }
+            fn query(&self, _: &str) -> Vec<LaunchItem> {
+                Vec::new()
+            }
+            fn priority(&self) -> u32 {
+                0
+            }
+        }
+        let m = Minimal;
+        assert_eq!(m.prefix(), None);
+        assert_eq!(m.icon(), "application-x-addon");
+        assert_eq!(m.tab_label(), None);
+        assert_eq!(m.search_noun(), None);
     }
 
     #[test]

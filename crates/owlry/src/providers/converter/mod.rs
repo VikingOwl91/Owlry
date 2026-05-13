@@ -28,6 +28,22 @@ impl DynamicProvider for ConverterProvider {
         9_000
     }
 
+    fn prefix(&self) -> Option<&str> {
+        Some(":conv")
+    }
+
+    fn icon(&self) -> &str {
+        PROVIDER_ICON
+    }
+
+    fn tab_label(&self) -> Option<&str> {
+        Some("Convert")
+    }
+
+    fn search_noun(&self) -> Option<&str> {
+        Some("unit / currency conversion")
+    }
+
     fn query(&self, query: &str) -> Vec<LaunchItem> {
         let query_str = query.trim();
         // Strip prefix

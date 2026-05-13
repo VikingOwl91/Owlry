@@ -192,6 +192,22 @@ impl DynamicProvider for FileSearchProvider {
         8_000
     }
 
+    fn prefix(&self) -> Option<&str> {
+        Some(":file")
+    }
+
+    fn icon(&self) -> &str {
+        "system-file-manager"
+    }
+
+    fn tab_label(&self) -> Option<&str> {
+        Some("Files")
+    }
+
+    fn search_noun(&self) -> Option<&str> {
+        Some("files")
+    }
+
     fn query(&self, query: &str) -> Vec<LaunchItem> {
         self.evaluate(query)
     }

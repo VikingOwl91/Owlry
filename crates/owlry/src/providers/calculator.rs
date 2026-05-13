@@ -22,6 +22,22 @@ impl DynamicProvider for CalculatorProvider {
         10_000
     }
 
+    fn prefix(&self) -> Option<&str> {
+        Some(":calc")
+    }
+
+    fn icon(&self) -> &str {
+        "accessories-calculator"
+    }
+
+    fn tab_label(&self) -> Option<&str> {
+        Some("Calc")
+    }
+
+    fn search_noun(&self) -> Option<&str> {
+        Some("math expression")
+    }
+
     fn query(&self, query: &str) -> Vec<LaunchItem> {
         let expr = match extract_expression(query) {
             Some(e) if !e.is_empty() => e,
