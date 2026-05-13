@@ -24,7 +24,7 @@ EXAMPLES:
     owlry providers [<id>]          List providers (or show one)
     owlry config validate           Check config for errors
     owlry config show               Print resolved effective config
-    owlry migrate-config            TOML → init.lua (Phase 3+; stub for now)
+    owlry migrate-config [--force]  TOML → owlry.lua (--force to overwrite)
 
 SEARCH PREFIXES (inside the UI):
     :app firefox                    Search applications

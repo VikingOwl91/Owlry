@@ -141,9 +141,9 @@ owlry -d                       run the daemon (alias: `owlry daemon`)
 owlry dmenu [-p <prompt>]      dmenu mode (reads stdin, prints selection)
 owlry doctor                   diagnostics: config + socket + providers
 owlry providers [<id>]         list providers (or show details for one)
-owlry config validate          parse config, report errors
+owlry config validate          parse config, report errors (exit 1) and warnings (exit 2)
 owlry config show              print the resolved effective config as TOML
-owlry migrate-config           TOML → init.lua (stub in 2.0; lands in a later 2.x release)
+owlry migrate-config [--force] TOML → owlry.lua (deterministic; refuses to overwrite without --force)
 ```
 
 ### Profiles
@@ -229,15 +229,37 @@ Owlry follows the [XDG Base Directory Specification](https://specifications.free
 
 | Path | Purpose |
 |------|---------|
-| `~/.config/owlry/config.toml` | Main configuration |
+| `~/.config/owlry/owlry.lua` | Lua configuration (preferred, takes precedence over `config.toml`) |
+| `~/.config/owlry/config.toml` | TOML configuration (legacy; ignored when `owlry.lua` exists) |
 | `~/.config/owlry/themes/*.css` | Custom themes |
 | `~/.config/owlry/style.css` | CSS overrides |
 | `~/.local/share/owlry/frecency.json` | Usage history |
 | `$XDG_RUNTIME_DIR/owlry/owlry.sock` | IPC socket (overridable via `$OWLRY_SOCKET`) |
-| `/usr/share/doc/owlry/config.example.toml` | Example configuration |
+| `/usr/share/doc/owlry/owlry.example.lua` | Example Lua configuration |
+| `/usr/share/doc/owlry/config.example.toml` | Example TOML configuration |
 | `/usr/share/owlry/themes/` | Bundled themes |
 
-### Quick Start
+Config resolution order (per [`docs/lua-api.md`](docs/lua-api.md) §2): `owlry.lua` → `config.toml` → built-in defaults. When `owlry.lua` is present `config.toml` is ignored entirely (an info log notes this at daemon startup). The daemon watches `owlry.lua` and hot-reloads on save; broken edits surface as desktop notifications and keep the previous state alive.
+
+### Quick Start (Lua config — preferred from 2.1+)
+
+```bash
+mkdir -p ~/.config/owlry
+cp /usr/share/doc/owlry/owlry.example.lua ~/.config/owlry/owlry.lua
+$EDITOR ~/.config/owlry/owlry.lua
+owlry config validate
+```
+
+Already have a `config.toml`? Migrate it in one shot:
+
+```bash
+owlry migrate-config              # writes owlry.lua; refuses to overwrite
+owlry migrate-config --force      # overwrite an existing owlry.lua
+```
+
+The migrator is deterministic, emits only values that differ from defaults, and normalises pre-v2 aliases (`system` → `power`, `badge_sys` → `badge_power`).
+
+### Quick Start (TOML config — still supported in 2.x)
 
 ```bash
 mkdir -p ~/.config/owlry
@@ -377,9 +399,10 @@ Set `OWLRY_SOCKET=/path/to/sock` to override the socket location — useful for 
 See [ROADMAP.md](ROADMAP.md) for feature ideas and [docs/RESTRUCTURE-V2.md](docs/RESTRUCTURE-V2.md) for the v2 rewrite story.
 
 Headline upcoming work:
-- **Lua-driven configuration** (2.1 / 3.0) — `~/.config/owlry/init.lua` replaces TOML. User-defined providers via `owlry.provider {}` in the same file (Hyprland-style configs-as-code). `owlry migrate-config` lands at the same time.
+- **Lua-driven configuration shipped in 2.1** — `~/.config/owlry/owlry.lua` is the canonical config from 2.1, with TOML kept as a back-compat fallback until 3.0. User-defined providers via `owlry.provider {}`, host helpers under `owlry.util.*`, hot reload, named profiles, theme overrides, and `owlry migrate-config` are all live. See [`docs/lua-api.md`](docs/lua-api.md) for the full surface.
 - **Widget providers return** — weather, MPRIS media controls, pomodoro timer. Deferred from 2.0 while the UI positioning is reworked.
 - **Bookmarks return** — Firefox + Chromium. Deferred from 2.0 to avoid a hard rusqlite/`libsqlite3-sys` dep in the chroot build path; returns with a pure-Rust reader (likely via Firefox's JSON backup files).
+- **Dynamic Lua providers** (2.2) — `owlry.provider { dynamic = true }` for per-keystroke items. 2.1 ships only static (`dynamic = false`) providers.
 
 ## License
 

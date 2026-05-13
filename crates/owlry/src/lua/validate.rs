@@ -331,13 +331,23 @@ mod tests {
 
     #[test]
     fn pre_v2_aliases_are_known() {
+        // `sys` and `uuctl` resolve to power and systemd respectively.
+        // We only assert they're NOT reported as unknown ids — a
+        // compiled-out warning is environment-dependent (running this
+        // with `--no-default-features --features lua` omits the systemd
+        // feature, which legitimately flags uuctl as compiled-out).
         let mut cfg = empty_cfg();
         cfg.providers = Some(vec!["sys".into(), "uuctl".into()]);
         cfg.tabs = Some(vec!["sys".into(), "uuctl".into()]);
         let report = validate(&cfg);
-        assert!(
-            report.is_clean(),
-            "pre-v2 aliases must validate cleanly; got: {:?}",
+        let unknown_count = report
+            .warnings
+            .iter()
+            .filter(|w| w.contains("unknown id"))
+            .count();
+        assert_eq!(
+            unknown_count, 0,
+            "pre-v2 aliases must not be flagged as unknown ids; got: {:?}",
             report.warnings
         );
     }
