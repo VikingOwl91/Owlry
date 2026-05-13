@@ -321,6 +321,7 @@ fn run_migrate_config_impl(force: bool) -> i32 {
             println!(
                 "owlry.lua now takes precedence over config.toml (see docs/lua-api.md §2)."
             );
+            report_legacy_artifacts(&out.legacy_artifacts);
             0
         }
         Err(crate::lua::MigrateError::DestExists(_)) => {
@@ -345,6 +346,117 @@ fn run_migrate_config_impl(force: bool) -> i32 {
             2
         }
     }
+}
+
+/// Print a heads-up block for each pre-v2 artifact the migrator detected
+/// in the config dir. Plugins (Rune / C-ABI) and the `scripts/` directory
+/// can't be auto-translated — the user has to recreate them as
+/// `owlry.provider {}` entries inside `owlry.lua`. We surface what we
+/// found, including the original prefix / icon when known, so the user
+/// has a paste-able starting point.
+#[cfg(feature = "lua")]
+fn report_legacy_artifacts(artifacts: &[crate::lua::migrate::LegacyArtifact]) {
+    if artifacts.is_empty() {
+        return;
+    }
+    use crate::lua::migrate::LegacyKind;
+
+    println!();
+    println!(
+        "Heads up: detected {} pre-v2 artifact(s) in your config dir that the migrator",
+        artifacts.len()
+    );
+    println!(
+        "did NOT translate. They aren't loaded by 2.1+ — they're just files sitting"
+    );
+    println!("there from your 1.x install. Recreate them in owlry.lua if you still use them:");
+
+    for artifact in artifacts {
+        println!();
+        match &artifact.kind {
+            LegacyKind::Plugin {
+                id,
+                name,
+                prefix,
+                icon,
+                entry_point,
+            } => {
+                println!("  ── plugin: {} ─────────────────────────────────", id);
+                println!("     path: {}", artifact.path.display());
+                if let Some(n) = name {
+                    println!("     name: {}", n);
+                }
+                if let Some(p) = prefix {
+                    println!("     prefix: {}", p);
+                }
+                if let Some(i) = icon {
+                    println!("     icon: {}", i);
+                }
+                if let Some(ep) = entry_point {
+                    println!("     entry_point: {} (Rune / C-ABI; unsupported in 2.1)", ep);
+                }
+                println!("     ──");
+                println!("     Recreate as a user provider in owlry.lua:");
+                println!();
+                println!("       owlry.provider {{");
+                println!("         id = \"{}\",", id);
+                if let Some(p) = prefix {
+                    println!("         prefix = \"{}\",", p);
+                }
+                if let Some(i) = icon {
+                    println!("         icon = \"{}\",", i);
+                }
+                println!("         items = function()");
+                println!(
+                    "           return {{ -- translate {} here",
+                    entry_point.as_deref().unwrap_or("the plugin")
+                );
+                println!("             -- {{ name = \"…\", command = \"…\" }},");
+                println!("           }}");
+                println!("         end,");
+                println!("       }}");
+            }
+            LegacyKind::ScriptsDir { entries } => {
+                println!("  ── legacy `scripts/` directory ─────────────────");
+                println!("     path: {}", artifact.path.display());
+                println!(
+                    "     {} file(s): {}",
+                    entries.len(),
+                    if entries.is_empty() {
+                        "(empty)".to_string()
+                    } else {
+                        entries.join(", ")
+                    }
+                );
+                println!("     ──");
+                println!(
+                    "     The standalone `scripts` provider was removed in 2.0. Wrap each"
+                );
+                println!("     script in an `owlry.provider {{}}` block, e.g.:");
+                println!();
+                println!("       owlry.provider {{");
+                println!("         id = \"my-scripts\",");
+                println!("         prefix = \":sh\",");
+                println!("         items = function()");
+                println!(
+                    "           return owlry.util.shell_lines(\"ls {}\")",
+                    artifact.path.display()
+                );
+                println!("             :map(function(name)");
+                println!(
+                    "               return {{ name = name, command = \"{}/\" .. name }}",
+                    artifact.path.display()
+                );
+                println!("             end)");
+                println!("         end,");
+                println!("       }}");
+            }
+        }
+    }
+    println!();
+    println!(
+        "  See `docs/lua-api.md` §4.4 (user providers) and §5.1 (owlry.util.*)."
+    );
 }
 
 /// `owlry dmenu`: delegate to the UI's dmenu pipeline.

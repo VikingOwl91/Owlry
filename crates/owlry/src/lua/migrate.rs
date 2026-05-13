@@ -56,6 +56,39 @@ pub struct MigrateRequest<'a> {
 pub struct MigrateOutcome {
     pub lua_path: PathBuf,
     pub bytes_written: usize,
+    /// Pre-v2 artifacts that survived in the config dir but can't be
+    /// auto-migrated — typically C-ABI / Rune plugins from `plugins/`
+    /// and scripts from the (now-removed) `scripts/` provider. The
+    /// command handler surfaces these to the user as info notes.
+    pub legacy_artifacts: Vec<LegacyArtifact>,
+}
+
+/// A piece of pre-v2 user content that the migrator detected but didn't
+/// translate — the user has to rewrite it (or delete it) by hand.
+#[derive(Debug, Clone)]
+pub struct LegacyArtifact {
+    pub path: PathBuf,
+    pub kind: LegacyKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum LegacyKind {
+    /// A pre-v2 plugin directory (Rune / C-ABI). The plugin.toml fields
+    /// are surfaced verbatim so the user can paste them into a new
+    /// `owlry.provider { ... }` block.
+    Plugin {
+        id: String,
+        name: Option<String>,
+        prefix: Option<String>,
+        icon: Option<String>,
+        entry_point: Option<String>,
+    },
+    /// The pre-v2 `scripts/` directory (the standalone `scripts` provider
+    /// is gone in 2.0; the contents are now user data with no automatic
+    /// surface).
+    ScriptsDir {
+        entries: Vec<String>,
+    },
 }
 
 /// Run the full migration: validate paths, parse TOML, emit Lua, write file.
@@ -90,10 +123,146 @@ pub fn migrate(req: &MigrateRequest<'_>) -> Result<MigrateOutcome, MigrateError>
         source: e,
     })?;
 
+    // Sniff for pre-v2 artifacts in the config dir (plugins/, scripts/).
+    // These don't block migration — we just surface them so the user
+    // doesn't silently lose what used to be working providers.
+    let config_dir = req.toml_path.parent().unwrap_or_else(|| Path::new("."));
+    let legacy_artifacts = scan_legacy_artifacts(config_dir);
+
     Ok(MigrateOutcome {
         lua_path: req.lua_path.to_path_buf(),
         bytes_written: lua.len(),
+        legacy_artifacts,
     })
+}
+
+/// Inspect `config_dir` for pre-v2 user data that the migrator can't
+/// auto-translate: `plugins/<name>/` (Rune / C-ABI) and `scripts/`
+/// (the legacy `scripts` provider). Returns an empty Vec when nothing
+/// is found, so callers can `if !empty` and short-circuit.
+pub fn scan_legacy_artifacts(config_dir: &Path) -> Vec<LegacyArtifact> {
+    let mut out = Vec::new();
+
+    let plugins_dir = config_dir.join("plugins");
+    if plugins_dir.is_dir() {
+        let mut entries: Vec<_> = std::fs::read_dir(&plugins_dir)
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_dir())
+            // Skip dotfile dirs (`.claude`, `.git`, `.cache`, etc.) and any
+            // directory without a `plugin.toml`. The pre-v2 plugin format
+            // *always* shipped a manifest — anything without one is just
+            // user data that happens to live under `plugins/`.
+            .filter(|e| {
+                let name = e.file_name();
+                let name_str = name.to_string_lossy();
+                if name_str.starts_with('.') {
+                    return false;
+                }
+                e.path().join("plugin.toml").is_file()
+            })
+            .collect();
+        entries.sort_by_key(|e| e.path());
+        for entry in entries {
+            let path = entry.path();
+            let kind = parse_plugin_dir(&path);
+            out.push(LegacyArtifact { path, kind });
+        }
+    }
+
+    let scripts_dir = config_dir.join("scripts");
+    if scripts_dir.is_dir() {
+        let mut entries: Vec<String> = std::fs::read_dir(&scripts_dir)
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        entries.sort();
+        out.push(LegacyArtifact {
+            path: scripts_dir,
+            kind: LegacyKind::ScriptsDir { entries },
+        });
+    }
+
+    out
+}
+
+/// Best-effort parse of a `plugin.toml` inside a pre-v2 plugin dir.
+/// Falls back to using the directory name as the id when the toml is
+/// missing or malformed — the goal is informational, not authoritative.
+fn parse_plugin_dir(dir: &Path) -> LegacyKind {
+    let dir_name = dir
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "?".into());
+
+    let manifest_path = dir.join("plugin.toml");
+    let manifest_str = match std::fs::read_to_string(&manifest_path) {
+        Ok(s) => s,
+        Err(_) => {
+            return LegacyKind::Plugin {
+                id: dir_name,
+                name: None,
+                prefix: None,
+                icon: None,
+                entry_point: None,
+            };
+        }
+    };
+
+    let parsed: toml::Value = match toml::from_str(&manifest_str) {
+        Ok(v) => v,
+        Err(_) => {
+            return LegacyKind::Plugin {
+                id: dir_name,
+                name: None,
+                prefix: None,
+                icon: None,
+                entry_point: None,
+            };
+        }
+    };
+
+    // The pre-v2 manifest format had [plugin] (id/name/entry_point) and
+    // [[providers]] (id/name/prefix/icon). The first provider's prefix
+    // and icon are the most useful for a user trying to recreate it.
+    let plugin = parsed.get("plugin");
+    let providers = parsed.get("providers").and_then(|v| v.as_array());
+    let first_provider = providers.and_then(|arr| arr.first());
+
+    let id = plugin
+        .and_then(|p| p.get("id"))
+        .and_then(|v| v.as_str())
+        .map(String::from)
+        .unwrap_or(dir_name);
+    let name = plugin
+        .and_then(|p| p.get("name"))
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let entry_point = plugin
+        .and_then(|p| p.get("entry_point"))
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let prefix = first_provider
+        .and_then(|p| p.get("prefix"))
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let icon = first_provider
+        .and_then(|p| p.get("icon"))
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    LegacyKind::Plugin {
+        id,
+        name,
+        prefix,
+        icon,
+        entry_point,
+    }
 }
 
 /// Produce the Lua text for a parsed Config. The `raw_toml` and `src`
@@ -774,5 +943,177 @@ badge_sys = "#ff8800"
             rebuilt.profiles["dev"].modes,
             original.profiles["dev"].modes
         );
+    }
+
+    // ── Legacy artifact detection ───────────────────────────────────────────
+
+    fn write(path: &Path, contents: &str) {
+        if let Some(p) = path.parent() {
+            std::fs::create_dir_all(p).expect("mkdir -p");
+        }
+        let mut f = std::fs::File::create(path).expect("create");
+        f.write_all(contents.as_bytes()).expect("write");
+    }
+
+    #[test]
+    fn scan_returns_empty_when_no_legacy_dirs() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let artifacts = scan_legacy_artifacts(dir.path());
+        assert!(artifacts.is_empty());
+    }
+
+    #[test]
+    fn scan_detects_plugin_with_full_manifest() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write(
+            &dir.path().join("plugins/hyprshutdown/plugin.toml"),
+            r#"
+[plugin]
+id = "hyprshutdown"
+name = "Hyprshutdown"
+version = "0.1.0"
+entry_point = "main.rn"
+
+[[providers]]
+id = "hyprshutdown"
+prefix = ":hs"
+icon = "system-shutdown"
+"#,
+        );
+        write(&dir.path().join("plugins/hyprshutdown/main.rn"), "// rune");
+
+        let artifacts = scan_legacy_artifacts(dir.path());
+        assert_eq!(artifacts.len(), 1);
+        match &artifacts[0].kind {
+            LegacyKind::Plugin {
+                id,
+                name,
+                prefix,
+                icon,
+                entry_point,
+            } => {
+                assert_eq!(id, "hyprshutdown");
+                assert_eq!(name.as_deref(), Some("Hyprshutdown"));
+                assert_eq!(prefix.as_deref(), Some(":hs"));
+                assert_eq!(icon.as_deref(), Some("system-shutdown"));
+                assert_eq!(entry_point.as_deref(), Some("main.rn"));
+            }
+            other => panic!("expected Plugin, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn scan_skips_directories_without_plugin_toml() {
+        // A dir under plugins/ with no manifest is just user data
+        // (editor configs, doc drafts, etc.) — not a real plugin.
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(dir.path().join("plugins/orphan")).expect("mkdir");
+        std::fs::create_dir_all(dir.path().join("plugins/docs")).expect("mkdir");
+
+        let artifacts = scan_legacy_artifacts(dir.path());
+        assert!(
+            artifacts.is_empty(),
+            "dirs without plugin.toml must not be flagged; got: {:?}",
+            artifacts
+        );
+    }
+
+    #[test]
+    fn scan_skips_dotfile_directories() {
+        // .claude, .git, .cache etc. are never plugins.
+        let dir = tempfile::tempdir().expect("tempdir");
+        write(
+            &dir.path().join("plugins/.claude/plugin.toml"),
+            "[plugin]\nid = \".claude\"\n",
+        );
+        let artifacts = scan_legacy_artifacts(dir.path());
+        assert!(
+            artifacts.is_empty(),
+            "dotfile dirs must be skipped even with a manifest; got: {:?}",
+            artifacts
+        );
+    }
+
+    #[test]
+    fn scan_tolerates_malformed_manifest() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write(
+            &dir.path().join("plugins/broken/plugin.toml"),
+            "this is not = valid toml [[",
+        );
+
+        let artifacts = scan_legacy_artifacts(dir.path());
+        assert_eq!(artifacts.len(), 1);
+        match &artifacts[0].kind {
+            LegacyKind::Plugin { id, name, prefix, .. } => {
+                assert_eq!(id, "broken");
+                assert!(name.is_none());
+                assert!(prefix.is_none());
+            }
+            other => panic!("expected Plugin, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn scan_detects_scripts_directory_with_listing() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write(&dir.path().join("scripts/foo.sh"), "#!/bin/sh\n");
+        write(&dir.path().join("scripts/bar.sh"), "#!/bin/sh\n");
+
+        let artifacts = scan_legacy_artifacts(dir.path());
+        assert_eq!(artifacts.len(), 1);
+        match &artifacts[0].kind {
+            LegacyKind::ScriptsDir { entries } => {
+                assert_eq!(entries.len(), 2);
+                assert!(entries.contains(&"foo.sh".to_string()));
+                assert!(entries.contains(&"bar.sh".to_string()));
+            }
+            other => panic!("expected ScriptsDir, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn scan_reports_both_plugins_and_scripts_when_present() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write(
+            &dir.path().join("plugins/p1/plugin.toml"),
+            r#"[plugin] id = "p1""#,
+        );
+        write(&dir.path().join("scripts/x.sh"), "#!/bin/sh\n");
+
+        let artifacts = scan_legacy_artifacts(dir.path());
+        assert_eq!(artifacts.len(), 2);
+        let kinds: Vec<&str> = artifacts
+            .iter()
+            .map(|a| match a.kind {
+                LegacyKind::Plugin { .. } => "plugin",
+                LegacyKind::ScriptsDir { .. } => "scripts",
+            })
+            .collect();
+        assert!(kinds.contains(&"plugin"));
+        assert!(kinds.contains(&"scripts"));
+    }
+
+    #[test]
+    fn migrate_outcome_includes_legacy_artifacts_field() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let toml_path = write_toml(dir.path(), "[appearance]\ntheme = \"owl\"\n");
+        let lua_path = dir.path().join("owlry.lua");
+        write(
+            &dir.path().join("plugins/hs/plugin.toml"),
+            "[plugin]\nid = \"hs\"\n",
+        );
+
+        let req = MigrateRequest {
+            toml_path: &toml_path,
+            lua_path: &lua_path,
+            force: false,
+        };
+        let outcome = migrate(&req).expect("migrate");
+        assert_eq!(outcome.legacy_artifacts.len(), 1);
+        match &outcome.legacy_artifacts[0].kind {
+            LegacyKind::Plugin { id, .. } => assert_eq!(id, "hs"),
+            other => panic!("expected Plugin, got {:?}", other),
+        }
     }
 }
