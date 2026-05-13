@@ -82,3 +82,63 @@ impl CliArgs {
         Self::parse()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn no_args_yields_ui_launch_defaults() {
+        let args = CliArgs::try_parse_from(["owlry"]).unwrap();
+        assert!(!args.daemon);
+        assert!(args.mode.is_none());
+        assert!(args.profile.is_none());
+        assert!(args.prompt.is_none());
+    }
+
+    #[test]
+    fn dash_d_enables_daemon_mode() {
+        let args = CliArgs::try_parse_from(["owlry", "-d"]).unwrap();
+        assert!(args.daemon);
+    }
+
+    #[test]
+    fn long_daemon_flag_enables_daemon_mode() {
+        let args = CliArgs::try_parse_from(["owlry", "--daemon"]).unwrap();
+        assert!(args.daemon);
+    }
+
+    #[test]
+    fn daemon_flag_conflicts_with_ui_flags() {
+        // -d must reject UI-only flags so a single invocation can't try to
+        // both run the daemon and launch a UI in single-mode.
+        assert!(CliArgs::try_parse_from(["owlry", "-d", "-m", "app"]).is_err());
+        assert!(CliArgs::try_parse_from(["owlry", "-d", "--profile", "dev"]).is_err());
+        assert!(CliArgs::try_parse_from(["owlry", "-d", "-p", "prompt"]).is_err());
+    }
+
+    #[test]
+    fn mode_flag_parses_known_providers() {
+        let args = CliArgs::try_parse_from(["owlry", "-m", "app"]).unwrap();
+        assert_eq!(args.mode, Some(ProviderType::Application));
+
+        let args = CliArgs::try_parse_from(["owlry", "-m", "cmd"]).unwrap();
+        assert_eq!(args.mode, Some(ProviderType::Command));
+
+        let args = CliArgs::try_parse_from(["owlry", "-m", "dmenu"]).unwrap();
+        assert_eq!(args.mode, Some(ProviderType::Dmenu));
+
+        // Unknown modes become Plugin(s) so user-defined providers (Phase 3+)
+        // and built-in provider IDs (uuctl, bookmarks, etc.) work uniformly.
+        let args = CliArgs::try_parse_from(["owlry", "-m", "uuctl"]).unwrap();
+        assert_eq!(args.mode, Some(ProviderType::Plugin("uuctl".into())));
+    }
+
+    #[test]
+    fn plugin_subcommand_is_no_longer_recognised() {
+        // The entire `plugin` subcommand tree was dropped in v2.
+        assert!(CliArgs::try_parse_from(["owlry", "plugin", "list"]).is_err());
+        assert!(CliArgs::try_parse_from(["owlry", "plugin", "install", "x"]).is_err());
+    }
+}

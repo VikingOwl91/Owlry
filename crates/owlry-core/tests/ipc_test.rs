@@ -132,6 +132,25 @@ fn test_terminal_field_defaults_false() {
 }
 
 #[test]
+fn test_plugin_list_request_is_rejected() {
+    // v2 dropped Request::PluginList. The daemon must reject incoming
+    // `{"type":"plugin_list"}` requests so old clients fail loudly instead
+    // of silently appearing to work.
+    let result: Result<Request, _> = serde_json::from_str(r#"{"type":"plugin_list"}"#);
+    assert!(result.is_err(), "plugin_list request must not deserialize");
+}
+
+#[test]
+fn test_plugin_list_response_is_rejected() {
+    // Same on the response side — old daemons replying with
+    // `{"type":"plugin_list", ...}` must fail to parse so clients can't
+    // accidentally treat them as valid.
+    let result: Result<Response, _> =
+        serde_json::from_str(r#"{"type":"plugin_list","entries":[]}"#);
+    assert!(result.is_err(), "plugin_list response must not deserialize");
+}
+
+#[test]
 fn test_terminal_field_roundtrip() {
     let item = ResultItem {
         id: "htop".into(),

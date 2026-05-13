@@ -450,7 +450,8 @@ This section captures in-progress state. Update freely as work proceeds.
 - **Checkpoints landed:**
   - `163e68a` — plan doc
   - `2fc976b` — D15–D21 resolutions
-  - (next) — C-ABI demolition: tasks #3/#4/#5 done in one commit
+  - `ae4a903` — C-ABI demolition: tasks #3/#4/#5 done in one commit
+  - (next) — TDD characterization pass for demolition (Provider trait defaults, ProviderManager submenu/action dispatch, FromStr aliases, ItemSource simplification, CLI `-d` flag, plugin_list IPC rejection)
 - **Tasks done:** #1 inventory, #3 delete C-ABI, #4 delete Rune+Lua crates, #5 delete config_editor (scripts never lived in this repo)
 - **Tasks remaining (Phase 1):** #2 workspace collapse, #6 convert 8 plugins, #7 cargo features, #8 sys→power rename, #9 CLI subcommands, #10 auto-mode test, #11 final build+smoke
 - **Stray processes from inventory phase:**

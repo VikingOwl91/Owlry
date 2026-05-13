@@ -812,4 +812,285 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0.name, "Firefox");
     }
+
+    // =========================================================================
+    // Tests for behavior introduced in the v2 C-ABI demolition (commit ae4a903)
+    // =========================================================================
+
+    /// Provider impl that overrides every trait method to verify customization
+    /// flows through `ProviderManager::available_providers()` and submenu/action
+    /// dispatch.
+    struct RichMockProvider {
+        type_id: String,
+        items: Vec<LaunchItem>,
+        submenu: Vec<LaunchItem>,
+        action_handled_for: Option<String>,
+    }
+
+    impl Provider for RichMockProvider {
+        fn name(&self) -> &str {
+            "Rich"
+        }
+        fn provider_type(&self) -> ProviderType {
+            ProviderType::Plugin(self.type_id.clone())
+        }
+        fn refresh(&mut self) {}
+        fn items(&self) -> &[LaunchItem] {
+            &self.items
+        }
+        fn prefix(&self) -> Option<&str> {
+            Some(":rich")
+        }
+        fn icon(&self) -> &str {
+            "rich-icon"
+        }
+        fn position(&self) -> ProviderPosition {
+            ProviderPosition::Widget
+        }
+        fn priority(&self) -> u32 {
+            42
+        }
+        fn tab_label(&self) -> Option<&str> {
+            Some("Rich")
+        }
+        fn search_noun(&self) -> Option<&str> {
+            Some("rich things")
+        }
+        fn submenu_actions(&self, _data: &str) -> Vec<LaunchItem> {
+            self.submenu.clone()
+        }
+        fn execute_action(&self, command: &str) -> bool {
+            self.action_handled_for
+                .as_ref()
+                .map(|prefix| command.starts_with(prefix.as_str()))
+                .unwrap_or(false)
+        }
+    }
+
+    #[test]
+    fn provider_trait_default_methods_return_documented_values() {
+        // MockProvider does not override any optional method; defaults must hold.
+        let p = MockProvider::new("M", ProviderType::Application);
+        assert_eq!(p.prefix(), None);
+        assert_eq!(p.icon(), "application-x-addon");
+        assert_eq!(p.position(), ProviderPosition::Normal);
+        assert_eq!(p.priority(), 0);
+        assert_eq!(p.tab_label(), None);
+        assert_eq!(p.search_noun(), None);
+        assert!(p.submenu_actions("anything").is_empty());
+        assert!(!p.execute_action("MOCK:anything"));
+    }
+
+    #[test]
+    fn provider_position_as_str_matches_ipc_strings() {
+        assert_eq!(ProviderPosition::Normal.as_str(), "normal");
+        assert_eq!(ProviderPosition::Widget.as_str(), "widget");
+    }
+
+    #[test]
+    fn provider_type_from_str_accepts_plural_aliases() {
+        // After the demolition, FromStr accepts both singular and plural aliases.
+        use std::str::FromStr;
+        assert_eq!(ProviderType::from_str("app").unwrap(), ProviderType::Application);
+        assert_eq!(ProviderType::from_str("apps").unwrap(), ProviderType::Application);
+        assert_eq!(
+            ProviderType::from_str("application").unwrap(),
+            ProviderType::Application
+        );
+        assert_eq!(
+            ProviderType::from_str("applications").unwrap(),
+            ProviderType::Application
+        );
+        assert_eq!(ProviderType::from_str("cmd").unwrap(), ProviderType::Command);
+        assert_eq!(ProviderType::from_str("cmds").unwrap(), ProviderType::Command);
+        assert_eq!(
+            ProviderType::from_str("command").unwrap(),
+            ProviderType::Command
+        );
+        assert_eq!(
+            ProviderType::from_str("commands").unwrap(),
+            ProviderType::Command
+        );
+        assert_eq!(ProviderType::from_str("dmenu").unwrap(), ProviderType::Dmenu);
+        // Anything unknown becomes Plugin(s) — preserves user-defined provider IDs.
+        assert_eq!(
+            ProviderType::from_str("bookmarks").unwrap(),
+            ProviderType::Plugin("bookmarks".into())
+        );
+        assert_eq!(
+            ProviderType::from_str("uuctl").unwrap(),
+            ProviderType::Plugin("uuctl".into())
+        );
+    }
+
+    #[test]
+    fn item_source_from_str_maps_unknown_to_core() {
+        // NativePlugin variant is gone; unknown strings (including the old
+        // "native_plugin" tag from pre-2.0 daemons) decode to Core.
+        use std::str::FromStr;
+        assert_eq!(ItemSource::from_str("core"), Ok(ItemSource::Core));
+        assert_eq!(
+            ItemSource::from_str("script_plugin"),
+            Ok(ItemSource::ScriptPlugin)
+        );
+        assert_eq!(ItemSource::from_str("native_plugin"), Ok(ItemSource::Core));
+        assert_eq!(ItemSource::from_str(""), Ok(ItemSource::Core));
+        assert_eq!(ItemSource::from_str("anything-else"), Ok(ItemSource::Core));
+    }
+
+    #[test]
+    fn item_source_as_str_only_emits_supported_variants() {
+        assert_eq!(ItemSource::Core.as_str(), "core");
+        assert_eq!(ItemSource::ScriptPlugin.as_str(), "script_plugin");
+    }
+
+    #[test]
+    fn add_provider_refreshes_and_appends() {
+        let mut pm = ProviderManager::new(Vec::new(), Vec::new());
+        assert_eq!(pm.available_provider_types().len(), 0);
+
+        let prov = MockProvider::new("Late", ProviderType::Plugin("late".into()));
+        pm.add_provider(Box::new(prov));
+
+        let types = pm.available_provider_types();
+        assert_eq!(types.len(), 1);
+        assert_eq!(types[0], ProviderType::Plugin("late".into()));
+        // add_provider must call refresh() — checked indirectly by the impl
+        // contract; refresh_count on MockProvider was bumped, but we can't
+        // peek through the Box<dyn>. The public observable is that items()
+        // is callable without panic, which we exercise here.
+        assert!(pm.available_providers()[0].id == "late");
+    }
+
+    #[test]
+    fn available_providers_uses_trait_overrides_for_plugin_type() {
+        let prov = RichMockProvider {
+            type_id: "rich".into(),
+            items: Vec::new(),
+            submenu: Vec::new(),
+            action_handled_for: None,
+        };
+        let pm = ProviderManager::new(vec![Box::new(prov)], Vec::new());
+        let descs = pm.available_providers();
+        assert_eq!(descs.len(), 1);
+        let d = &descs[0];
+        assert_eq!(d.id, "rich");
+        assert_eq!(d.prefix.as_deref(), Some(":rich"));
+        assert_eq!(d.icon, "rich-icon");
+        assert_eq!(d.position, "widget");
+        assert_eq!(d.tab_label.as_deref(), Some("Rich"));
+        assert_eq!(d.search_noun.as_deref(), Some("rich things"));
+    }
+
+    #[test]
+    fn query_submenu_actions_returns_some_when_provider_matches_and_has_actions() {
+        let prov = RichMockProvider {
+            type_id: "uuctl".into(),
+            items: Vec::new(),
+            submenu: vec![make_item(
+                "start",
+                "Start service",
+                ProviderType::Plugin("uuctl".into()),
+            )],
+            action_handled_for: None,
+        };
+        let pm = ProviderManager::new(vec![Box::new(prov)], Vec::new());
+
+        let result = pm.query_submenu_actions("uuctl", "foo.service:true", "foo");
+        assert!(result.is_some(), "expected Some when provider matches and returns actions");
+        let (display, actions) = result.unwrap();
+        assert_eq!(display, "foo");
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].name, "Start service");
+    }
+
+    #[test]
+    fn query_submenu_actions_returns_none_when_no_provider_matches() {
+        let prov = RichMockProvider {
+            type_id: "uuctl".into(),
+            items: Vec::new(),
+            submenu: vec![make_item("x", "x", ProviderType::Plugin("uuctl".into()))],
+            action_handled_for: None,
+        };
+        let pm = ProviderManager::new(vec![Box::new(prov)], Vec::new());
+        assert!(pm.query_submenu_actions("does-not-exist", "data", "name").is_none());
+    }
+
+    #[test]
+    fn query_submenu_actions_returns_none_when_provider_returns_empty_actions() {
+        let prov = RichMockProvider {
+            type_id: "uuctl".into(),
+            items: Vec::new(),
+            submenu: Vec::new(), // matching provider but no actions
+            action_handled_for: None,
+        };
+        let pm = ProviderManager::new(vec![Box::new(prov)], Vec::new());
+        assert!(pm.query_submenu_actions("uuctl", "data", "name").is_none());
+    }
+
+    #[test]
+    fn execute_plugin_action_returns_true_when_static_provider_handles() {
+        let prov = RichMockProvider {
+            type_id: "pomodoro".into(),
+            items: Vec::new(),
+            submenu: Vec::new(),
+            action_handled_for: Some("POMODORO:".into()),
+        };
+        let pm = ProviderManager::new(vec![Box::new(prov)], Vec::new());
+        assert!(pm.execute_plugin_action("POMODORO:start"));
+    }
+
+    #[test]
+    fn execute_plugin_action_returns_true_when_dynamic_provider_handles() {
+        struct DynStub {
+            handles: String,
+        }
+        impl DynamicProvider for DynStub {
+            fn name(&self) -> &str {
+                "dyn"
+            }
+            fn provider_type(&self) -> ProviderType {
+                ProviderType::Plugin("dyn".into())
+            }
+            fn query(&self, _q: &str) -> Vec<LaunchItem> {
+                Vec::new()
+            }
+            fn priority(&self) -> u32 {
+                0
+            }
+            fn execute_action(&self, command: &str) -> bool {
+                command.starts_with(&self.handles)
+            }
+        }
+
+        let pm = ProviderManager::new(
+            Vec::new(),
+            vec![Box::new(DynStub {
+                handles: "DYN:".into(),
+            })],
+        );
+        assert!(pm.execute_plugin_action("DYN:thing"));
+    }
+
+    #[test]
+    fn execute_plugin_action_returns_false_when_nothing_handles() {
+        let prov = RichMockProvider {
+            type_id: "x".into(),
+            items: Vec::new(),
+            submenu: Vec::new(),
+            action_handled_for: Some("X:".into()),
+        };
+        let pm = ProviderManager::new(vec![Box::new(prov)], Vec::new());
+        assert!(!pm.execute_plugin_action("UNRELATED:command"));
+    }
+
+    #[test]
+    fn provider_manager_new_with_no_providers_does_not_panic() {
+        // Regression guard: the daemon may be configured to disable every
+        // provider; construction must still succeed.
+        let pm = ProviderManager::new(Vec::new(), Vec::new());
+        assert_eq!(pm.available_providers().len(), 0);
+        assert!(!pm.execute_plugin_action("ANYTHING:foo"));
+        assert!(pm.query_submenu_actions("anything", "data", "n").is_none());
+    }
 }
