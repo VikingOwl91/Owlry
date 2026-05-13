@@ -2,7 +2,7 @@ use fs2::FileExt;
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::paths;
 
@@ -498,57 +498,85 @@ impl Config {
         })
     }
 
+    /// Resolve the user's effective config. Order per `docs/lua-api.md` §2:
+    ///
+    /// 1. `$XDG_CONFIG_HOME/owlry/owlry.lua` — when present, defaults are the
+    ///    base and Lua overlays. TOML is ignored entirely with an info log.
+    /// 2. `$XDG_CONFIG_HOME/owlry/config.toml` — back-compat path.
+    /// 3. Built-in defaults.
+    ///
+    /// The terminal command is auto-detected at the end regardless of source.
+    ///
+    /// Lua-defined user providers from `owlry.provider {}` are dropped here
+    /// (the [`crate::lua::LuaContext`] is released after merge). Callers that
+    /// need them — the daemon, hot-reload — must use [`LoadedConfig::load`]
+    /// instead, which keeps the context alive.
     pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
-        let path = Self::config_path().ok_or("Could not determine config path")?;
-
-        let mut config = if !path.exists() {
-            info!("Config file not found, using defaults");
-            Self::default()
-        } else {
-            let content = std::fs::read_to_string(&path)?;
-            let mut config: Config = toml::from_str(&content)?;
-            info!("Loaded config from {:?}", path);
-            // Migrate legacy [plugins.<name>] entries to [plugin_config.<name>].
-            // Known PluginsConfig fields are excluded from migration.
-            const KNOWN_PLUGINS_KEYS: &[&str] =
-                &["enabled", "disabled_plugins", "sandbox", "registry_url"];
-            if let Ok(raw) = toml::from_str::<toml::Value>(&content)
-                && let Some(plugins_table) = raw.get("plugins").and_then(|v| v.as_table())
+        #[cfg(feature = "lua")]
+        {
+            if let Some(lua_path) = paths::lua_config_file()
+                && lua_path.exists()
             {
-                for (key, value) in plugins_table {
-                    if !KNOWN_PLUGINS_KEYS.contains(&key.as_str())
-                        && !config.plugin_config.contains_key(key)
-                    {
-                        warn!(
-                            "Config: [plugins.{}] is deprecated; move to [plugin_config.{}]",
-                            key, key
-                        );
-                        config.plugin_config.insert(key.clone(), value.clone());
-                    }
-                }
-            }
-            config
-        };
-
-        // Auto-detect terminal if not configured or configured terminal doesn't exist
-        match &config.general.terminal_command {
-            None => {
-                let terminal = detect_terminal();
-                info!("Detected terminal: {}", terminal);
-                config.general.terminal_command = Some(terminal);
-            }
-            Some(term) if !command_exists(term) => {
-                warn!("Configured terminal '{}' not found, auto-detecting", term);
-                let terminal = detect_terminal();
-                info!("Using detected terminal: {}", terminal);
-                config.general.terminal_command = Some(terminal);
-            }
-            Some(term) => {
-                debug!("Using configured terminal: {}", term);
+                let mut cfg = Self::load_via_lua(&lua_path)?;
+                detect_and_apply_terminal(&mut cfg);
+                return Ok(cfg);
             }
         }
 
+        let mut cfg = Self::load_from_toml(Self::config_path().as_deref())?;
+        detect_and_apply_terminal(&mut cfg);
+        Ok(cfg)
+    }
+
+    /// TOML-only load path. Honours the legacy `[plugins.<name>]` →
+    /// `[plugin_config.<name>]` migration. Returns defaults if the file is
+    /// missing or the path is `None`.
+    pub(crate) fn load_from_toml(
+        path: Option<&Path>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let Some(path) = path else {
+            info!("No TOML config path available; using defaults");
+            return Ok(Self::default());
+        };
+
+        if !path.exists() {
+            info!("Config file not found, using defaults");
+            return Ok(Self::default());
+        }
+
+        let content = std::fs::read_to_string(path)?;
+        let mut config: Config = toml::from_str(&content)?;
+        info!("Loaded config from {:?}", path);
+
+        // Migrate legacy [plugins.<name>] entries to [plugin_config.<name>].
+        // Known PluginsConfig fields are excluded from migration.
+        const KNOWN_PLUGINS_KEYS: &[&str] =
+            &["enabled", "disabled_plugins", "sandbox", "registry_url"];
+        if let Ok(raw) = toml::from_str::<toml::Value>(&content)
+            && let Some(plugins_table) = raw.get("plugins").and_then(|v| v.as_table())
+        {
+            for (key, value) in plugins_table {
+                if !KNOWN_PLUGINS_KEYS.contains(&key.as_str())
+                    && !config.plugin_config.contains_key(key)
+                {
+                    warn!(
+                        "Config: [plugins.{}] is deprecated; move to [plugin_config.{}]",
+                        key, key
+                    );
+                    config.plugin_config.insert(key.clone(), value.clone());
+                }
+            }
+        }
         Ok(config)
+    }
+
+    /// Evaluate `owlry.lua` and overlay it onto defaults. TOML is ignored
+    /// per spec §2. Drops the LuaContext immediately — user providers won't
+    /// survive past this call (use [`LoadedConfig::load`] for those).
+    #[cfg(feature = "lua")]
+    fn load_via_lua(lua_path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        let loaded = LoadedConfig::load_lua_path(lua_path)?;
+        Ok(loaded.config)
     }
 
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
@@ -594,6 +622,147 @@ impl Config {
         info!("Saved config to {:?}", path);
         Ok(())
     }
+}
+
+/// Auto-detect and apply the terminal command on a [`Config`]. Runs after
+/// every load path (Lua, TOML, defaults) so the effective config always has
+/// a working terminal — even when neither file specified one.
+fn detect_and_apply_terminal(config: &mut Config) {
+    match &config.general.terminal_command {
+        None => {
+            let terminal = detect_terminal();
+            info!("Detected terminal: {}", terminal);
+            config.general.terminal_command = Some(terminal);
+        }
+        Some(term) if !command_exists(term) => {
+            warn!("Configured terminal '{}' not found, auto-detecting", term);
+            let terminal = detect_terminal();
+            info!("Using detected terminal: {}", terminal);
+            config.general.terminal_command = Some(terminal);
+        }
+        Some(term) => {
+            debug!("Using configured terminal: {}", term);
+        }
+    }
+}
+
+// =============================================================================
+// LoadedConfig — full resolution result with the Lua runtime kept alive
+// =============================================================================
+//
+// Read this before touching the type: the daemon needs the LuaContext to
+// outlive the user-defined providers it captured (their `items` closures
+// reference Lua state). [`Config::load`] discards the context after merging
+// scalars; daemon and hot-reload paths must use [`LoadedConfig::load`] to
+// hold it open.
+
+/// Full result of config resolution: the effective [`Config`] plus the
+/// optional Lua runtime + captured user-provider specs.
+///
+/// Behaviour rules:
+/// - `lua` and `lua_path` are `Some` only when `owlry.lua` was found and
+///   evaluated successfully. Otherwise both are `None` and `user_providers`
+///   is empty.
+/// - When `lua` is present, the base [`Config`] is built from defaults and
+///   overlaid with Lua state — TOML is intentionally ignored (spec §2).
+///   An info log is emitted if a `config.toml` is sitting next to it.
+#[cfg(feature = "lua")]
+pub struct LoadedConfig {
+    pub config: Config,
+    pub lua: Option<crate::lua::LuaContext>,
+    pub lua_path: Option<PathBuf>,
+    pub user_providers: Vec<crate::lua::LuaProviderSpec>,
+}
+
+#[cfg(feature = "lua")]
+impl std::fmt::Debug for LoadedConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LoadedConfig")
+            .field("config", &"<Config>")
+            .field("lua", &self.lua.as_ref().map(|_| "<LuaContext>"))
+            .field("lua_path", &self.lua_path)
+            .field("user_providers", &self.user_providers)
+            .finish()
+    }
+}
+
+#[cfg(feature = "lua")]
+impl LoadedConfig {
+    /// Build a [`LoadedConfig`] containing only defaults + an auto-detected
+    /// terminal. Useful for tests and the `load_or_default` fallback.
+    pub fn defaults() -> Self {
+        let mut config = Config::default();
+        detect_and_apply_terminal(&mut config);
+        Self {
+            config,
+            lua: None,
+            lua_path: None,
+            user_providers: Vec::new(),
+        }
+    }
+
+    pub fn load_or_default() -> Self {
+        Self::load().unwrap_or_else(|e| {
+            warn!("Failed to load config: {}; using defaults", e);
+            Self::defaults()
+        })
+    }
+
+    /// Resolve via the full Lua → TOML → defaults order. See
+    /// [`Config::load`] for the same precedence semantics; the difference
+    /// is that this variant preserves the Lua runtime and user providers.
+    pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
+        if let Some(lua_path) = paths::lua_config_file()
+            && lua_path.exists()
+        {
+            return Self::load_lua_path(&lua_path);
+        }
+
+        // No Lua config — fall back to TOML or defaults.
+        let mut config = Config::load_from_toml(Config::config_path().as_deref())?;
+        detect_and_apply_terminal(&mut config);
+        Ok(Self {
+            config,
+            lua: None,
+            lua_path: None,
+            user_providers: Vec::new(),
+        })
+    }
+
+    /// Internal: evaluate a specific Lua file and produce a LoadedConfig.
+    /// Used by both the public load path and [`Config::load_via_lua`].
+    pub(crate) fn load_lua_path(lua_path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        // If a TOML config sits alongside the Lua file, surface that we're
+        // ignoring it. Per spec §2: "TOML is ignored entirely when Lua is
+        // present." A 2.2 release will upgrade this to a warning; 3.0
+        // removes TOML support entirely.
+        if let Some(toml_path) = paths::config_file()
+            && toml_path.exists()
+        {
+            info!(
+                "owlry.lua present at {:?} — ignoring {:?} (Lua takes precedence)",
+                lua_path, toml_path
+            );
+        }
+
+        let ctx = crate::lua::LuaContext::new()?;
+        ctx.eval_file(lua_path)?;
+        let lua_cfg = ctx.snapshot();
+
+        let mut config = Config::default();
+        lua_cfg.merge_into(&mut config);
+        detect_and_apply_terminal(&mut config);
+
+        info!("Loaded Lua config from {:?}", lua_path);
+
+        Ok(Self {
+            config,
+            lua: Some(ctx),
+            lua_path: Some(lua_path.to_path_buf()),
+            user_providers: lua_cfg.user_providers,
+        })
+    }
+
 }
 
 #[cfg(test)]
@@ -645,5 +814,162 @@ badge_sys = "#ff8800"
             cfg.appearance.colors.badge_power.as_deref(),
             Some("#ff8800")
         );
+    }
+}
+
+#[cfg(all(test, feature = "lua"))]
+mod loaded_config_tests {
+    //! Tests for the Lua-aware config resolver. Each test writes a temp file
+    //! and feeds the exact path through [`LoadedConfig::load_lua_path`] or
+    //! [`Config::load_from_toml`] to avoid touching the real XDG config dir.
+
+    use super::*;
+    use std::io::Write;
+
+    fn write_file(dir: &std::path::Path, name: &str, contents: &str) -> PathBuf {
+        let path = dir.join(name);
+        let mut f = std::fs::File::create(&path).expect("create");
+        f.write_all(contents.as_bytes()).expect("write");
+        path
+    }
+
+    #[test]
+    fn defaults_apply_when_no_files_exist() {
+        let lc = LoadedConfig::defaults();
+        assert!(lc.lua.is_none());
+        assert!(lc.lua_path.is_none());
+        assert!(lc.user_providers.is_empty());
+        // Terminal detection should always fill this in.
+        assert!(lc.config.general.terminal_command.is_some());
+    }
+
+    #[test]
+    fn lua_path_overrides_defaults_with_set_values() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let lua = write_file(
+            dir.path(),
+            "owlry.lua",
+            r#"owlry.set { theme = "nord", width = 1024, max_results = 25 }"#,
+        );
+
+        let lc = LoadedConfig::load_lua_path(&lua).expect("load");
+        assert_eq!(lc.config.appearance.theme.as_deref(), Some("nord"));
+        assert_eq!(lc.config.appearance.width, 1024);
+        assert_eq!(lc.config.general.max_results, 25);
+        assert!(lc.lua.is_some(), "LuaContext must be retained");
+        assert_eq!(lc.lua_path.as_deref(), Some(lua.as_path()));
+        assert!(lc.user_providers.is_empty());
+    }
+
+    #[test]
+    fn lua_providers_list_disables_unlisted_built_ins() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let lua = write_file(
+            dir.path(),
+            "owlry.lua",
+            r#"owlry.providers { "app", "cmd" }"#, // power, ssh, emoji etc. → off
+        );
+        let lc = LoadedConfig::load_lua_path(&lua).expect("load");
+        assert!(lc.config.providers.applications);
+        assert!(lc.config.providers.commands);
+        assert!(!lc.config.providers.power);
+        assert!(!lc.config.providers.ssh);
+        assert!(!lc.config.providers.systemd);
+    }
+
+    #[test]
+    fn lua_user_provider_is_captured() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let lua = write_file(
+            dir.path(),
+            "owlry.lua",
+            r#"
+            owlry.provider {
+              id = "hs",
+              prefix = ":hs",
+              items = function() return { { name = "Lock", command = "hyprlock" } } end,
+            }
+            "#,
+        );
+        let lc = LoadedConfig::load_lua_path(&lua).expect("load");
+        assert_eq!(lc.user_providers.len(), 1);
+        assert_eq!(lc.user_providers[0].id, "hs");
+        assert_eq!(lc.user_providers[0].prefix.as_deref(), Some(":hs"));
+    }
+
+    #[test]
+    fn lua_provider_remains_callable_after_load() {
+        // End-to-end: a LuaProvider built from a LoadedConfig must still be
+        // able to call its items function once the spec is wired up. This
+        // is the integration that 3.4 unlocks.
+        use crate::lua::LuaProvider;
+        use crate::providers::Provider;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let lua = write_file(
+            dir.path(),
+            "owlry.lua",
+            r#"
+            owlry.provider {
+              id = "hs",
+              items = function()
+                return {
+                  { name = "Lock",     command = "hyprlock" },
+                  { name = "Shutdown", command = "systemctl poweroff" },
+                }
+              end,
+            }
+            "#,
+        );
+        let lc = LoadedConfig::load_lua_path(&lua).expect("load");
+        let ctx = lc.lua.as_ref().expect("lua context");
+        let mut p = LuaProvider::new(lc.user_providers[0].clone(), ctx.lua_handle());
+        p.refresh();
+        let items = p.items();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].name, "Lock");
+        assert_eq!(items[1].name, "Shutdown");
+    }
+
+    #[test]
+    fn lua_syntax_error_is_surfaced() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let lua = write_file(dir.path(), "owlry.lua", "this is not valid lua $$$");
+        let err = LoadedConfig::load_lua_path(&lua).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("Lua") || msg.contains("evaluation"),
+            "should mention Lua failure; got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn toml_only_load_returns_defaults_when_path_missing() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let missing = dir.path().join("does-not-exist.toml");
+        let cfg = Config::load_from_toml(Some(&missing)).expect("load");
+        // Defaults — terminal NOT auto-detected here (helper is internal).
+        assert!(cfg.providers.applications);
+        assert!(cfg.providers.power);
+    }
+
+    #[test]
+    fn toml_only_load_parses_existing_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let toml = write_file(
+            dir.path(),
+            "config.toml",
+            r#"
+[providers]
+power = false
+ssh = false
+"#,
+        );
+        let cfg = Config::load_from_toml(Some(&toml)).expect("load");
+        assert!(!cfg.providers.power);
+        assert!(!cfg.providers.ssh);
+        // Untouched keys keep their defaults.
+        assert!(cfg.providers.applications);
     }
 }

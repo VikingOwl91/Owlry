@@ -80,10 +80,12 @@ fn read_bounded_line(reader: &mut BufReader<UnixStream>, max: usize) -> io::Resu
 use log::{error, info, warn};
 
 use crate::config::Config;
+#[cfg(feature = "lua")]
+use crate::config::LoadedConfig;
 use crate::data::FrecencyStore;
 use crate::filter::ProviderFilter;
 use crate::ipc::{ProviderDesc, Request, Response, ResultItem};
-use crate::providers::{LaunchItem, ProviderManager};
+use crate::providers::{LaunchItem, Provider, ProviderManager};
 
 /// IPC server that listens on a Unix domain socket and dispatches
 /// requests to the provider system.
@@ -93,6 +95,11 @@ pub struct Server {
     provider_manager: Arc<RwLock<ProviderManager>>,
     frecency: Arc<RwLock<FrecencyStore>>,
     config: Arc<RwLock<Config>>,
+    /// Keeps the Lua runtime alive for the daemon's lifetime so user
+    /// providers (their `items` closures) remain callable. Held but not
+    /// otherwise accessed here — hot-reload (Phase 3.7) will use it.
+    #[cfg(feature = "lua")]
+    _lua_ctx: Option<crate::lua::LuaContext>,
 }
 
 impl Server {
@@ -110,8 +117,40 @@ impl Server {
         std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o600))?;
         info!("IPC server listening on {:?}", socket_path);
 
-        let config = Arc::new(RwLock::new(Config::load_or_default()));
-        let provider_manager = ProviderManager::new_with_config(Arc::clone(&config));
+        // Resolve config + any Lua-defined user providers in a single pass.
+        // When the `lua` feature is off the daemon falls back to the
+        // TOML-only loader used pre-Phase-3.
+        #[cfg(feature = "lua")]
+        let (config, user_providers, lua_ctx) = {
+            let loaded = LoadedConfig::load_or_default();
+            let user_providers: Vec<Box<dyn Provider>> = if let Some(ctx) = &loaded.lua {
+                loaded
+                    .user_providers
+                    .iter()
+                    .cloned()
+                    .map(|spec| {
+                        Box::new(crate::lua::LuaProvider::new(spec, ctx.lua_handle()))
+                            as Box<dyn Provider>
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            (
+                Arc::new(RwLock::new(loaded.config)),
+                user_providers,
+                loaded.lua,
+            )
+        };
+
+        #[cfg(not(feature = "lua"))]
+        let (config, user_providers) = (
+            Arc::new(RwLock::new(Config::load_or_default())),
+            Vec::<Box<dyn Provider>>::new(),
+        );
+
+        let provider_manager =
+            ProviderManager::new_with_config(Arc::clone(&config), user_providers);
         let frecency = FrecencyStore::new();
 
         Ok(Self {
@@ -120,6 +159,8 @@ impl Server {
             provider_manager: Arc::new(RwLock::new(provider_manager)),
             frecency: Arc::new(RwLock::new(frecency)),
             config,
+            #[cfg(feature = "lua")]
+            _lua_ctx: lua_ctx,
         })
     }
 

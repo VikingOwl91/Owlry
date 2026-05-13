@@ -271,9 +271,14 @@ impl ProviderManager {
 
     /// Build a ProviderManager for the daemon, sourcing enabled providers from config.
     ///
-    /// Only built-in / compiled-in providers are registered here. Future Lua-defined
-    /// providers (Phase 3+) are added via [`Self::add_provider`] after construction.
-    pub fn new_with_config(config: Arc<RwLock<Config>>) -> Self {
+    /// `user_providers` are appended after the built-ins — typically these
+    /// are `LuaProvider`s constructed from `owlry.provider {}` registrations
+    /// (Phase 3.3+). Pass an empty Vec if there are no user providers, or
+    /// when the `lua` feature is off.
+    pub fn new_with_config(
+        config: Arc<RwLock<Config>>,
+        user_providers: Vec<Box<dyn Provider>>,
+    ) -> Self {
         let cfg_snapshot = match config.read() {
             Ok(cfg) => cfg.providers.clone(),
             Err(_) => {
@@ -311,6 +316,14 @@ impl ProviderManager {
         if cfg_snapshot.systemd {
             core_providers.push(Box::new(systemd::SystemdProvider::new()));
             info!("Registered systemd provider (type_id: uuctl)");
+        }
+
+        // Lua-defined user providers join the static set after built-ins.
+        // They were enumerated in the LuaConfig snapshot during Config load
+        // and turned into Box<dyn Provider> by the caller (see Server::bind).
+        if !user_providers.is_empty() {
+            info!("Registering {} user-defined provider(s)", user_providers.len());
+            core_providers.extend(user_providers);
         }
 
         let mut builtin_dynamic: Vec<Box<dyn DynamicProvider>> = Vec::new();
