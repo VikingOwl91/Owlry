@@ -144,7 +144,10 @@ mod tests {
     #[test]
     fn provider_type_is_power_plugin() {
         let provider = PowerProvider::new();
-        assert_eq!(provider.provider_type(), ProviderType::Plugin("power".into()));
+        assert_eq!(
+            provider.provider_type(),
+            ProviderType::Plugin("power".into())
+        );
     }
 
     #[test]

@@ -1,18 +1,18 @@
 use crate::backend::SearchBackend;
 use crate::cli::CliArgs;
 use crate::client::CoreClient;
+use crate::config::Config;
+use crate::data::FrecencyStore;
+use crate::filter::ProviderFilter;
+use crate::paths;
 use crate::providers::DmenuProvider;
+use crate::providers::{Provider, ProviderManager, ProviderType};
 use crate::theme;
 use crate::ui::MainWindow;
 use gtk4::prelude::*;
 use gtk4::{Application, CssProvider, gio};
 use gtk4_layer_shell::{Edge, Layer, LayerShell};
 use log::{debug, info, warn};
-use crate::config::Config;
-use crate::data::FrecencyStore;
-use crate::filter::ProviderFilter;
-use crate::paths;
-use crate::providers::{Provider, ProviderManager, ProviderType};
 use std::cell::RefCell;
 use std::rc::Rc;
 

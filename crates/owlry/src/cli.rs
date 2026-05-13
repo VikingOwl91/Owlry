@@ -221,7 +221,9 @@ mod tests {
         let args = CliArgs::try_parse_from(["owlry", "config", "validate"]).unwrap();
         assert!(matches!(
             args.command,
-            Some(Command::Config { action: ConfigAction::Validate })
+            Some(Command::Config {
+                action: ConfigAction::Validate
+            })
         ));
     }
 
@@ -230,7 +232,9 @@ mod tests {
         let args = CliArgs::try_parse_from(["owlry", "config", "show"]).unwrap();
         assert!(matches!(
             args.command,
-            Some(Command::Config { action: ConfigAction::Show })
+            Some(Command::Config {
+                action: ConfigAction::Show
+            })
         ));
     }
 

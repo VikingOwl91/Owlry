@@ -16,10 +16,7 @@ use log::debug;
 fn try_acquire_lock() -> Option<std::fs::File> {
     use std::os::unix::fs::OpenOptionsExt;
 
-    let lock_path = paths::socket_path()
-        .parent()
-        .unwrap()
-        .join("owlry-ui.lock");
+    let lock_path = paths::socket_path().parent().unwrap().join("owlry-ui.lock");
 
     if let Some(parent) = lock_path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -123,9 +120,8 @@ fn init_logger() {
     } else {
         "info"
     };
-    let _ = env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or(default_level),
-    )
-    .format_timestamp_millis()
-    .try_init();
+    let _ =
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(default_level))
+            .format_timestamp_millis()
+            .try_init();
 }

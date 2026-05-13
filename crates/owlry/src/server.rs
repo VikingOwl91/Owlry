@@ -4,8 +4,8 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
 
 /// Maximum allowed size for a single IPC request line (1 MiB).
 const MAX_REQUEST_SIZE: usize = 1_048_576;
@@ -130,22 +130,19 @@ impl Server {
             use signal_hook::consts::SIGHUP;
             use signal_hook::iterator::Signals;
             let config = Arc::clone(&self.config);
-            let mut signals = Signals::new([SIGHUP])
-                .map_err(io::Error::other)?;
+            let mut signals = Signals::new([SIGHUP]).map_err(io::Error::other)?;
             thread::spawn(move || {
                 for _sig in signals.forever() {
                     match Config::load() {
-                        Ok(new_cfg) => {
-                            match config.write() {
-                                Ok(mut cfg) => {
-                                    *cfg = new_cfg;
-                                    info!("Config reloaded via SIGHUP");
-                                }
-                                Err(_) => {
-                                    warn!("SIGHUP: config lock poisoned; reload skipped");
-                                }
+                        Ok(new_cfg) => match config.write() {
+                            Ok(mut cfg) => {
+                                *cfg = new_cfg;
+                                info!("Config reloaded via SIGHUP");
                             }
-                        }
+                            Err(_) => {
+                                warn!("SIGHUP: config lock poisoned; reload skipped");
+                            }
+                        },
                         Err(e) => {
                             warn!("SIGHUP: failed to reload config: {}", e);
                         }
@@ -161,8 +158,7 @@ impl Server {
             use signal_hook::iterator::Signals;
             let frecency = Arc::clone(&self.frecency);
             let socket_path = self.socket_path.clone();
-            let mut signals = Signals::new([SIGTERM, SIGINT])
-                .map_err(io::Error::other)?;
+            let mut signals = Signals::new([SIGTERM, SIGINT]).map_err(io::Error::other)?;
             thread::spawn(move || {
                 // Block until we receive SIGTERM or SIGINT, then save and exit.
                 let _ = signals.forever().next();
@@ -186,16 +182,18 @@ impl Server {
         // Periodic frecency auto-save every 5 minutes.
         {
             let frecency = Arc::clone(&self.frecency);
-            thread::spawn(move || loop {
-                thread::sleep(Duration::from_secs(300));
-                match frecency.write() {
-                    Ok(mut f) => {
-                        if let Err(e) = f.save() {
-                            warn!("Periodic frecency save failed: {}", e);
+            thread::spawn(move || {
+                loop {
+                    thread::sleep(Duration::from_secs(300));
+                    match frecency.write() {
+                        Ok(mut f) => {
+                            if let Err(e) = f.save() {
+                                warn!("Periodic frecency save failed: {}", e);
+                            }
                         }
-                    }
-                    Err(_) => {
-                        warn!("Periodic frecency save: lock poisoned; skipping");
+                        Err(_) => {
+                            warn!("Periodic frecency save: lock poisoned; skipping");
+                        }
                     }
                 }
             });
@@ -218,9 +216,15 @@ impl Server {
                             });
                         }
                         None => {
-                            warn!("Connection limit reached ({} max); rejecting client", MAX_CONNECTIONS);
+                            warn!(
+                                "Connection limit reached ({} max); rejecting client",
+                                MAX_CONNECTIONS
+                            );
                             let resp = Response::Error {
-                                message: format!("server busy: max {} concurrent connections", MAX_CONNECTIONS),
+                                message: format!(
+                                    "server busy: max {} concurrent connections",
+                                    MAX_CONNECTIONS
+                                ),
                             };
                             let _ = write_response(&mut stream, &resp);
                         }
@@ -315,18 +319,30 @@ impl Server {
                 let (max, weight) = {
                     let cfg = match config.read() {
                         Ok(g) => g,
-                        Err(_) => return Response::Error { message: "internal error: config lock poisoned".into() },
+                        Err(_) => {
+                            return Response::Error {
+                                message: "internal error: config lock poisoned".into(),
+                            };
+                        }
                     };
                     (cfg.general.max_results, cfg.providers.frecency_weight)
                 };
 
                 let pm_guard = match pm.read() {
                     Ok(g) => g,
-                    Err(_) => return Response::Error { message: "internal error: provider lock poisoned".into() },
+                    Err(_) => {
+                        return Response::Error {
+                            message: "internal error: provider lock poisoned".into(),
+                        };
+                    }
                 };
                 let frecency_guard = match frecency.read() {
                     Ok(g) => g,
-                    Err(_) => return Response::Error { message: "internal error: frecency lock poisoned".into() },
+                    Err(_) => {
+                        return Response::Error {
+                            message: "internal error: frecency lock poisoned".into(),
+                        };
+                    }
                 };
                 let results = pm_guard.search_with_frecency(
                     text,
@@ -351,7 +367,11 @@ impl Server {
             } => {
                 let mut frecency_guard = match frecency.write() {
                     Ok(g) => g,
-                    Err(_) => return Response::Error { message: "internal error: frecency lock poisoned".into() },
+                    Err(_) => {
+                        return Response::Error {
+                            message: "internal error: frecency lock poisoned".into(),
+                        };
+                    }
                 };
                 frecency_guard.record_launch(item_id);
                 Response::Ack
@@ -360,7 +380,11 @@ impl Server {
             Request::Providers => {
                 let pm_guard = match pm.read() {
                     Ok(g) => g,
-                    Err(_) => return Response::Error { message: "internal error: provider lock poisoned".into() },
+                    Err(_) => {
+                        return Response::Error {
+                            message: "internal error: provider lock poisoned".into(),
+                        };
+                    }
                 };
                 let descs = pm_guard.available_providers();
                 Response::Providers {
@@ -371,7 +395,11 @@ impl Server {
             Request::Refresh { provider } => {
                 let mut pm_guard = match pm.write() {
                     Ok(g) => g,
-                    Err(_) => return Response::Error { message: "internal error: provider lock poisoned".into() },
+                    Err(_) => {
+                        return Response::Error {
+                            message: "internal error: provider lock poisoned".into(),
+                        };
+                    }
                 };
                 pm_guard.refresh_provider(provider);
                 Response::Ack
@@ -385,7 +413,11 @@ impl Server {
             Request::Submenu { plugin_id, data } => {
                 let pm_guard = match pm.read() {
                     Ok(g) => g,
-                    Err(_) => return Response::Error { message: "internal error: provider lock poisoned".into() },
+                    Err(_) => {
+                        return Response::Error {
+                            message: "internal error: provider lock poisoned".into(),
+                        };
+                    }
                 };
                 match pm_guard.query_submenu_actions(plugin_id, data, plugin_id) {
                     Some((_name, actions)) => Response::SubmenuItems {
@@ -403,7 +435,11 @@ impl Server {
             Request::PluginAction { command } => {
                 let pm_guard = match pm.read() {
                     Ok(g) => g,
-                    Err(_) => return Response::Error { message: "internal error: provider lock poisoned".into() },
+                    Err(_) => {
+                        return Response::Error {
+                            message: "internal error: provider lock poisoned".into(),
+                        };
+                    }
                 };
                 if pm_guard.execute_plugin_action(command) {
                     Response::Ack
@@ -413,7 +449,6 @@ impl Server {
                     }
                 }
             }
-
         }
     }
 }

@@ -4,12 +4,12 @@
 //! In dmenu mode, the UI uses a local ProviderManager directly (no daemon).
 
 use crate::client::CoreClient;
-use log::warn;
 use crate::config::Config;
 use crate::data::FrecencyStore;
 use crate::filter::ProviderFilter;
 use crate::ipc::{ProviderDesc, ResultItem};
 use crate::providers::{ItemSource, LaunchItem, ProviderManager, ProviderType};
+use log::warn;
 use std::sync::{Arc, Mutex};
 
 /// Parameters needed to run a search query on a background thread.

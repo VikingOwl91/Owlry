@@ -1,5 +1,5 @@
-use log::debug;
 use crate::providers::{ItemSource, LaunchItem, Provider, ProviderType};
+use log::debug;
 use std::io::{self, BufRead};
 
 /// Provider for dmenu-style input from stdin

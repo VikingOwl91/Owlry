@@ -478,10 +478,7 @@ mod tests {
         let mut provider = EmojiProvider::new();
         provider.refresh();
 
-        let grinning = provider
-            .items()
-            .iter()
-            .find(|i| i.name == "grinning face");
+        let grinning = provider.items().iter().find(|i| i.name == "grinning face");
         assert!(grinning.is_some());
 
         let item = grinning.unwrap();

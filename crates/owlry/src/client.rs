@@ -79,9 +79,7 @@ impl CoreClient {
         let status = std::process::Command::new("systemctl")
             .args(["--user", "start", "owlryd"])
             .status()
-            .map_err(|e| {
-                io::Error::other(format!("failed to start owlryd via systemd: {e}"))
-            })?;
+            .map_err(|e| io::Error::other(format!("failed to start owlryd via systemd: {e}")))?;
 
         if !status.success() {
             return Err(io::Error::other(format!(
@@ -231,7 +229,7 @@ impl CoreClient {
                 return Err(io::Error::new(
                     io::ErrorKind::UnexpectedEof,
                     "daemon closed the connection",
-                ))
+                ));
             }
         };
         serde_json::from_str(line.trim()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))

@@ -321,14 +321,22 @@ impl ProviderFilter {
         if let Some(rest) = trimmed.strip_prefix(':') {
             if let Some(space_idx) = rest.find(' ') {
                 let prefix_word = &rest[..space_idx];
-                if !prefix_word.is_empty() && prefix_word.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+                if !prefix_word.is_empty()
+                    && prefix_word
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+                {
                     return ParsedQuery {
                         prefix: Some(ProviderType::Plugin(prefix_word.to_string())),
                         tag_filter: None,
                         query: rest[space_idx + 1..].to_string(),
                     };
                 }
-            } else if !rest.is_empty() && rest.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+            } else if !rest.is_empty()
+                && rest
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+            {
                 // Partial prefix (no space yet)
                 return ParsedQuery {
                     prefix: Some(ProviderType::Plugin(rest.to_string())),

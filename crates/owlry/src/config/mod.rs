@@ -262,7 +262,6 @@ pub struct PluginsConfig {
     /// Defaults to the official owlry plugin registry if not specified.
     #[serde(default)]
     pub registry_url: Option<String>,
-
 }
 
 /// Sandbox settings for plugin security
@@ -646,6 +645,9 @@ system = false
 badge_sys = "#ff8800"
 "##;
         let cfg: Config = toml::from_str(toml).expect("must parse");
-        assert_eq!(cfg.appearance.colors.badge_power.as_deref(), Some("#ff8800"));
+        assert_eq!(
+            cfg.appearance.colors.badge_power.as_deref(),
+            Some("#ff8800")
+        );
     }
 }

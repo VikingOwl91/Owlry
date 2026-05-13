@@ -75,7 +75,10 @@ pub fn run_doctor() -> ! {
         }
         Err(e) => {
             let _ = writeln!(out, "  socket: UNREACHABLE ({e})");
-            let _ = writeln!(out, "  hint: start the daemon with `owlry -d` or via systemd");
+            let _ = writeln!(
+                out,
+                "  hint: start the daemon with `owlry -d` or via systemd"
+            );
         }
     }
 

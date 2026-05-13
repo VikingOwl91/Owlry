@@ -1,6 +1,6 @@
+use crate::providers::{LaunchItem, ProviderType};
 use gtk4::prelude::*;
 use gtk4::{Box as GtkBox, Image, Label, ListBoxRow, Orientation, Widget};
-use crate::providers::{LaunchItem, ProviderType};
 
 #[allow(dead_code)]
 pub struct ResultRow {
@@ -107,9 +107,7 @@ impl ResultRow {
         } else {
             // Default icon based on provider type (only core types, plugins should provide icons)
             let default_icon = match &item.provider {
-                crate::providers::ProviderType::Application => {
-                    "application-x-executable-symbolic"
-                }
+                crate::providers::ProviderType::Application => "application-x-executable-symbolic",
                 crate::providers::ProviderType::Command => "utilities-terminal-symbolic",
                 crate::providers::ProviderType::Dmenu => "view-list-symbolic",
                 // Plugins should provide their own icon; fallback to generic addon icon

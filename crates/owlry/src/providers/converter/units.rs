@@ -167,8 +167,16 @@ fn convert_currency(value: f64, from: &str, to: &str) -> Option<ConversionResult
     let from_code = currency::resolve_currency_code(from)?;
     let to_code = currency::resolve_currency_code(to)?;
 
-    let from_rate = if from_code == "EUR" { 1.0 } else { *rates.rates.get(from_code)? };
-    let to_rate = if to_code == "EUR" { 1.0 } else { *rates.rates.get(to_code)? };
+    let from_rate = if from_code == "EUR" {
+        1.0
+    } else {
+        *rates.rates.get(from_code)?
+    };
+    let to_rate = if to_code == "EUR" {
+        1.0
+    } else {
+        *rates.rates.get(to_code)?
+    };
 
     let result = value / from_rate * to_rate;
     Some(format_currency_result(result, to_code))
@@ -198,7 +206,11 @@ fn convert_currency_common(value: f64, from: &str) -> Vec<ConversionResult> {
         .iter()
         .filter(|&&sym| sym != from_code)
         .filter_map(|&sym| {
-            let to_rate = if sym == "EUR" { 1.0 } else { *rates.rates.get(sym)? };
+            let to_rate = if sym == "EUR" {
+                1.0
+            } else {
+                *rates.rates.get(sym)?
+            };
             let result = value / from_rate * to_rate;
             Some(format_currency_result(result, sym))
         })
@@ -939,6 +951,10 @@ mod tests {
         let r = convert_to(&100.0, "km", "mi").unwrap();
         // display_value should contain the symbol exactly once
         let count = r.display_value.matches(&r.target_symbol).count();
-        assert_eq!(count, 1, "display_value '{}' should contain '{}' exactly once", r.display_value, r.target_symbol);
+        assert_eq!(
+            count, 1,
+            "display_value '{}' should contain '{}' exactly once",
+            r.display_value, r.target_symbol
+        );
     }
 }

@@ -31,10 +31,8 @@ impl DynamicProvider for CalculatorProvider {
         match eval_math(expr) {
             Ok(result) => {
                 let display = format_result(result);
-                let copy_cmd = format!(
-                    "printf '%s' '{}' | wl-copy",
-                    display.replace('\'', "'\\''")
-                );
+                let copy_cmd =
+                    format!("printf '%s' '{}' | wl-copy", display.replace('\'', "'\\''"));
                 vec![LaunchItem {
                     id: format!("calc:{}", expr),
                     name: display.clone(),
@@ -105,11 +103,8 @@ fn extract_expression(query: &str) -> Option<&str> {
 fn looks_like_math(s: &str) -> bool {
     // Must contain at least one digit or a known constant/function name
     let has_digit = s.chars().any(|c| c.is_ascii_digit());
-    let has_operator = s.contains('+')
-        || s.contains('*')
-        || s.contains('/')
-        || s.contains('^')
-        || s.contains('%');
+    let has_operator =
+        s.contains('+') || s.contains('*') || s.contains('/') || s.contains('^') || s.contains('%');
     // Subtraction/negation is ambiguous; only count it as an operator when
     // there are already digits present to avoid matching bare words with hyphens.
     let has_minus_operator = has_digit && s.contains('-');

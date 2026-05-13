@@ -1,9 +1,9 @@
 // Core providers (compiled in)
 mod application;
-mod command;
-pub mod dmenu;
 pub(crate) mod calculator;
+mod command;
 pub(crate) mod converter;
+pub mod dmenu;
 pub(crate) mod power;
 
 // Optional feature-gated providers
@@ -533,7 +533,11 @@ impl ProviderManager {
             }
             scored_refs.sort_by(|a, b| b.1.cmp(&a.1));
 
-            results.extend(scored_refs.into_iter().map(|(item, score)| (item.clone(), score)));
+            results.extend(
+                scored_refs
+                    .into_iter()
+                    .map(|(item, score)| (item.clone(), score)),
+            );
             results.sort_by(|a, b| b.1.cmp(&a.1));
             results.truncate(max_results);
             return results;
@@ -605,7 +609,11 @@ impl ProviderManager {
         }
         scored_refs.sort_by(|a, b| b.1.cmp(&a.1));
 
-        results.extend(scored_refs.into_iter().map(|(item, score)| (item.clone(), score)));
+        results.extend(
+            scored_refs
+                .into_iter()
+                .map(|(item, score)| (item.clone(), score)),
+        );
         results.sort_by(|a, b| b.1.cmp(&a.1));
         results.truncate(max_results);
 
@@ -706,7 +714,10 @@ impl ProviderManager {
         display_name: &str,
     ) -> Option<(String, Vec<LaunchItem>)> {
         #[cfg(feature = "dev-logging")]
-        debug!("[Submenu] Querying provider '{}' with data: {}", plugin_id, data);
+        debug!(
+            "[Submenu] Querying provider '{}' with data: {}",
+            plugin_id, data
+        );
 
         for provider in &self.providers {
             let matches = match provider.provider_type() {
@@ -980,8 +991,14 @@ mod tests {
     fn provider_type_from_str_accepts_plural_aliases() {
         // After the demolition, FromStr accepts both singular and plural aliases.
         use std::str::FromStr;
-        assert_eq!(ProviderType::from_str("app").unwrap(), ProviderType::Application);
-        assert_eq!(ProviderType::from_str("apps").unwrap(), ProviderType::Application);
+        assert_eq!(
+            ProviderType::from_str("app").unwrap(),
+            ProviderType::Application
+        );
+        assert_eq!(
+            ProviderType::from_str("apps").unwrap(),
+            ProviderType::Application
+        );
         assert_eq!(
             ProviderType::from_str("application").unwrap(),
             ProviderType::Application
@@ -990,8 +1007,14 @@ mod tests {
             ProviderType::from_str("applications").unwrap(),
             ProviderType::Application
         );
-        assert_eq!(ProviderType::from_str("cmd").unwrap(), ProviderType::Command);
-        assert_eq!(ProviderType::from_str("cmds").unwrap(), ProviderType::Command);
+        assert_eq!(
+            ProviderType::from_str("cmd").unwrap(),
+            ProviderType::Command
+        );
+        assert_eq!(
+            ProviderType::from_str("cmds").unwrap(),
+            ProviderType::Command
+        );
         assert_eq!(
             ProviderType::from_str("command").unwrap(),
             ProviderType::Command
@@ -1000,7 +1023,10 @@ mod tests {
             ProviderType::from_str("commands").unwrap(),
             ProviderType::Command
         );
-        assert_eq!(ProviderType::from_str("dmenu").unwrap(), ProviderType::Dmenu);
+        assert_eq!(
+            ProviderType::from_str("dmenu").unwrap(),
+            ProviderType::Dmenu
+        );
         // Anything unknown becomes Plugin(s) — preserves user-defined provider IDs.
         assert_eq!(
             ProviderType::from_str("bookmarks").unwrap(),
@@ -1086,7 +1112,10 @@ mod tests {
         let pm = ProviderManager::new(vec![Box::new(prov)], Vec::new());
 
         let result = pm.query_submenu_actions("uuctl", "foo.service:true", "foo");
-        assert!(result.is_some(), "expected Some when provider matches and returns actions");
+        assert!(
+            result.is_some(),
+            "expected Some when provider matches and returns actions"
+        );
         let (display, actions) = result.unwrap();
         assert_eq!(display, "foo");
         assert_eq!(actions.len(), 1);
@@ -1102,7 +1131,10 @@ mod tests {
             action_handled_for: None,
         };
         let pm = ProviderManager::new(vec![Box::new(prov)], Vec::new());
-        assert!(pm.query_submenu_actions("does-not-exist", "data", "name").is_none());
+        assert!(
+            pm.query_submenu_actions("does-not-exist", "data", "name")
+                .is_none()
+        );
     }
 
     #[test]

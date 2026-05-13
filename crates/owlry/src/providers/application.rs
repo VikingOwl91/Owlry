@@ -301,7 +301,10 @@ mod tests {
 
     #[test]
     fn test_clean_desktop_exec_collapses_spaces() {
-        assert_eq!(clean_desktop_exec_field("app   --flag    arg"), "app --flag arg");
+        assert_eq!(
+            clean_desktop_exec_field("app   --flag    arg"),
+            "app --flag arg"
+        );
         let input = format!("app{}arg", " ".repeat(100));
         assert_eq!(clean_desktop_exec_field(&input), "app arg");
     }
