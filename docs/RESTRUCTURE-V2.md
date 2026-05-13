@@ -452,7 +452,9 @@ This section captures in-progress state. Update freely as work proceeds.
   - `2fc976b` — D15–D21 resolutions
   - `ae4a903` — C-ABI demolition: tasks #3/#4/#5 done in one commit
   - `1d20754` — TDD characterization pass (+36 tests)
-  - (next) — Workspace collapse: owlry-core merged into owlry (task #2)
+  - `0a4a090` — Workspace collapse: owlry-core merged into owlry (task #2)
+  - `eb8a65f` — systemd provider converted (issue #5 functional fix in v2)
+  - (next) — Remaining 6 plugins converted in parallel: bookmarks, clipboard, emoji, filesearch, ssh, websearch (tasks #6 + #7)
 - **Tasks done:** #1 inventory, #3 delete C-ABI, #4 delete Rune+Lua crates, #5 delete config_editor (scripts never lived in this repo)
 - **Tasks remaining (Phase 1):** #2 workspace collapse, #6 convert 8 plugins, #7 cargo features, #8 sys→power rename, #9 CLI subcommands, #10 auto-mode test, #11 final build+smoke
 - **Stray processes from inventory phase:**

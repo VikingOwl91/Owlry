@@ -60,6 +60,9 @@ signal-hook = "0.3"
 expr-solver-lib = "1"
 reqwest = { version = "0.13", default-features = false, features = ["native-tls", "json", "blocking"] }
 
+# Optional providers (gated by cargo features below)
+rusqlite = { version = "0.39", features = ["bundled"], optional = true }
+
 # Async oneshot channel (background thread -> main loop)
 futures-channel = "0.3"
 
@@ -78,6 +81,20 @@ dev-logging = []
 
 # Optional providers (compiled in when enabled).
 # The AUR PKGBUILD builds with --features "full" to ship everything.
+bookmarks = ["dep:rusqlite"]
+clipboard = []
+emoji = []
+filesearch = []
+ssh = []
 systemd = []
+websearch = []
 
-full = ["systemd"]
+full = [
+    "bookmarks",
+    "clipboard",
+    "emoji",
+    "filesearch",
+    "ssh",
+    "systemd",
+    "websearch",
+]

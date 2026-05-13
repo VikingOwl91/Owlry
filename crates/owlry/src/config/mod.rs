@@ -174,6 +174,24 @@ pub struct ProvidersConfig {
     /// Enable systemd user units provider (alias: uuctl)
     #[serde(default = "default_true", alias = "uuctl")]
     pub systemd: bool,
+    /// Enable bookmarks provider (Firefox + Chromium)
+    #[serde(default = "default_true")]
+    pub bookmarks: bool,
+    /// Enable clipboard history provider (requires cliphist)
+    #[serde(default = "default_true")]
+    pub clipboard: bool,
+    /// Enable emoji picker provider
+    #[serde(default = "default_true")]
+    pub emoji: bool,
+    /// Enable filesystem search provider (uses fd or mlocate)
+    #[serde(default = "default_true")]
+    pub filesearch: bool,
+    /// Enable SSH host provider (parses ~/.ssh/config)
+    #[serde(default = "default_true")]
+    pub ssh: bool,
+    /// Enable web search provider (DuckDuckGo / configurable)
+    #[serde(default = "default_true")]
+    pub websearch: bool,
     /// Enable frecency-based result ranking
     #[serde(default = "default_true")]
     pub frecency: bool,
@@ -196,6 +214,12 @@ impl Default for ProvidersConfig {
             converter: true,
             system: true,
             systemd: true,
+            bookmarks: true,
+            clipboard: true,
+            emoji: true,
+            filesearch: true,
+            ssh: true,
+            websearch: true,
             frecency: true,
             frecency_weight: 0.3,
             search_engine: "duckduckgo".to_string(),

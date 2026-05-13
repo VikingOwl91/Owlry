@@ -7,8 +7,20 @@ pub(crate) mod converter;
 pub(crate) mod system;
 
 // Optional feature-gated providers
+#[cfg(feature = "bookmarks")]
+pub(crate) mod bookmarks;
+#[cfg(feature = "clipboard")]
+pub(crate) mod clipboard;
+#[cfg(feature = "emoji")]
+pub(crate) mod emoji;
+#[cfg(feature = "filesearch")]
+pub(crate) mod filesearch;
+#[cfg(feature = "ssh")]
+pub(crate) mod ssh;
 #[cfg(feature = "systemd")]
 pub(crate) mod systemd;
+#[cfg(feature = "websearch")]
+pub(crate) mod websearch;
 
 // Re-exports for core providers
 pub use application::ApplicationProvider;
@@ -243,44 +255,68 @@ impl ProviderManager {
     /// Only built-in / compiled-in providers are registered here. Future Lua-defined
     /// providers (Phase 3+) are added via [`Self::add_provider`] after construction.
     pub fn new_with_config(config: Arc<RwLock<Config>>) -> Self {
-        let (calc_enabled, conv_enabled, sys_enabled, systemd_enabled) = match config.read() {
-            Ok(cfg) => (
-                cfg.providers.calculator,
-                cfg.providers.converter,
-                cfg.providers.system,
-                cfg.providers.systemd,
-            ),
+        let cfg_snapshot = match config.read() {
+            Ok(cfg) => cfg.providers.clone(),
             Err(_) => {
                 log::warn!("Config lock poisoned during provider init; using defaults");
-                (true, true, true, true)
+                crate::config::ProvidersConfig::default()
             }
         };
-        let _ = systemd_enabled; // referenced only behind cfg(feature)
 
         let mut core_providers: Vec<Box<dyn Provider>> = vec![
             Box::new(ApplicationProvider::new()),
             Box::new(CommandProvider::new()),
         ];
 
-        if sys_enabled {
+        if cfg_snapshot.system {
             core_providers.push(Box::new(system::SystemProvider::new()));
             info!("Registered built-in system provider");
         }
 
+        #[cfg(feature = "bookmarks")]
+        if cfg_snapshot.bookmarks {
+            core_providers.push(Box::new(bookmarks::BookmarksProvider::new()));
+            info!("Registered bookmarks provider");
+        }
+        #[cfg(feature = "clipboard")]
+        if cfg_snapshot.clipboard {
+            core_providers.push(Box::new(clipboard::ClipboardProvider::new()));
+            info!("Registered clipboard provider");
+        }
+        #[cfg(feature = "emoji")]
+        if cfg_snapshot.emoji {
+            core_providers.push(Box::new(emoji::EmojiProvider::new()));
+            info!("Registered emoji provider");
+        }
+        #[cfg(feature = "ssh")]
+        if cfg_snapshot.ssh {
+            core_providers.push(Box::new(ssh::SshProvider::new()));
+            info!("Registered ssh provider");
+        }
         #[cfg(feature = "systemd")]
-        if systemd_enabled {
+        if cfg_snapshot.systemd {
             core_providers.push(Box::new(systemd::SystemdProvider::new()));
             info!("Registered systemd provider (type_id: uuctl)");
         }
 
         let mut builtin_dynamic: Vec<Box<dyn DynamicProvider>> = Vec::new();
-        if calc_enabled {
+        if cfg_snapshot.calculator {
             builtin_dynamic.push(Box::new(calculator::CalculatorProvider));
             info!("Registered built-in calculator provider");
         }
-        if conv_enabled {
+        if cfg_snapshot.converter {
             builtin_dynamic.push(Box::new(converter::ConverterProvider::new()));
             info!("Registered built-in converter provider");
+        }
+        #[cfg(feature = "filesearch")]
+        if cfg_snapshot.filesearch {
+            builtin_dynamic.push(Box::new(filesearch::FileSearchProvider::new()));
+            info!("Registered filesearch provider");
+        }
+        #[cfg(feature = "websearch")]
+        if cfg_snapshot.websearch {
+            builtin_dynamic.push(Box::new(websearch::WebSearchProvider::new()));
+            info!("Registered websearch provider");
         }
 
         Self::new(core_providers, builtin_dynamic)
