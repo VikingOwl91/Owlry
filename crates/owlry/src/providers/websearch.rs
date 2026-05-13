@@ -150,6 +150,22 @@ impl DynamicProvider for WebSearchProvider {
         9_000
     }
 
+    fn prefix(&self) -> Option<&str> {
+        Some(":web")
+    }
+
+    fn icon(&self) -> &str {
+        "applications-internet"
+    }
+
+    fn tab_label(&self) -> Option<&str> {
+        Some("Web")
+    }
+
+    fn search_noun(&self) -> Option<&str> {
+        Some("the web")
+    }
+
     fn query(&self, query: &str) -> Vec<LaunchItem> {
         match self.evaluate(query) {
             Some(item) => vec![item],
