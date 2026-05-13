@@ -35,15 +35,15 @@ _v2_replaced=(
     'owlry-lua'
     'owlry-rune'
     # Plugins folded into owlry as feature-gated modules.
-    'owlry-plugin-bookmarks'
     'owlry-plugin-clipboard'
     'owlry-plugin-emoji'
     'owlry-plugin-filesearch'
     'owlry-plugin-ssh'
     'owlry-plugin-systemd'
     'owlry-plugin-websearch'
-    # Deferred providers (D20); package replaced so users get a clean
+    # Deferred providers (D20+); package replaced so users get a clean
     # transition. Functionality returns in a later 2.x release.
+    'owlry-plugin-bookmarks'
     'owlry-plugin-media'
     'owlry-plugin-pomodoro'
     'owlry-plugin-weather'

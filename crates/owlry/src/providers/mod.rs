@@ -7,8 +7,6 @@ pub mod dmenu;
 pub(crate) mod power;
 
 // Optional feature-gated providers
-#[cfg(feature = "bookmarks")]
-pub(crate) mod bookmarks;
 #[cfg(feature = "clipboard")]
 pub(crate) mod clipboard;
 #[cfg(feature = "emoji")]
@@ -277,11 +275,6 @@ impl ProviderManager {
             info!("Registered built-in power provider");
         }
 
-        #[cfg(feature = "bookmarks")]
-        if cfg_snapshot.bookmarks {
-            core_providers.push(Box::new(bookmarks::BookmarksProvider::new()));
-            info!("Registered bookmarks provider");
-        }
         #[cfg(feature = "clipboard")]
         if cfg_snapshot.clipboard {
             core_providers.push(Box::new(clipboard::ClipboardProvider::new()));

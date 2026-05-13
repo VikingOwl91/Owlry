@@ -22,6 +22,9 @@ owlry.provider {
 ### Widget providers return
 Weather, MPRIS media controls, and pomodoro timer were deferred from 2.0 while the widget-row UI is redesigned. They'll come back as a feature group once the placement model is settled. ([D20 in the v2 plan](docs/RESTRUCTURE-V2.md).)
 
+### Bookmarks return
+Firefox + Chromium bookmarks were deferred from 2.0 — the `rusqlite` dep used to read Firefox's `places.sqlite` made the AUR chroot build brittle (`libsqlite3-sys`'s `bundled` feature kept slipping out of the resolved feature graph). Returns when we wire up a pure-Rust path: Chromium's bookmarks file is already JSON, and Firefox exposes JSON backups under `~/.mozilla/firefox/<profile>/bookmarkbackups/`. No SQLite required.
+
 ---
 
 ## High Value, Low Effort

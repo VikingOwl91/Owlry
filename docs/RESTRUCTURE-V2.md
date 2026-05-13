@@ -34,6 +34,7 @@ All design decisions agreed before work started. These are load-bearing — do n
 | D19 | **Lua sandbox** (Phase 3): filesystem read + process spawn allowed; no network by default | Launcher needs to read configs and spawn commands. Network access (HTTP, sockets) requires explicit config opt-in. |
 | D20 | **Widget providers (`weather`, `media`, `pomodoro`) on hold** | UI positioning unresolved. **Excluded from Phase 1 conversion entirely** — not pulled in, not compiled in. Revisit as a dedicated workstream after 2.0 ships. |
 | D21 | **Hot-reload of `init.lua` on save** (Phase 3) | `notify` crate already a dep. Watch `~/.config/owlry/init.lua` and any `require`d files; re-run config eval on change. |
+| D22 | **Bookmarks provider deferred too** | The `rusqlite` dep (for Firefox `places.sqlite`) caused `libsqlite3-sys/bundled` to fall out of the resolved feature graph in clean Arch chroots — every chroot build linked against system sqlite or failed with `sqlite3_*` undefined-symbol errors. Rather than fight Cargo's resolver, defer the bookmarks provider alongside the widgets. Returns when we wire a pure-Rust path (Firefox JSON backups under `bookmarkbackups/`; Chromium's `Bookmarks` is already JSON). |
 
 ---
 
@@ -236,7 +237,7 @@ Subtasks (tracked in TaskList):
 3. **Delete C-ABI plugin system** — `plugins/` dir, `native_provider.rs`, `lua_provider.rs`, `owlry-plugin-api` crate; strip `ProviderManager::new_with_config()` of plugin loading
 4. **Delete Rune + Lua runtime crates** — `crates/owlry-rune/`, `crates/owlry-lua/`
 5. **Delete config_editor + scripts providers**
-6. **Convert 8 plugins to native Provider impls** — bookmarks, clipboard, emoji, ssh, systemd, websearch, filesearch. Pull source from `owlry-plugins/crates/owlry-plugin-*`, convert `extern "C"` vtable → `impl Provider` / `impl DynamicProvider`. Per-plugin mechanical work. **Widgets (weather, media, pomodoro) excluded per D20; scripts excluded per D12.**
+6. **Convert 6 plugins to native Provider impls** — clipboard, emoji, ssh, systemd, websearch, filesearch. Pull source from `owlry-plugins/crates/owlry-plugin-*`, convert `extern "C"` vtable → `impl Provider` / `impl DynamicProvider`. Per-plugin mechanical work. **Widgets (weather, media, pomodoro) excluded per D20; scripts excluded per D12; bookmarks excluded per D22.**
 7. **Wire cargo features per provider** — `#[cfg(feature = "...")]` gating; `default` / `full` feature groups
 8. **Rename `sys` → `power`** — file, type_id (in CLI mode mapping table), `:sys` kept as alias, config key `providers.system` → `providers.power` (with TOML migration shim that reads the old name)
 9. **CLI restructure** — new clap shape (subcommands `daemon`, `dmenu`, `doctor`, `providers`, `config`, `migrate-config`); drop entire `plugin` subcommand tree; daemon mode via `owlry -d` / `owlry daemon`
@@ -316,7 +317,7 @@ Mechanical pattern for each plugin: drop `extern "C"` exports, `PluginItem` → 
 
 | Plugin           | Kind     | Submenu? | Per-keystroke? | Notes |
 |---|---|---|---|---|
-| bookmarks        | Static   | no       | no             | SQLite for Firefox; bundled rusqlite |
+| ~~bookmarks~~    | DEFER    | —        | —              | **D22** — rusqlite/bundled fragile in chroot; returns with a pure-Rust reader |
 | clipboard        | Static   | yes (?)  | no             | Uses `cliphist`, `wl-clipboard` |
 | emoji            | Static   | no       | no             | Bundled emoji data; writes via `wl-clipboard` |
 | ssh              | Static   | no       | no             | Parses `~/.ssh/config` |

@@ -15,7 +15,7 @@ A lightweight, owl-themed application launcher for Wayland, built with GTK4 and 
 - **Single binary** — UI client, daemon, and providers in one `/usr/bin/owlry`
 - **Client/daemon architecture** — Daemon (`owlry -d`) keeps providers warm; UI appears instantly
 - **Built-in providers** — Apps, PATH commands, calculator, unit/currency converter, power actions
-- **Optional providers** (compiled in via `--features full` on AUR) — Bookmarks (Firefox + Chromium), clipboard history, emoji, SSH hosts, systemd user units, web search, filesystem search
+- **Optional providers** (compiled in via `--features full` on AUR) — Clipboard history, emoji, SSH hosts, systemd user units, web search, filesystem search
 - **Fuzzy search with tags** — Fast matching across names, descriptions, category tags
 - **Config profiles** — Named mode presets for different workflows
 - **Filter prefixes** — Scope searches with `:app`, `:cmd`, `:power`, `:uuctl`, `:tag:X`, etc.
@@ -69,7 +69,6 @@ Cargo features (pick a subset if you don't need everything):
 | `conv`        | Unit & currency converter                 | yes |
 | `power`       | Shutdown/reboot/lock                      | yes |
 | `dmenu`       | Pipe-based selection                      | yes |
-| `bookmarks`   | Firefox + Chromium bookmarks (rusqlite)   | opt-in |
 | `clipboard`   | Clipboard history (`cliphist`)            | opt-in |
 | `emoji`       | Emoji picker (`wl-clipboard`)             | opt-in |
 | `ssh`         | SSH hosts from `~/.ssh/config`            | opt-in |
@@ -207,7 +206,6 @@ pacman -Ssq | owlry dmenu -p "install" | xargs sudo pacman -S
 | `:power` (`:sys`, `:system`) | Power & session actions | `:power shutdown` |
 | `:calc` | Calculator | `:calc sqrt(16)` |
 | `:conv` | Converter | `:conv 5 ft to m` |
-| `:bm` | Bookmarks | `:bm github` |
 | `:clip` | Clipboard | `:clip password` |
 | `:emoji` | Emoji | `:emoji heart` |
 | `:ssh` | SSH hosts | `:ssh server` |
@@ -279,7 +277,6 @@ calculator = true                 # `=` or :calc
 converter = true                  # `>` or :conv
 power = true                      # `:power` shutdown/reboot/lock (alias: system)
 systemd = true                    # `:uuctl` user units (alias: uuctl)
-bookmarks = true                  # Firefox + Chromium
 clipboard = true                  # via cliphist
 emoji = true                      # picker via wl-clipboard
 ssh = true                        # ~/.ssh/config hosts
@@ -382,6 +379,7 @@ See [ROADMAP.md](ROADMAP.md) for feature ideas and [docs/RESTRUCTURE-V2.md](docs
 Headline upcoming work:
 - **Lua-driven configuration** (2.1 / 3.0) — `~/.config/owlry/init.lua` replaces TOML. User-defined providers via `owlry.provider {}` in the same file (Hyprland-style configs-as-code). `owlry migrate-config` lands at the same time.
 - **Widget providers return** — weather, MPRIS media controls, pomodoro timer. Deferred from 2.0 while the UI positioning is reworked.
+- **Bookmarks return** — Firefox + Chromium. Deferred from 2.0 to avoid a hard rusqlite/`libsqlite3-sys` dep in the chroot build path; returns with a pure-Rust reader (likely via Firefox's JSON backup files).
 
 ## License
 
@@ -392,5 +390,4 @@ GNU General Public License v3.0 — see [LICENSE](LICENSE).
 - [GTK4](https://gtk.org/) — UI toolkit
 - [gtk4-layer-shell](https://github.com/wmww/gtk4-layer-shell) — Wayland Layer Shell
 - [fuzzy-matcher](https://crates.io/crates/fuzzy-matcher) — Fuzzy search
-- [rusqlite](https://crates.io/crates/rusqlite) — Bundled SQLite for bookmarks
 - [expr-solver-lib](https://crates.io/crates/expr-solver-lib) — Calculator backend

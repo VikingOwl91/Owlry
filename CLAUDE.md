@@ -34,7 +34,6 @@ crates/owlry/                  -- everything
 │       ├── converter/         (feature: conv)
 │       ├── power.rs           (feature: power — pre-v2 name: sys/system)
 │       ├── dmenu.rs           (feature: dmenu)
-│       ├── bookmarks.rs       (feature: bookmarks)
 │       ├── clipboard.rs       (feature: clipboard)
 │       ├── emoji.rs           (feature: emoji)
 │       ├── ssh.rs             (feature: ssh)

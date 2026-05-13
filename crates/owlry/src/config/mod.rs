@@ -176,9 +176,6 @@ pub struct ProvidersConfig {
     /// Enable systemd user units provider (alias: uuctl)
     #[serde(default = "default_true", alias = "uuctl")]
     pub systemd: bool,
-    /// Enable bookmarks provider (Firefox + Chromium)
-    #[serde(default = "default_true")]
-    pub bookmarks: bool,
     /// Enable clipboard history provider (requires cliphist)
     #[serde(default = "default_true")]
     pub clipboard: bool,
@@ -216,7 +213,6 @@ impl Default for ProvidersConfig {
             converter: true,
             power: true,
             systemd: true,
-            bookmarks: true,
             clipboard: true,
             emoji: true,
             filesearch: true,
