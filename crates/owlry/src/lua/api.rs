@@ -5,18 +5,24 @@
 //!   - `owlry.providers(list)`   — enabled provider list (replaces on call)
 //!   - `owlry.tabs(list)`        — tab order list (replaces on call)
 //!
-//! Phase 3.3 adds:
+//! Phase 3.3 added:
 //!   - `owlry.provider(table)`   — register a user-defined provider
 //!
+//! Phase 3.5 adds:
+//!   - `owlry.theme(name_or_table)` — theme name and/or inline colour overrides
+//!   - `owlry.profiles(table)`      — named provider-id sets for `--profile`
+//!
 //! Each closure shares an `Arc<Mutex<LuaConfig>>` with [`super::runtime`].
-//! Later sub-phases add `owlry.theme` (3.5) and `owlry.util.*` (3.6).
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use log::warn;
-use mlua::{Function, Lua, Table};
+use mlua::{Function, Lua, Table, Value};
 
-use super::config::{KNOWN_SET_KEYS, LuaConfig, LuaProviderSpec, is_valid_provider_id};
+use super::config::{
+    KNOWN_SET_KEYS, KNOWN_THEME_KEYS, LuaConfig, LuaProviderSpec, is_valid_provider_id,
+};
 use super::error::LuaConfigError;
 
 /// Build the `owlry` table, register all functions on it, install it as a
@@ -28,6 +34,8 @@ pub(crate) fn install(lua: &Lua, state: Arc<Mutex<LuaConfig>>) -> Result<(), Lua
     register_providers(lua, &owlry, Arc::clone(&state))?;
     register_tabs(lua, &owlry, Arc::clone(&state))?;
     register_provider(lua, &owlry, Arc::clone(&state))?;
+    register_theme(lua, &owlry, Arc::clone(&state))?;
+    register_profiles(lua, &owlry, Arc::clone(&state))?;
 
     lua.globals().set("owlry", owlry)?;
 
@@ -229,5 +237,135 @@ fn apply_provider(cfg: &mut LuaConfig, t: Table) -> mlua::Result<()> {
         cfg.user_providers.push(spec);
     }
 
+    Ok(())
+}
+
+fn register_theme(
+    lua: &Lua,
+    owlry: &Table,
+    state: Arc<Mutex<LuaConfig>>,
+) -> Result<(), LuaConfigError> {
+    let f = lua.create_function(move |_, v: Value| {
+        let mut cfg = state.lock().expect("lua config state mutex poisoned");
+        apply_theme(&mut cfg, v)
+    })?;
+    owlry.set("theme", f)?;
+    Ok(())
+}
+
+fn register_profiles(
+    lua: &Lua,
+    owlry: &Table,
+    state: Arc<Mutex<LuaConfig>>,
+) -> Result<(), LuaConfigError> {
+    let f = lua.create_function(move |_, t: Table| {
+        let mut cfg = state.lock().expect("lua config state mutex poisoned");
+        apply_profiles(&mut cfg, t)
+    })?;
+    owlry.set("profiles", f)?;
+    Ok(())
+}
+
+/// `owlry.theme(...)` — accepts either a string (theme name) or a table
+/// (inline colour overrides). Both forms can be combined across calls per
+/// §4.5: name set by string-form, table-form layered on top.
+fn apply_theme(cfg: &mut LuaConfig, value: Value) -> mlua::Result<()> {
+    match value {
+        Value::String(s) => {
+            cfg.theme_name = Some(s.to_str()?.to_string());
+            Ok(())
+        }
+        Value::Table(t) => apply_theme_table(cfg, t),
+        other => Err(mlua::Error::RuntimeError(format!(
+            "owlry.theme: expected a string (theme name) or table (colour overrides), got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+/// Read recognised colour keys from a theme table and overlay them on the
+/// accumulated [`super::config::LuaConfig::theme_colors`]. Unknown keys are
+/// recorded (forward-compat) — no error, mirroring `owlry.set` policy.
+fn apply_theme_table(cfg: &mut LuaConfig, t: Table) -> mlua::Result<()> {
+    macro_rules! read_colour {
+        ($field:ident) => {
+            if let Some(v) = t.get::<Option<String>>(stringify!($field))? {
+                cfg.theme_colors.$field = Some(v);
+            }
+        };
+    }
+    read_colour!(background);
+    read_colour!(background_secondary);
+    read_colour!(border);
+    read_colour!(text);
+    read_colour!(text_secondary);
+    read_colour!(accent);
+    read_colour!(accent_bright);
+    read_colour!(badge_app);
+    read_colour!(badge_bookmark);
+    read_colour!(badge_calc);
+    read_colour!(badge_clip);
+    read_colour!(badge_cmd);
+    read_colour!(badge_dmenu);
+    read_colour!(badge_emoji);
+    read_colour!(badge_file);
+    read_colour!(badge_script);
+    read_colour!(badge_ssh);
+    read_colour!(badge_power);
+    read_colour!(badge_uuctl);
+    read_colour!(badge_web);
+    read_colour!(badge_media);
+    read_colour!(badge_weather);
+    read_colour!(badge_pomo);
+
+    // Pre-v2 alias: badge_sys → badge_power (matches the serde alias on
+    // ThemeColors in config/mod.rs). Only applies when the canonical key
+    // wasn't already set in this call.
+    if cfg.theme_colors.badge_power.is_none()
+        && let Some(v) = t.get::<Option<String>>("badge_sys")?
+    {
+        cfg.theme_colors.badge_power = Some(v);
+    }
+
+    // Track unknown theme keys for `owlry config validate`.
+    for pair in t.pairs::<Value, Value>() {
+        let (k, _) = pair?;
+        if let Value::String(s) = k {
+            let key = s.to_str()?.to_string();
+            if !KNOWN_THEME_KEYS.contains(&key.as_str())
+                && !cfg.unknown_theme_keys.contains(&key)
+            {
+                cfg.unknown_theme_keys.push(key);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// `owlry.profiles { dev = { "app", "cmd" }, ... }` — captures named
+/// provider-id sets used by `--profile <name>`. Replaces the entire map
+/// on each call (consistent with providers/tabs replace-on-call semantics).
+fn apply_profiles(cfg: &mut LuaConfig, t: Table) -> mlua::Result<()> {
+    let mut profiles: HashMap<String, Vec<String>> = HashMap::new();
+    for pair in t.pairs::<String, Table>() {
+        let (name, modes_tbl) = pair.map_err(|e| {
+            mlua::Error::RuntimeError(format!(
+                "owlry.profiles: every value must be a list of provider ids — {}",
+                e
+            ))
+        })?;
+        let modes: Vec<String> = modes_tbl
+            .sequence_values::<String>()
+            .collect::<mlua::Result<Vec<_>>>()
+            .map_err(|e| {
+                mlua::Error::RuntimeError(format!(
+                    "owlry.profiles.{}: list entries must be strings — {}",
+                    name, e
+                ))
+            })?;
+        profiles.insert(name, modes);
+    }
+    cfg.profiles = Some(profiles);
     Ok(())
 }

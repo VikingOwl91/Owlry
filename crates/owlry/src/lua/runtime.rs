@@ -346,4 +346,166 @@ mod tests {
             other => panic!("expected Read error, got {:?}", other),
         }
     }
+
+    // ── owlry.theme(...) end-to-end ─────────────────────────────────────────
+
+    #[test]
+    fn theme_string_form_sets_theme_name() {
+        let s = snapshot_after(r#"owlry.theme("catppuccin-mocha")"#);
+        assert_eq!(s.theme_name.as_deref(), Some("catppuccin-mocha"));
+        // Colours and unknowns unaffected.
+        assert!(s.theme_colors.background.is_none());
+        assert!(s.unknown_theme_keys.is_empty());
+    }
+
+    #[test]
+    fn theme_table_form_captures_known_colour_keys() {
+        let s = snapshot_after(
+            r##"
+            owlry.theme {
+              background           = "#1e1e2e",
+              background_secondary = "#313244",
+              border               = "#45475a",
+              text                 = "#cdd6f4",
+              text_secondary       = "#a6adc8",
+              accent               = "#cba6f7",
+              accent_bright        = "#f5c2e7",
+              badge_app            = "#a6e3a1",
+              badge_power          = "#f38ba8",
+              badge_uuctl          = "#9ece6a",
+            }
+            "##,
+        );
+        assert_eq!(s.theme_colors.background.as_deref(), Some("#1e1e2e"));
+        assert_eq!(s.theme_colors.accent.as_deref(), Some("#cba6f7"));
+        assert_eq!(s.theme_colors.badge_app.as_deref(), Some("#a6e3a1"));
+        assert_eq!(s.theme_colors.badge_power.as_deref(), Some("#f38ba8"));
+        assert_eq!(s.theme_colors.badge_uuctl.as_deref(), Some("#9ece6a"));
+        assert!(s.unknown_theme_keys.is_empty());
+    }
+
+    #[test]
+    fn theme_string_and_table_compose() {
+        let s = snapshot_after(
+            r##"
+            owlry.theme("nord")
+            owlry.theme { background = "#1e1e2e" }
+            "##,
+        );
+        assert_eq!(s.theme_name.as_deref(), Some("nord"));
+        assert_eq!(s.theme_colors.background.as_deref(), Some("#1e1e2e"));
+    }
+
+    #[test]
+    fn theme_table_calls_merge_per_colour_key() {
+        let s = snapshot_after(
+            r##"
+            owlry.theme { background = "#000000", accent = "#ff00ff" }
+            owlry.theme { accent = "#00ffff" }
+            "##,
+        );
+        assert_eq!(s.theme_colors.background.as_deref(), Some("#000000"));
+        assert_eq!(s.theme_colors.accent.as_deref(), Some("#00ffff"));
+    }
+
+    #[test]
+    fn theme_badge_sys_alias_maps_to_badge_power() {
+        let s = snapshot_after(r##"owlry.theme { badge_sys = "#ff8800" }"##);
+        assert_eq!(s.theme_colors.badge_power.as_deref(), Some("#ff8800"));
+    }
+
+    #[test]
+    fn theme_unknown_keys_recorded_without_failing() {
+        let s = snapshot_after(
+            r##"
+            owlry.theme {
+              background = "#000000",
+              future_v22_key = "#ffffff",
+              another_unknown = "x",
+            }
+            "##,
+        );
+        assert_eq!(s.theme_colors.background.as_deref(), Some("#000000"));
+        assert!(s.unknown_theme_keys.contains(&"future_v22_key".to_string()));
+        assert!(s.unknown_theme_keys.contains(&"another_unknown".to_string()));
+    }
+
+    #[test]
+    fn theme_wrong_argument_type_errors() {
+        let ctx = LuaContext::new().expect("must build");
+        let err = ctx.eval_str(r#"owlry.theme(42)"#).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("expected a string") || msg.contains("table"),
+            "should mention expected shapes; got: {}",
+            msg
+        );
+    }
+
+    // ── owlry.profiles { ... } end-to-end ───────────────────────────────────
+
+    #[test]
+    fn profiles_captures_multiple_named_sets() {
+        let s = snapshot_after(
+            r#"
+            owlry.profiles {
+              dev     = { "app", "cmd", "ssh" },
+              media   = { "emoji", "clipboard" },
+              minimal = { "app" },
+            }
+            "#,
+        );
+        let map = s.profiles.expect("profiles must be Some");
+        assert_eq!(map.len(), 3);
+        assert_eq!(
+            map.get("dev"),
+            Some(&vec!["app".to_string(), "cmd".to_string(), "ssh".to_string()])
+        );
+        assert_eq!(
+            map.get("minimal"),
+            Some(&vec!["app".to_string()])
+        );
+    }
+
+    #[test]
+    fn profiles_called_twice_replaces_the_map() {
+        let s = snapshot_after(
+            r#"
+            owlry.profiles { dev = { "app", "cmd" } }
+            owlry.profiles { media = { "emoji" } }
+            "#,
+        );
+        let map = s.profiles.expect("profiles must be Some");
+        assert_eq!(map.len(), 1);
+        assert!(map.contains_key("media"));
+        assert!(!map.contains_key("dev"), "second call must fully replace");
+    }
+
+    #[test]
+    fn profiles_with_non_list_value_errors() {
+        let ctx = LuaContext::new().expect("must build");
+        let err = ctx
+            .eval_str(r#"owlry.profiles { broken = "not a list" }"#)
+            .unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("owlry.profiles") || msg.contains("list"),
+            "should indicate list-of-strings expectation; got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn profiles_coerce_numeric_entries_via_lua_tostring() {
+        // mlua's String::from_lua follows Lua semantics (tostring coercion),
+        // so `{ "app", 42 }` becomes ["app", "42"]. Document the behaviour
+        // here so it isn't accidentally tightened — config validate (3.9)
+        // can flag "42" as an unknown provider id if needed.
+        let s = snapshot_after(r#"owlry.profiles { dev = { "app", 42 } }"#);
+        let map = s.profiles.expect("profiles must be Some");
+        assert_eq!(
+            map.get("dev"),
+            Some(&vec!["app".to_string(), "42".to_string()])
+        );
+    }
 }

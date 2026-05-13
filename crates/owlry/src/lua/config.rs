@@ -1,11 +1,15 @@
 //! Data layer for the Lua config: the [`LuaConfig`] struct that accumulates
-//! state from `owlry.set` / `owlry.providers` / `owlry.tabs` calls, plus the
-//! merge that overlays it onto the existing TOML-derived [`crate::config::Config`].
+//! state from `owlry.set` / `owlry.providers` / `owlry.tabs` / `owlry.theme`
+//! / `owlry.profiles` / `owlry.provider` calls, plus the merge that overlays
+//! it onto the existing TOML-derived [`crate::config::Config`].
 //!
-//! Mapping mirrors `docs/lua-api.md` §4.1–§4.3. Every settable key is an
-//! `Option<T>`: `None` means "the user didn't touch it, keep the base value."
+//! Mapping mirrors `docs/lua-api.md` §4.1–§4.5 and §6.5. Every settable
+//! key is an `Option<T>`: `None` means "the user didn't touch it, keep the
+//! base value."
 
-use crate::config::Config;
+use std::collections::HashMap;
+
+use crate::config::{Config, ProfileConfig, ThemeColors};
 
 /// Accumulated state from `owlry.lua`. Built up by the closures registered in
 /// [`super::api::install`] and drained via [`super::runtime::LuaContext::snapshot`].
@@ -41,6 +45,29 @@ pub struct LuaConfig {
     /// registration. Duplicates by `id` are resolved at registration time:
     /// later wins, earlier is dropped (warning logged).
     pub user_providers: Vec<LuaProviderSpec>,
+
+    // ─── owlry.theme(...) ─────────────────────────────────────────────────
+    /// Theme name from the string form `owlry.theme("nord")`. Last write wins
+    /// across multiple calls (string forms merge with table forms — see
+    /// §4.5: "call owlry.theme(name) first, then owlry.theme { ... } to
+    /// layer overrides on top").
+    pub theme_name: Option<String>,
+
+    /// Inline colour overrides from the table form `owlry.theme { ... }`.
+    /// Per-key last-write-wins. Empty by default (no overrides).
+    pub theme_colors: ThemeColors,
+
+    /// Theme keys we don't recognise (forward-compat for 2.2+ palette
+    /// additions). Surfaced by `owlry config validate` (Phase 3.9).
+    pub unknown_theme_keys: Vec<String>,
+
+    // ─── owlry.profiles { ... } ───────────────────────────────────────────
+    /// Named profiles from `owlry.profiles { dev = { ... }, ... }`. Each
+    /// profile maps to a list of provider ids used when `--profile <name>`
+    /// is passed. `None` = profiles were never set in Lua → keep TOML or
+    /// defaults. `Some(map)` replaces the base profiles (consistent with
+    /// `providers`/`tabs` replace-on-call semantics).
+    pub profiles: Option<HashMap<String, Vec<String>>>,
 }
 
 /// Captured spec from a single `owlry.provider { ... }` call.
@@ -104,6 +131,36 @@ pub(crate) const KNOWN_SET_KEYS: &[&str] = &[
     "search_engine",
 ];
 
+/// Known keys accepted by `owlry.theme { ... }`. Mirrors the fields of
+/// [`ThemeColors`]; the pre-v2 `badge_sys` alias is included so existing
+/// configs translate cleanly (it maps to `badge_power` per the v2 rename).
+pub(crate) const KNOWN_THEME_KEYS: &[&str] = &[
+    "background",
+    "background_secondary",
+    "border",
+    "text",
+    "text_secondary",
+    "accent",
+    "accent_bright",
+    "badge_app",
+    "badge_bookmark",
+    "badge_calc",
+    "badge_clip",
+    "badge_cmd",
+    "badge_dmenu",
+    "badge_emoji",
+    "badge_file",
+    "badge_script",
+    "badge_ssh",
+    "badge_power",
+    "badge_sys", // pre-v2 alias, normalised to badge_power at merge time
+    "badge_uuctl",
+    "badge_web",
+    "badge_media",
+    "badge_weather",
+    "badge_pomo",
+];
+
 impl LuaConfig {
     /// Apply the Lua-side overrides on top of an existing [`Config`].
     ///
@@ -158,7 +215,63 @@ impl LuaConfig {
         if let Some(list) = &self.tabs {
             cfg.general.tabs = list.clone();
         }
+
+        // ── owlry.theme(...) ───────────────────────────────────────────
+        if let Some(name) = &self.theme_name {
+            cfg.appearance.theme = Some(name.clone());
+        }
+        merge_theme_colors(&self.theme_colors, &mut cfg.appearance.colors);
+
+        // ── owlry.profiles { ... } ─────────────────────────────────────
+        // Replace base profiles entirely (consistent with providers/tabs
+        // replace-on-call). Profile values become `ProfileConfig { modes }`.
+        if let Some(profiles) = &self.profiles {
+            cfg.profiles.clear();
+            for (name, modes) in profiles {
+                cfg.profiles.insert(
+                    name.clone(),
+                    ProfileConfig {
+                        modes: modes.clone(),
+                    },
+                );
+            }
+        }
     }
+}
+
+/// Overlay any `Some` colour fields from the Lua side onto the base
+/// [`ThemeColors`]. `None` fields are skipped so the base theme survives.
+fn merge_theme_colors(src: &ThemeColors, dst: &mut ThemeColors) {
+    macro_rules! merge {
+        ($field:ident) => {
+            if let Some(ref v) = src.$field {
+                dst.$field = Some(v.clone());
+            }
+        };
+    }
+    merge!(background);
+    merge!(background_secondary);
+    merge!(border);
+    merge!(text);
+    merge!(text_secondary);
+    merge!(accent);
+    merge!(accent_bright);
+    merge!(badge_app);
+    merge!(badge_bookmark);
+    merge!(badge_calc);
+    merge!(badge_clip);
+    merge!(badge_cmd);
+    merge!(badge_dmenu);
+    merge!(badge_emoji);
+    merge!(badge_file);
+    merge!(badge_script);
+    merge!(badge_ssh);
+    merge!(badge_power);
+    merge!(badge_uuctl);
+    merge!(badge_web);
+    merge!(badge_media);
+    merge!(badge_weather);
+    merge!(badge_pomo);
 }
 
 /// Translate a list of provider IDs (as the user wrote them in
@@ -392,5 +505,125 @@ mod tests {
         assert!(!is_valid_provider_id("dot.in.id"));
         assert!(!is_valid_provider_id("colon:bad"));
         assert!(!is_valid_provider_id("emoji_💀"));
+    }
+
+    // ── owlry.theme(...) merge semantics ────────────────────────────────────
+
+    #[test]
+    fn theme_name_overrides_base_appearance_theme() {
+        let mut cfg = Config::default();
+        let lc = LuaConfig {
+            theme_name: Some("catppuccin-mocha".into()),
+            ..Default::default()
+        };
+        lc.merge_into(&mut cfg);
+        assert_eq!(
+            cfg.appearance.theme.as_deref(),
+            Some("catppuccin-mocha")
+        );
+    }
+
+    #[test]
+    fn theme_colours_overlay_only_set_fields() {
+        let mut cfg = Config::default();
+        // Base theme has colours already set:
+        cfg.appearance.colors.background = Some("#000000".into());
+        cfg.appearance.colors.text = Some("#ffffff".into());
+
+        // Lua overlays only the accent — background and text must survive.
+        let mut lua_colors = ThemeColors::default();
+        lua_colors.accent = Some("#ff00ff".into());
+        let lc = LuaConfig {
+            theme_colors: lua_colors,
+            ..Default::default()
+        };
+        lc.merge_into(&mut cfg);
+
+        assert_eq!(cfg.appearance.colors.background.as_deref(), Some("#000000"));
+        assert_eq!(cfg.appearance.colors.text.as_deref(), Some("#ffffff"));
+        assert_eq!(cfg.appearance.colors.accent.as_deref(), Some("#ff00ff"));
+    }
+
+    #[test]
+    fn theme_name_and_colours_compose() {
+        let mut cfg = Config::default();
+        let mut lua_colors = ThemeColors::default();
+        lua_colors.background = Some("#1e1e2e".into());
+        let lc = LuaConfig {
+            theme_name: Some("nord".into()),
+            theme_colors: lua_colors,
+            ..Default::default()
+        };
+        lc.merge_into(&mut cfg);
+        assert_eq!(cfg.appearance.theme.as_deref(), Some("nord"));
+        assert_eq!(cfg.appearance.colors.background.as_deref(), Some("#1e1e2e"));
+    }
+
+    // ── owlry.profiles { ... } merge semantics ──────────────────────────────
+
+    #[test]
+    fn profiles_map_replaces_base_profiles() {
+        let mut cfg = Config::default();
+        // Base TOML had a "legacy" profile that must be cleared.
+        cfg.profiles.insert(
+            "legacy".into(),
+            ProfileConfig {
+                modes: vec!["app".into()],
+            },
+        );
+
+        let mut profiles: HashMap<String, Vec<String>> = HashMap::new();
+        profiles.insert("dev".into(), vec!["app".into(), "cmd".into(), "ssh".into()]);
+        profiles.insert("media".into(), vec!["emoji".into(), "clipboard".into()]);
+        let lc = LuaConfig {
+            profiles: Some(profiles),
+            ..Default::default()
+        };
+        lc.merge_into(&mut cfg);
+
+        assert!(
+            !cfg.profiles.contains_key("legacy"),
+            "Lua profiles must replace base entries entirely"
+        );
+        assert_eq!(cfg.profiles.len(), 2);
+        assert_eq!(
+            cfg.profiles.get("dev").map(|p| p.modes.as_slice()),
+            Some(&["app".to_string(), "cmd".to_string(), "ssh".to_string()][..])
+        );
+        assert_eq!(
+            cfg.profiles.get("media").map(|p| p.modes.as_slice()),
+            Some(&["emoji".to_string(), "clipboard".to_string()][..])
+        );
+    }
+
+    #[test]
+    fn empty_profiles_clears_base_profiles() {
+        let mut cfg = Config::default();
+        cfg.profiles.insert(
+            "legacy".into(),
+            ProfileConfig {
+                modes: vec!["app".into()],
+            },
+        );
+        let lc = LuaConfig {
+            profiles: Some(HashMap::new()),
+            ..Default::default()
+        };
+        lc.merge_into(&mut cfg);
+        assert!(cfg.profiles.is_empty());
+    }
+
+    #[test]
+    fn omitted_profiles_keeps_base_profiles() {
+        let mut cfg = Config::default();
+        cfg.profiles.insert(
+            "legacy".into(),
+            ProfileConfig {
+                modes: vec!["app".into()],
+            },
+        );
+        let lc = LuaConfig::default(); // profiles: None
+        lc.merge_into(&mut cfg);
+        assert!(cfg.profiles.contains_key("legacy"));
     }
 }
