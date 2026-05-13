@@ -171,6 +171,9 @@ pub struct ProvidersConfig {
     /// Enable built-in system actions (shutdown, reboot, lock, etc.)
     #[serde(default = "default_true")]
     pub system: bool,
+    /// Enable systemd user units provider (alias: uuctl)
+    #[serde(default = "default_true", alias = "uuctl")]
+    pub systemd: bool,
     /// Enable frecency-based result ranking
     #[serde(default = "default_true")]
     pub frecency: bool,
@@ -192,6 +195,7 @@ impl Default for ProvidersConfig {
             calculator: true,
             converter: true,
             system: true,
+            systemd: true,
             frecency: true,
             frecency_weight: 0.3,
             search_engine: "duckduckgo".to_string(),

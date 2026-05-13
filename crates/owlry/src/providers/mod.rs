@@ -6,6 +6,10 @@ pub(crate) mod calculator;
 pub(crate) mod converter;
 pub(crate) mod system;
 
+// Optional feature-gated providers
+#[cfg(feature = "systemd")]
+pub(crate) mod systemd;
+
 // Re-exports for core providers
 pub use application::ApplicationProvider;
 pub use command::CommandProvider;
@@ -239,17 +243,19 @@ impl ProviderManager {
     /// Only built-in / compiled-in providers are registered here. Future Lua-defined
     /// providers (Phase 3+) are added via [`Self::add_provider`] after construction.
     pub fn new_with_config(config: Arc<RwLock<Config>>) -> Self {
-        let (calc_enabled, conv_enabled, sys_enabled) = match config.read() {
+        let (calc_enabled, conv_enabled, sys_enabled, systemd_enabled) = match config.read() {
             Ok(cfg) => (
                 cfg.providers.calculator,
                 cfg.providers.converter,
                 cfg.providers.system,
+                cfg.providers.systemd,
             ),
             Err(_) => {
                 log::warn!("Config lock poisoned during provider init; using defaults");
-                (true, true, true)
+                (true, true, true, true)
             }
         };
+        let _ = systemd_enabled; // referenced only behind cfg(feature)
 
         let mut core_providers: Vec<Box<dyn Provider>> = vec![
             Box::new(ApplicationProvider::new()),
@@ -259,6 +265,12 @@ impl ProviderManager {
         if sys_enabled {
             core_providers.push(Box::new(system::SystemProvider::new()));
             info!("Registered built-in system provider");
+        }
+
+        #[cfg(feature = "systemd")]
+        if systemd_enabled {
+            core_providers.push(Box::new(systemd::SystemdProvider::new()));
+            info!("Registered systemd provider (type_id: uuctl)");
         }
 
         let mut builtin_dynamic: Vec<Box<dyn DynamicProvider>> = Vec::new();

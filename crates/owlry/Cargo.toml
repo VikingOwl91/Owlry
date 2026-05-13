@@ -71,6 +71,13 @@ glib-build-tools = "0.20"
 tempfile = "3"
 
 [features]
-default = []
+default = ["systemd"]
+
 # Enable verbose debug logging (for development/testing builds)
 dev-logging = []
+
+# Optional providers (compiled in when enabled).
+# The AUR PKGBUILD builds with --features "full" to ship everything.
+systemd = []
+
+full = ["systemd"]
