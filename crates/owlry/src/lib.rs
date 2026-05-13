@@ -8,6 +8,7 @@ pub mod app;
 pub mod backend;
 pub mod cli;
 pub mod client;
+pub mod commands;
 pub mod config;
 pub mod data;
 pub mod filter;

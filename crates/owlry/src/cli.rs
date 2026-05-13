@@ -1,6 +1,6 @@
-//! Command-line interface for owlry launcher
+//! Command-line interface for owlry launcher.
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
 use crate::providers::ProviderType;
 
@@ -16,27 +16,17 @@ EXAMPLES:
     owlry                           Launch UI, auto mode
     owlry -m auto                   Launch UI, auto mode (explicit)
     owlry -m app                    Applications only
-    owlry -m cmd                    PATH commands only
-    owlry -m dmenu                  dmenu-compatible mode (reads from stdin)
     owlry --profile dev             Use a named profile from config
-    owlry -d                        Run the daemon
 
-DMENU MODE:
-    Pipe input to owlry for interactive selection:
+    owlry daemon                    Run the daemon (alias: owlry -d)
+    owlry dmenu [-p <prompt>]       dmenu-compatible mode (reads from stdin)
+    owlry doctor                    Diagnostics: providers, config, socket
+    owlry providers [<id>]          List providers (or show one)
+    owlry config validate           Check config for errors
+    owlry config show               Print resolved effective config
+    owlry migrate-config            TOML → init.lua (Phase 3+; stub for now)
 
-    echo -e \"Option A\\nOption B\" | owlry -m dmenu
-    ls | owlry -m dmenu -p \"checkout:\"
-    git branch | owlry -m dmenu --prompt \"checkout:\"
-
-PROFILES:
-    Define profiles in ~/.config/owlry/config.toml:
-
-    [profiles.dev]
-    modes = [\"app\", \"cmd\", \"ssh\"]
-
-    Then launch with: owlry --profile dev
-
-SEARCH PREFIXES:
+SEARCH PREFIXES (inside the UI):
     :app firefox                    Search applications
     :cmd git                        Search PATH commands
     :calc / =                       Calculator (e.g. = 2+2)
@@ -46,11 +36,11 @@ SEARCH PREFIXES:
 For configuration, see ~/.config/owlry/config.toml"
 )]
 pub struct CliArgs {
-    /// Run the daemon (alias for `owlry daemon`, when subcommands land)
+    /// Run the daemon (alias for `owlry daemon`).
     #[arg(long, short = 'd', conflicts_with_all = ["mode", "profile", "prompt"])]
     pub daemon: bool,
 
-    /// Start in single-provider mode
+    /// Start the UI in a single-provider mode.
     ///
     /// Core modes: app, cmd, dmenu, auto
     /// Built-in modes: calc, conv, power
@@ -58,19 +48,55 @@ pub struct CliArgs {
     #[arg(long, short = 'm', value_parser = parse_provider, value_name = "MODE")]
     pub mode: Option<ProviderType>,
 
-    /// Use a named profile from config (defines which modes to enable)
-    ///
-    /// Profiles are defined in config.toml under [profiles.<name>].
-    /// Example: --profile dev (loads modes from [profiles.dev])
+    /// Use a named profile from config (defines which modes to enable).
     #[arg(long, value_name = "NAME")]
     pub profile: Option<String>,
 
-    /// Custom prompt text for the search input
-    ///
-    /// Useful in dmenu mode to indicate what the user is selecting.
-    /// Example: -p "Select file:" or --prompt "Select file:"
+    /// Custom prompt text for the search input (mainly useful in dmenu mode).
     #[arg(long, short = 'p', value_name = "TEXT")]
     pub prompt: Option<String>,
+
+    #[command(subcommand)]
+    pub command: Option<Command>,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum Command {
+    /// Run the IPC daemon. Same as `owlry -d`.
+    Daemon,
+
+    /// dmenu-compatible mode: read stdin, print the selection to stdout.
+    Dmenu {
+        /// Prompt text shown in the search input.
+        #[arg(long, short = 'p', value_name = "TEXT")]
+        prompt: Option<String>,
+    },
+
+    /// Diagnostics: providers, daemon socket, config status.
+    Doctor,
+
+    /// List providers (or show details for one by id).
+    Providers {
+        /// Provider id (e.g. `app`, `uuctl`, `power`). Optional.
+        id: Option<String>,
+    },
+
+    /// Config tools.
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+
+    /// Migrate TOML config to init.lua. Stub in 2.0; lands with Phase 3 (Lua config).
+    MigrateConfig,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum ConfigAction {
+    /// Parse config.toml and report any errors.
+    Validate,
+    /// Print the resolved effective config (defaults merged with user file).
+    Show,
 }
 
 fn parse_provider(s: &str) -> Result<ProviderType, String> {
@@ -95,6 +121,7 @@ mod tests {
         assert!(args.mode.is_none());
         assert!(args.profile.is_none());
         assert!(args.prompt.is_none());
+        assert!(args.command.is_none());
     }
 
     #[test]
@@ -111,11 +138,19 @@ mod tests {
 
     #[test]
     fn daemon_flag_conflicts_with_ui_flags() {
-        // -d must reject UI-only flags so a single invocation can't try to
-        // both run the daemon and launch a UI in single-mode.
         assert!(CliArgs::try_parse_from(["owlry", "-d", "-m", "app"]).is_err());
         assert!(CliArgs::try_parse_from(["owlry", "-d", "--profile", "dev"]).is_err());
         assert!(CliArgs::try_parse_from(["owlry", "-d", "-p", "prompt"]).is_err());
+    }
+
+    #[test]
+    fn daemon_flag_with_subcommand_resolves_to_daemon_in_dispatcher() {
+        // clap allows both; main.rs checks args.daemon first and dispatches to
+        // run_daemon, ignoring the subcommand. Encoded here so the precedence
+        // can't drift silently.
+        let args = CliArgs::try_parse_from(["owlry", "-d", "doctor"]).unwrap();
+        assert!(args.daemon);
+        assert!(args.command.is_some());
     }
 
     #[test]
@@ -129,10 +164,14 @@ mod tests {
         let args = CliArgs::try_parse_from(["owlry", "-m", "dmenu"]).unwrap();
         assert_eq!(args.mode, Some(ProviderType::Dmenu));
 
-        // Unknown modes become Plugin(s) so user-defined providers (Phase 3+)
-        // and built-in provider IDs (uuctl, bookmarks, etc.) work uniformly.
         let args = CliArgs::try_parse_from(["owlry", "-m", "uuctl"]).unwrap();
         assert_eq!(args.mode, Some(ProviderType::Plugin("uuctl".into())));
+
+        // Power aliases all resolve to Plugin("power") per D13.
+        let args = CliArgs::try_parse_from(["owlry", "-m", "power"]).unwrap();
+        assert_eq!(args.mode, Some(ProviderType::Plugin("power".into())));
+        let args = CliArgs::try_parse_from(["owlry", "-m", "sys"]).unwrap();
+        assert_eq!(args.mode, Some(ProviderType::Plugin("power".into())));
     }
 
     #[test]
@@ -140,5 +179,64 @@ mod tests {
         // The entire `plugin` subcommand tree was dropped in v2.
         assert!(CliArgs::try_parse_from(["owlry", "plugin", "list"]).is_err());
         assert!(CliArgs::try_parse_from(["owlry", "plugin", "install", "x"]).is_err());
+    }
+
+    #[test]
+    fn daemon_subcommand_parses() {
+        let args = CliArgs::try_parse_from(["owlry", "daemon"]).unwrap();
+        assert!(matches!(args.command, Some(Command::Daemon)));
+    }
+
+    #[test]
+    fn dmenu_subcommand_with_prompt_parses() {
+        let args = CliArgs::try_parse_from(["owlry", "dmenu", "-p", "Pick:"]).unwrap();
+        match args.command {
+            Some(Command::Dmenu { prompt }) => assert_eq!(prompt.as_deref(), Some("Pick:")),
+            other => panic!("expected Dmenu, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn doctor_subcommand_parses() {
+        let args = CliArgs::try_parse_from(["owlry", "doctor"]).unwrap();
+        assert!(matches!(args.command, Some(Command::Doctor)));
+    }
+
+    #[test]
+    fn providers_subcommand_with_optional_id() {
+        let args = CliArgs::try_parse_from(["owlry", "providers"]).unwrap();
+        match args.command {
+            Some(Command::Providers { id }) => assert!(id.is_none()),
+            other => panic!("expected Providers, got {other:?}"),
+        }
+        let args = CliArgs::try_parse_from(["owlry", "providers", "uuctl"]).unwrap();
+        match args.command {
+            Some(Command::Providers { id }) => assert_eq!(id.as_deref(), Some("uuctl")),
+            other => panic!("expected Providers, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn config_validate_subcommand_parses() {
+        let args = CliArgs::try_parse_from(["owlry", "config", "validate"]).unwrap();
+        assert!(matches!(
+            args.command,
+            Some(Command::Config { action: ConfigAction::Validate })
+        ));
+    }
+
+    #[test]
+    fn config_show_subcommand_parses() {
+        let args = CliArgs::try_parse_from(["owlry", "config", "show"]).unwrap();
+        assert!(matches!(
+            args.command,
+            Some(Command::Config { action: ConfigAction::Show })
+        ));
+    }
+
+    #[test]
+    fn migrate_config_subcommand_parses() {
+        let args = CliArgs::try_parse_from(["owlry", "migrate-config"]).unwrap();
+        assert!(matches!(args.command, Some(Command::MigrateConfig)));
     }
 }

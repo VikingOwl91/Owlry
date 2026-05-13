@@ -2,8 +2,8 @@ use log::{info, warn};
 use std::os::unix::io::AsRawFd;
 
 use owlry::app::OwlryApp;
-use owlry::cli::CliArgs;
-use owlry::{client, paths, server};
+use owlry::cli::{CliArgs, Command};
+use owlry::{client, commands, paths};
 
 #[cfg(feature = "dev-logging")]
 use log::debug;
@@ -42,47 +42,34 @@ fn try_acquire_lock() -> Option<std::fs::File> {
 fn main() {
     let args = CliArgs::parse_args();
 
-    // -d / --daemon: run the daemon in-process and exit when it stops.
+    // Subcommand dispatch. Each commands::* function calls std::process::exit
+    // and never returns. Daemon mode also installs env_logger; the other
+    // subcommands stay quiet by default.
     if args.daemon {
-        let default_level = if cfg!(feature = "dev-logging") {
-            "debug"
-        } else {
-            "info"
-        };
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(default_level))
-            .format_timestamp_millis()
-            .init();
+        init_logger();
+        commands::run_daemon();
+    }
 
-        let sock = paths::socket_path();
-        if let Err(e) = paths::ensure_parent_dir(&sock) {
-            eprintln!("Failed to create socket directory: {e}");
-            std::process::exit(1);
+    match args.command.clone() {
+        Some(Command::Daemon) => {
+            init_logger();
+            commands::run_daemon();
         }
-        match server::Server::bind(&sock) {
-            Ok(server) => {
-                if let Err(e) = server.run() {
-                    eprintln!("Server error: {e}");
-                    std::process::exit(1);
-                }
-                std::process::exit(0);
-            }
-            Err(e) => {
-                eprintln!("Failed to start daemon: {e}");
-                std::process::exit(1);
-            }
+        Some(Command::Doctor) => commands::run_doctor(),
+        Some(Command::Providers { id }) => commands::run_providers(id),
+        Some(Command::Config { action }) => commands::run_config(action),
+        Some(Command::MigrateConfig) => commands::run_migrate_config(),
+        Some(Command::Dmenu { prompt }) => {
+            init_logger();
+            commands::run_dmenu(prompt);
+        }
+        None => {
+            // Fall through to UI launch below.
         }
     }
 
     // Default: launch the UI.
-    let default_level = if cfg!(feature = "dev-logging") {
-        "debug"
-    } else {
-        "info"
-    };
-
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(default_level))
-        .format_timestamp_millis()
-        .init();
+    init_logger();
 
     #[cfg(feature = "dev-logging")]
     {
@@ -128,4 +115,17 @@ fn main() {
 
     let app = OwlryApp::new(args);
     std::process::exit(app.run());
+}
+
+fn init_logger() {
+    let default_level = if cfg!(feature = "dev-logging") {
+        "debug"
+    } else {
+        "info"
+    };
+    let _ = env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or(default_level),
+    )
+    .format_timestamp_millis()
+    .try_init();
 }
