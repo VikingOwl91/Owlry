@@ -77,13 +77,13 @@ impl CoreClient {
 
         // Socket not available — try to start the daemon.
         let status = std::process::Command::new("systemctl")
-            .args(["--user", "start", "owlryd"])
+            .args(["--user", "start", "owlry.service"])
             .status()
-            .map_err(|e| io::Error::other(format!("failed to start owlryd via systemd: {e}")))?;
+            .map_err(|e| io::Error::other(format!("failed to start owlry.service via systemd: {e}")))?;
 
         if !status.success() {
             return Err(io::Error::other(format!(
-                "systemctl --user start owlryd exited with status {}",
+                "systemctl --user start owlry.service exited with status {}",
                 status
             )));
         }

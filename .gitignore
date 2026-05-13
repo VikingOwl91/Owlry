@@ -17,3 +17,11 @@ aur/*/*.pkg.tar.*
 build-logs/
 test-build-output*.md
 test-build-output*.log
+
+# v2: local AUR checkouts of dropped packages. The AUR remotes still exist
+# on aur.archlinux.org until manually orphaned via the AUR web UI; the
+# embedded .git dirs here are pointers to those remotes. Ignored so the
+# main repo doesn't try to track them as embedded submodules.
+/aur/owlry-core/
+/aur/owlry-lua/
+/aur/owlry-rune/

@@ -47,10 +47,10 @@ install-local:
     sudo install -Dm755 target/release/owlry /usr/bin/owlry
 
     echo "Installing systemd service files..."
-    sudo install -Dm644 systemd/owlryd.service /usr/lib/systemd/user/owlryd.service
-    sudo install -Dm644 systemd/owlryd.socket /usr/lib/systemd/user/owlryd.socket
+    sudo install -Dm644 systemd/owlry.service /usr/lib/systemd/user/owlry.service
+    sudo install -Dm644 systemd/owlry.socket /usr/lib/systemd/user/owlry.socket
 
-    echo "Done. Start daemon: systemctl --user enable --now owlryd.service"
+    echo "Done. Start daemon: systemctl --user enable --now owlry.service"
 
 # === Version Management ===
 
