@@ -36,6 +36,55 @@ pub struct LuaConfig {
     /// `None` = `owlry.tabs` was never called → keep base defaults.
     /// `Some(list)` = explicit set (may be empty to hide all tabs).
     pub tabs: Option<Vec<String>>,
+
+    /// User providers registered via `owlry.provider { ... }`. Order matches
+    /// registration. Duplicates by `id` are resolved at registration time:
+    /// later wins, earlier is dropped (warning logged).
+    pub user_providers: Vec<LuaProviderSpec>,
+}
+
+/// Captured spec from a single `owlry.provider { ... }` call.
+///
+/// Holds the `mlua::Function` for the `items` callback alive — that keeps
+/// the parent Lua state alive too (Function holds an internal Arc).
+#[derive(Clone)]
+pub struct LuaProviderSpec {
+    pub id: String,
+    pub name: Option<String>,
+    pub prefix: Option<String>,
+    pub tab_label: Option<String>,
+    pub icon: Option<String>,
+    pub search_noun: Option<String>,
+    pub priority: u32,
+    /// 2.1 supports only `false` (static, cached after first refresh).
+    /// `true` errors at registration time (per docs/lua-api.md §4.4).
+    pub dynamic: bool,
+    pub items_fn: mlua::Function,
+}
+
+impl std::fmt::Debug for LuaProviderSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LuaProviderSpec")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("prefix", &self.prefix)
+            .field("tab_label", &self.tab_label)
+            .field("icon", &self.icon)
+            .field("search_noun", &self.search_noun)
+            .field("priority", &self.priority)
+            .field("dynamic", &self.dynamic)
+            .field("items_fn", &"<lua function>")
+            .finish()
+    }
+}
+
+/// Validate a user-supplied provider id. Spec §4.4: "Must be lowercase,
+/// alphanumeric + `-`/`_`."
+pub(crate) fn is_valid_provider_id(id: &str) -> bool {
+    !id.is_empty()
+        && id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
 }
 
 /// Known keys accepted by `owlry.set`. Anything else lands in
@@ -324,5 +373,24 @@ mod tests {
         lc.merge_into(&mut cfg);
 
         assert!(cfg.general.tabs.is_empty());
+    }
+
+    #[test]
+    fn valid_provider_id_accepts_lowercase_alnum_dash_underscore() {
+        assert!(is_valid_provider_id("hs"));
+        assert!(is_valid_provider_id("my-provider"));
+        assert!(is_valid_provider_id("my_provider"));
+        assert!(is_valid_provider_id("p1"));
+        assert!(is_valid_provider_id("a-b_c1"));
+    }
+
+    #[test]
+    fn valid_provider_id_rejects_invalid_shapes() {
+        assert!(!is_valid_provider_id(""));
+        assert!(!is_valid_provider_id("Capital"));
+        assert!(!is_valid_provider_id("has space"));
+        assert!(!is_valid_provider_id("dot.in.id"));
+        assert!(!is_valid_provider_id("colon:bad"));
+        assert!(!is_valid_provider_id("emoji_💀"));
     }
 }

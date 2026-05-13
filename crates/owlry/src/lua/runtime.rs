@@ -5,6 +5,12 @@
 //! closures. Evaluate user files via [`LuaContext::eval_file`] (or
 //! [`LuaContext::eval_str`] for tests) and snapshot the accumulated state
 //! via [`LuaContext::snapshot`].
+//!
+//! The Lua state is wrapped in [`Arc`] so [`super::provider::LuaProvider`]
+//! instances can keep it alive independently of the context. `mlua::Function`
+//! references don't bump the Lua refcount on their own — drop the state and
+//! they panic at call time. Holding an `Arc<Lua>` in each provider closes
+//! that gap.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -16,17 +22,23 @@ use super::config::LuaConfig;
 use super::error::LuaConfigError;
 
 pub struct LuaContext {
-    lua: Lua,
+    lua: Arc<Lua>,
     state: Arc<Mutex<LuaConfig>>,
 }
 
 impl LuaContext {
     /// Build a fresh Lua state with the `owlry.*` API surface installed.
     pub fn new() -> Result<Self, LuaConfigError> {
-        let lua = Lua::new();
+        let lua = Arc::new(Lua::new());
         let state = Arc::new(Mutex::new(LuaConfig::default()));
         api::install(&lua, Arc::clone(&state))?;
         Ok(Self { lua, state })
+    }
+
+    /// Clone the inner Lua handle. Used by [`super::provider::LuaProvider`]
+    /// to keep the state alive for the lifetime of the provider.
+    pub fn lua_handle(&self) -> Arc<Lua> {
+        Arc::clone(&self.lua)
     }
 
     /// Evaluate a Lua file against this context. Reads from disk, runs the

@@ -12,9 +12,11 @@
 pub mod api;
 pub mod config;
 pub mod error;
+pub mod provider;
 pub mod runtime;
 pub mod util;
 
-pub use config::LuaConfig;
+pub use config::{LuaConfig, LuaProviderSpec};
 pub use error::LuaConfigError;
+pub use provider::LuaProvider;
 pub use runtime::LuaContext;
