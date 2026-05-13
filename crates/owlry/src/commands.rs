@@ -420,8 +420,9 @@ fn report_legacy_artifacts(artifacts: &[crate::lua::migrate::LegacyArtifact]) {
                 println!("  ── legacy `scripts/` directory ─────────────────");
                 println!("     path: {}", artifact.path.display());
                 println!(
-                    "     {} file(s): {}",
+                    "     {} {}: {}",
                     entries.len(),
+                    if entries.len() == 1 { "file" } else { "files" },
                     if entries.is_empty() {
                         "(empty)".to_string()
                     } else {
