@@ -79,7 +79,9 @@ impl CoreClient {
         let status = std::process::Command::new("systemctl")
             .args(["--user", "start", "owlry.service"])
             .status()
-            .map_err(|e| io::Error::other(format!("failed to start owlry.service via systemd: {e}")))?;
+            .map_err(|e| {
+                io::Error::other(format!("failed to start owlry.service via systemd: {e}"))
+            })?;
 
         if !status.success() {
             return Err(io::Error::other(format!(

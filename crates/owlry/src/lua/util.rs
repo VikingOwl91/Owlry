@@ -120,12 +120,7 @@ fn expand_tilde(pattern: &str) -> String {
 /// the unlikely failure path (signature guarantees infallibility on Linux).
 fn read_hostname() -> String {
     let mut buf = [0u8; 256];
-    let rc = unsafe {
-        libc::gethostname(
-            buf.as_mut_ptr() as *mut std::os::raw::c_char,
-            buf.len(),
-        )
-    };
+    let rc = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut std::os::raw::c_char, buf.len()) };
     if rc != 0 {
         debug!("owlry.util.hostname: gethostname returned {}", rc);
         return String::new();
@@ -267,7 +262,9 @@ mod tests {
 
     #[test]
     fn env_returns_value_when_set() {
-        unsafe { std::env::set_var("OWLRY_TEST_ENV_VAR", "present"); }
+        unsafe {
+            std::env::set_var("OWLRY_TEST_ENV_VAR", "present");
+        }
         let lua = Lua::new();
         install_owlry_util(&lua);
         let out: Option<String> = lua
@@ -275,13 +272,17 @@ mod tests {
             .eval()
             .expect("env");
         assert_eq!(out.as_deref(), Some("present"));
-        unsafe { std::env::remove_var("OWLRY_TEST_ENV_VAR"); }
+        unsafe {
+            std::env::remove_var("OWLRY_TEST_ENV_VAR");
+        }
     }
 
     #[test]
     fn env_returns_nil_when_missing_no_default() {
         // Pick a name unlikely to collide; also pre-clear for safety.
-        unsafe { std::env::remove_var("OWLRY_TEST_MISSING_XYZ"); }
+        unsafe {
+            std::env::remove_var("OWLRY_TEST_MISSING_XYZ");
+        }
         let lua = Lua::new();
         install_owlry_util(&lua);
         let out: Option<String> = lua
@@ -293,7 +294,9 @@ mod tests {
 
     #[test]
     fn env_returns_default_when_missing() {
-        unsafe { std::env::remove_var("OWLRY_TEST_MISSING_FOR_DEFAULT"); }
+        unsafe {
+            std::env::remove_var("OWLRY_TEST_MISSING_FOR_DEFAULT");
+        }
         let lua = Lua::new();
         install_owlry_util(&lua);
         let out: Option<String> = lua

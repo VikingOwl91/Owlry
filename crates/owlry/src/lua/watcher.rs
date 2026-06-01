@@ -207,10 +207,7 @@ fn reload(
     info!("hot-reload: applied {}", lua_path.display());
     let _ = notify_rust::Notification::new()
         .summary("owlry: config reloaded")
-        .body(&format!(
-            "Applied changes from {}",
-            lua_path.display()
-        ))
+        .body(&format!("Applied changes from {}", lua_path.display()))
         .icon("emblem-default")
         .timeout(notify_rust::Timeout::Milliseconds(3_000))
         .show();
@@ -260,7 +257,9 @@ mod tests {
         path
     }
 
-    fn fresh_daemon_state(lua_path: &Path) -> (
+    fn fresh_daemon_state(
+        lua_path: &Path,
+    ) -> (
         Arc<RwLock<Config>>,
         Arc<RwLock<ProviderManager>>,
         Arc<Mutex<Option<LuaContext>>>,
@@ -285,20 +284,12 @@ mod tests {
     #[test]
     fn reload_swaps_in_new_config_state() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let lua_path = write_file(
-            dir.path(),
-            "owlry.lua",
-            r#"owlry.set { max_results = 7 }"#,
-        );
+        let lua_path = write_file(dir.path(), "owlry.lua", r#"owlry.set { max_results = 7 }"#);
         let (config, pm, lua_ctx) = fresh_daemon_state(&lua_path);
         assert_eq!(config.read().unwrap().general.max_results, 7);
 
         // Rewrite the file and call reload directly.
-        write_file(
-            dir.path(),
-            "owlry.lua",
-            r#"owlry.set { max_results = 33 }"#,
-        );
+        write_file(dir.path(), "owlry.lua", r#"owlry.set { max_results = 33 }"#);
         reload(&lua_path, &config, &pm, &lua_ctx);
         assert_eq!(config.read().unwrap().general.max_results, 33);
     }
@@ -306,11 +297,7 @@ mod tests {
     #[test]
     fn reload_failure_preserves_previous_state() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let lua_path = write_file(
-            dir.path(),
-            "owlry.lua",
-            r#"owlry.set { max_results = 7 }"#,
-        );
+        let lua_path = write_file(dir.path(), "owlry.lua", r#"owlry.set { max_results = 7 }"#);
         let (config, pm, lua_ctx) = fresh_daemon_state(&lua_path);
         assert_eq!(config.read().unwrap().general.max_results, 7);
 
@@ -344,14 +331,8 @@ mod tests {
         let freq = FrecencyStore::new();
         {
             let pm_guard = pm.read().unwrap();
-            let results = pm_guard.search_with_frecency(
-                "v1 unique",
-                100,
-                &filter,
-                &freq,
-                0.0,
-                None,
-            );
+            let results =
+                pm_guard.search_with_frecency("v1 unique", 100, &filter, &freq, 0.0, None);
             assert!(
                 results.iter().any(|(it, _)| it.name.contains("v1 unique")),
                 "v1 item must be present before reload"

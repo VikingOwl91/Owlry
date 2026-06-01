@@ -96,12 +96,10 @@ pub fn validate(cfg: &LuaConfig) -> ValidationReport {
 
     // owlry.tabs — unknown ids; entries not in providers list.
     if let Some(tabs) = &cfg.tabs {
-        let enabled_canon: Option<std::collections::HashSet<&str>> =
-            cfg.providers.as_ref().map(|v| {
-                v.iter()
-                    .filter_map(|s| canonical_provider_id(s))
-                    .collect()
-            });
+        let enabled_canon: Option<std::collections::HashSet<&str>> = cfg
+            .providers
+            .as_ref()
+            .map(|v| v.iter().filter_map(|s| canonical_provider_id(s)).collect());
         for id in tabs {
             let canon = canonical_provider_id(id);
             match canon {
@@ -144,8 +142,7 @@ pub fn validate(cfg: &LuaConfig) -> ValidationReport {
         profile_names.sort();
         for name in profile_names {
             for id in &profiles[name] {
-                let known = canonical_provider_id(id).is_some()
-                    || user_ids.contains(&id.as_str());
+                let known = canonical_provider_id(id).is_some() || user_ids.contains(&id.as_str());
                 if !known {
                     report.warnings.push(format!(
                         "owlry.profiles.{}: unknown id `{}` — not a built-in and \
@@ -185,8 +182,7 @@ fn canonical_provider_id(id: &str) -> Option<&'static str> {
 /// dmenu) return `true` unconditionally; the rest gate on cargo features.
 fn is_compiled_in(canonical: &str) -> bool {
     match canonical {
-        "applications" | "commands" | "calculator" | "converter" | "power"
-        | "dmenu" => true,
+        "applications" | "commands" | "calculator" | "converter" | "power" | "dmenu" => true,
         "clipboard" => cfg!(feature = "clipboard"),
         "emoji" => cfg!(feature = "emoji"),
         "filesearch" => cfg!(feature = "filesearch"),
@@ -221,7 +217,10 @@ mod tests {
         let report = validate(&cfg);
         assert_eq!(report.exit_code(), 2);
         assert!(
-            report.warnings.iter().any(|w| w.contains("mystery_2_2_key")),
+            report
+                .warnings
+                .iter()
+                .any(|w| w.contains("mystery_2_2_key")),
             "got: {:?}",
             report.warnings
         );
@@ -234,7 +233,10 @@ mod tests {
         let report = validate(&cfg);
         assert_eq!(report.exit_code(), 2);
         assert!(
-            report.warnings.iter().any(|w| w.contains("future_palette_token"))
+            report
+                .warnings
+                .iter()
+                .any(|w| w.contains("future_palette_token"))
         );
     }
 
@@ -282,7 +284,10 @@ mod tests {
         cfg.tabs = Some(vec!["app".into(), "cmd".into()]); // cmd not enabled
         let report = validate(&cfg);
         assert!(
-            report.warnings.iter().any(|w| w.contains("cmd") && w.contains("not in owlry.providers")),
+            report
+                .warnings
+                .iter()
+                .any(|w| w.contains("cmd") && w.contains("not in owlry.providers")),
             "got: {:?}",
             report.warnings
         );
@@ -306,7 +311,10 @@ mod tests {
         cfg.duplicate_user_provider_ids.push("hs".into());
         let report = validate(&cfg);
         assert!(
-            report.warnings.iter().any(|w| w.contains("registered more than once")),
+            report
+                .warnings
+                .iter()
+                .any(|w| w.contains("registered more than once")),
             "got: {:?}",
             report.warnings
         );

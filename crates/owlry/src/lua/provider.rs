@@ -52,10 +52,7 @@ impl LuaProvider {
 
 impl Provider for LuaProvider {
     fn name(&self) -> &str {
-        self.spec
-            .name
-            .as_deref()
-            .unwrap_or(self.spec.id.as_str())
+        self.spec.name.as_deref().unwrap_or(self.spec.id.as_str())
     }
 
     fn provider_type(&self) -> ProviderType {
@@ -137,7 +134,10 @@ fn parse_item(t: &Table, provider_id: &str, idx: usize) -> mlua::Result<LaunchIt
     let terminal: bool = t.get::<Option<bool>>("terminal")?.unwrap_or(false);
     let tags: Vec<String> = t
         .get::<Option<Table>>("tags")?
-        .map(|tt| tt.sequence_values::<String>().collect::<mlua::Result<Vec<_>>>())
+        .map(|tt| {
+            tt.sequence_values::<String>()
+                .collect::<mlua::Result<Vec<_>>>()
+        })
         .transpose()?
         .unwrap_or_default();
 
@@ -177,9 +177,7 @@ mod tests {
 
     #[test]
     fn minimal_provider_captures_id_and_defaults() {
-        let p = build(
-            r#"owlry.provider { id = "hs", items = function() return {} end }"#,
-        );
+        let p = build(r#"owlry.provider { id = "hs", items = function() return {} end }"#);
         assert_eq!(p.id(), "hs");
         assert_eq!(p.name(), "hs"); // name defaults to id
         assert_eq!(p.icon(), "application-x-addon");
@@ -379,13 +377,11 @@ mod registration_tests {
 
     #[test]
     fn accumulates_multiple_distinct_providers() {
-        let cfg = run(
-            r#"
+        let cfg = run(r#"
             owlry.provider { id = "a", items = function() return {} end }
             owlry.provider { id = "b", items = function() return {} end }
             owlry.provider { id = "c", items = function() return {} end }
-            "#,
-        )
+            "#)
         .unwrap();
         let ids: Vec<&str> = cfg.user_providers.iter().map(|s| s.id.as_str()).collect();
         assert_eq!(ids, vec!["a", "b", "c"]);
@@ -393,13 +389,11 @@ mod registration_tests {
 
     #[test]
     fn duplicate_id_replaces_in_place() {
-        let cfg = run(
-            r#"
+        let cfg = run(r#"
             owlry.provider { id = "a", prefix = ":v1", items = function() return {} end }
             owlry.provider { id = "b", items = function() return {} end }
             owlry.provider { id = "a", prefix = ":v2", items = function() return {} end }
-            "#,
-        )
+            "#)
         .unwrap();
         assert_eq!(cfg.user_providers.len(), 2);
         let a = cfg.user_providers.iter().find(|s| s.id == "a").unwrap();
@@ -422,40 +416,38 @@ mod registration_tests {
 
     #[test]
     fn invalid_id_format_is_an_error() {
-        let err = run(
-            r#"owlry.provider { id = "BAD ID", items = function() return {} end }"#,
-        )
-        .unwrap_err();
+        let err = run(r#"owlry.provider { id = "BAD ID", items = function() return {} end }"#)
+            .unwrap_err();
         let msg = format!("{}", err);
         assert!(msg.contains("invalid"), "got: {}", msg);
     }
 
     #[test]
     fn dynamic_true_is_rejected_in_2_1() {
-        let err = run(
-            r#"
+        let err = run(r#"
             owlry.provider {
               id = "x", dynamic = true,
               items = function() return {} end,
             }
-            "#,
-        )
+            "#)
         .unwrap_err();
         let msg = format!("{}", err);
         assert!(msg.contains("dynamic"), "got: {}", msg);
-        assert!(msg.contains("2.2"), "should mention 2.2 roadmap; got: {}", msg);
+        assert!(
+            msg.contains("2.2"),
+            "should mention 2.2 roadmap; got: {}",
+            msg
+        );
     }
 
     #[test]
     fn dynamic_false_explicit_is_fine() {
-        let cfg = run(
-            r#"
+        let cfg = run(r#"
             owlry.provider {
               id = "x", dynamic = false,
               items = function() return {} end,
             }
-            "#,
-        )
+            "#)
         .unwrap();
         assert_eq!(cfg.user_providers.len(), 1);
         assert!(!cfg.user_providers[0].dynamic);
@@ -463,14 +455,12 @@ mod registration_tests {
 
     #[test]
     fn priority_is_captured() {
-        let cfg = run(
-            r#"
+        let cfg = run(r#"
             owlry.provider {
               id = "x", priority = 999,
               items = function() return {} end,
             }
-            "#,
-        )
+            "#)
         .unwrap();
         assert_eq!(cfg.user_providers[0].priority, 999);
     }

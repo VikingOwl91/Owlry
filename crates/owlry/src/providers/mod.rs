@@ -333,7 +333,10 @@ impl ProviderManager {
         // They were enumerated in the LuaConfig snapshot during Config load
         // and turned into Box<dyn Provider> by the caller (see Server::bind).
         if !user_providers.is_empty() {
-            info!("Registering {} user-defined provider(s)", user_providers.len());
+            info!(
+                "Registering {} user-defined provider(s)",
+                user_providers.len()
+            );
             core_providers.extend(user_providers);
         }
 

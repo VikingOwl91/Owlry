@@ -537,9 +537,7 @@ impl Config {
     /// TOML-only load path. Honours the legacy `[plugins.<name>]` →
     /// `[plugin_config.<name>]` migration. Returns defaults if the file is
     /// missing or the path is `None`.
-    pub(crate) fn load_from_toml(
-        path: Option<&Path>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    pub(crate) fn load_from_toml(path: Option<&Path>) -> Result<Self, Box<dyn std::error::Error>> {
         let Some(path) = path else {
             info!("No TOML config path available; using defaults");
             return Ok(Self::default());
@@ -768,7 +766,6 @@ impl LoadedConfig {
             user_providers: lua_cfg.user_providers,
         })
     }
-
 }
 
 #[cfg(test)]

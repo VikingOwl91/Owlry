@@ -536,10 +536,7 @@ mod tests {
         assert_eq!(result.query, "item");
 
         let bare = ProviderFilter::parse_query(":smoke");
-        assert_eq!(
-            bare.prefix,
-            Some(ProviderType::Plugin("smoke".to_string()))
-        );
+        assert_eq!(bare.prefix, Some(ProviderType::Plugin("smoke".to_string())));
         assert_eq!(bare.query, "");
     }
 

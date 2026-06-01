@@ -168,7 +168,11 @@ mod tests {
             owlry.set { width = 1000 }
             "#,
         );
-        assert_eq!(s.theme.as_deref(), Some("owl"), "earlier theme must persist");
+        assert_eq!(
+            s.theme.as_deref(),
+            Some("owl"),
+            "earlier theme must persist"
+        );
         assert_eq!(s.font_size, Some(16), "second call must apply");
         assert_eq!(s.width, Some(1000), "later width must win");
     }
@@ -200,9 +204,7 @@ mod tests {
 
     #[test]
     fn providers_captures_id_list() {
-        let s = snapshot_after(
-            r#"owlry.providers { "app", "cmd", "calc", "conv", "power" }"#,
-        );
+        let s = snapshot_after(r#"owlry.providers { "app", "cmd", "calc", "conv", "power" }"#);
         assert_eq!(
             s.providers,
             Some(vec![
@@ -284,14 +286,16 @@ mod tests {
         assert_eq!(s.font_size, Some(14));
         assert_eq!(
             s.providers.as_deref(),
-            Some(&[
-                "app".to_string(),
-                "cmd".to_string(),
-                "calc".to_string(),
-                "conv".to_string(),
-                "power".to_string(),
-                "systemd".to_string(),
-            ][..])
+            Some(
+                &[
+                    "app".to_string(),
+                    "cmd".to_string(),
+                    "calc".to_string(),
+                    "conv".to_string(),
+                    "power".to_string(),
+                    "systemd".to_string(),
+                ][..]
+            )
         );
         assert_eq!(
             s.tabs.as_deref(),
@@ -427,7 +431,10 @@ mod tests {
         );
         assert_eq!(s.theme_colors.background.as_deref(), Some("#000000"));
         assert!(s.unknown_theme_keys.contains(&"future_v22_key".to_string()));
-        assert!(s.unknown_theme_keys.contains(&"another_unknown".to_string()));
+        assert!(
+            s.unknown_theme_keys
+                .contains(&"another_unknown".to_string())
+        );
     }
 
     #[test]
@@ -459,12 +466,13 @@ mod tests {
         assert_eq!(map.len(), 3);
         assert_eq!(
             map.get("dev"),
-            Some(&vec!["app".to_string(), "cmd".to_string(), "ssh".to_string()])
+            Some(&vec![
+                "app".to_string(),
+                "cmd".to_string(),
+                "ssh".to_string()
+            ])
         );
-        assert_eq!(
-            map.get("minimal"),
-            Some(&vec!["app".to_string()])
-        );
+        assert_eq!(map.get("minimal"), Some(&vec!["app".to_string()]));
     }
 
     #[test]

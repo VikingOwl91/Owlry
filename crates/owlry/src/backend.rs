@@ -211,13 +211,15 @@ impl SearchBackend {
                 let modes_param = Self::build_modes_param(filter);
                 let prefix_param = Self::build_prefix_param(filter);
                 match handle.client.lock() {
-                    Ok(mut client) => match client.query(&effective_query, modes_param, prefix_param) {
-                        Ok(items) => items.into_iter().map(result_to_launch_item).collect(),
-                        Err(e) => {
-                            warn!("IPC query failed: {}", e);
-                            Vec::new()
+                    Ok(mut client) => {
+                        match client.query(&effective_query, modes_param, prefix_param) {
+                            Ok(items) => items.into_iter().map(result_to_launch_item).collect(),
+                            Err(e) => {
+                                warn!("IPC query failed: {}", e);
+                                Vec::new()
+                            }
                         }
-                    },
+                    }
                     Err(e) => {
                         warn!("Failed to lock daemon client: {}", e);
                         Vec::new()

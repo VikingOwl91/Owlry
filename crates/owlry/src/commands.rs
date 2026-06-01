@@ -73,7 +73,10 @@ fn print_config_source_info(out: &mut impl Write) {
                 out,
                 "          format from 2.1 onwards. TOML works until 3.0; the migrator is"
             );
-            let _ = writeln!(out, "          deterministic and pass `--force` to overwrite.");
+            let _ = writeln!(
+                out,
+                "          deterministic and pass `--force` to overwrite."
+            );
         } else {
             let _ = writeln!(out, "  source: built-in defaults (no user config found)");
         }
@@ -88,20 +91,33 @@ fn print_config_source_info(out: &mut impl Write) {
                     out,
                     "  legacy: {} pre-v2 {} detected in your config dir.",
                     artifacts.len(),
-                    if artifacts.len() == 1 { "artifact" } else { "artifacts" }
+                    if artifacts.len() == 1 {
+                        "artifact"
+                    } else {
+                        "artifacts"
+                    }
                 );
                 for a in &artifacts {
                     use crate::lua::migrate::LegacyKind;
                     match &a.kind {
                         LegacyKind::Plugin { id, .. } => {
-                            let _ = writeln!(out, "          - plugin `{}` at {}", id, a.path.display());
+                            let _ = writeln!(
+                                out,
+                                "          - plugin `{}` at {}",
+                                id,
+                                a.path.display()
+                            );
                         }
                         LegacyKind::ScriptsDir { entries } => {
                             let _ = writeln!(
                                 out,
                                 "          - scripts dir ({} {}) at {}",
                                 entries.len(),
-                                if entries.len() == 1 { "entry" } else { "entries" },
+                                if entries.len() == 1 {
+                                    "entry"
+                                } else {
+                                    "entries"
+                                },
                                 a.path.display()
                             );
                         }
@@ -420,9 +436,7 @@ fn run_migrate_config_impl(force: bool) -> i32 {
                 out.bytes_written,
                 toml_path.display(),
             );
-            println!(
-                "owlry.lua now takes precedence over config.toml (see docs/lua-api.md §2)."
-            );
+            println!("owlry.lua now takes precedence over config.toml (see docs/lua-api.md §2).");
             report_legacy_artifacts(&out.legacy_artifacts);
             0
         }
@@ -467,11 +481,13 @@ fn report_legacy_artifacts(artifacts: &[crate::lua::migrate::LegacyArtifact]) {
     println!(
         "Heads up: detected {} pre-v2 {} in your config dir that the migrator",
         artifacts.len(),
-        if artifacts.len() == 1 { "artifact" } else { "artifacts" }
+        if artifacts.len() == 1 {
+            "artifact"
+        } else {
+            "artifacts"
+        }
     );
-    println!(
-        "did NOT translate. They aren't loaded by 2.1+ — they're just files sitting"
-    );
+    println!("did NOT translate. They aren't loaded by 2.1+ — they're just files sitting");
     println!("there from your 1.x install. Recreate them in owlry.lua if you still use them:");
 
     for artifact in artifacts {
@@ -496,7 +512,10 @@ fn report_legacy_artifacts(artifacts: &[crate::lua::migrate::LegacyArtifact]) {
                     println!("     icon: {}", i);
                 }
                 if let Some(ep) = entry_point {
-                    println!("     entry_point: {} (Rune / C-ABI; unsupported in 2.1)", ep);
+                    println!(
+                        "     entry_point: {} (Rune / C-ABI; unsupported in 2.1)",
+                        ep
+                    );
                 }
                 println!("     ──");
                 println!("     Recreate as a user provider in owlry.lua:");
@@ -533,9 +552,7 @@ fn report_legacy_artifacts(artifacts: &[crate::lua::migrate::LegacyArtifact]) {
                     }
                 );
                 println!("     ──");
-                println!(
-                    "     The standalone `scripts` provider was removed in 2.0. Wrap each"
-                );
+                println!("     The standalone `scripts` provider was removed in 2.0. Wrap each");
                 println!("     script in an `owlry.provider {{}}` block, e.g.:");
                 println!();
                 println!("       owlry.provider {{");
@@ -562,9 +579,7 @@ fn report_legacy_artifacts(artifacts: &[crate::lua::migrate::LegacyArtifact]) {
         }
     }
     println!();
-    println!(
-        "  See `docs/lua-api.md` §4.4 (user providers) and §5.1 (owlry.util.*)."
-    );
+    println!("  See `docs/lua-api.md` §4.4 (user providers) and §5.1 (owlry.util.*).");
 }
 
 /// `owlry dmenu`: delegate to the UI's dmenu pipeline.

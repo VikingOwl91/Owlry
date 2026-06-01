@@ -224,10 +224,7 @@ mod tests {
         // Save / restore so other tests in this module aren't affected.
         let prev = std::env::var_os("OWLRY_SOCKET");
         unsafe { std::env::set_var("OWLRY_SOCKET", "/tmp/owlry-smoke/foo.sock") };
-        assert_eq!(
-            socket_path(),
-            PathBuf::from("/tmp/owlry-smoke/foo.sock")
-        );
+        assert_eq!(socket_path(), PathBuf::from("/tmp/owlry-smoke/foo.sock"));
         match prev {
             Some(v) => unsafe { std::env::set_var("OWLRY_SOCKET", v) },
             None => unsafe { std::env::remove_var("OWLRY_SOCKET") },

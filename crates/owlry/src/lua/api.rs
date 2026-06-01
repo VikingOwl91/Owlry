@@ -345,9 +345,7 @@ fn apply_theme_table(cfg: &mut LuaConfig, t: Table) -> mlua::Result<()> {
         let (k, _) = pair?;
         if let Value::String(s) = k {
             let key = s.to_str()?.to_string();
-            if !KNOWN_THEME_KEYS.contains(&key.as_str())
-                && !cfg.unknown_theme_keys.contains(&key)
-            {
+            if !KNOWN_THEME_KEYS.contains(&key.as_str()) && !cfg.unknown_theme_keys.contains(&key) {
                 cfg.unknown_theme_keys.push(key);
             }
         }

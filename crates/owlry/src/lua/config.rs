@@ -543,10 +543,7 @@ mod tests {
             ..Default::default()
         };
         lc.merge_into(&mut cfg);
-        assert_eq!(
-            cfg.appearance.theme.as_deref(),
-            Some("catppuccin-mocha")
-        );
+        assert_eq!(cfg.appearance.theme.as_deref(), Some("catppuccin-mocha"));
     }
 
     #[test]

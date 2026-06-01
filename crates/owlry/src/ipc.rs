@@ -97,7 +97,11 @@ mod tests {
             prefix: None,
         };
         let json = serde_json::to_string(&req).unwrap();
-        assert!(!json.contains("prefix"), "prefix must be omitted; got: {}", json);
+        assert!(
+            !json.contains("prefix"),
+            "prefix must be omitted; got: {}",
+            json
+        );
         assert!(json.contains(r#""type":"query""#));
         assert!(json.contains(r#""text":"firefox""#));
     }
@@ -122,7 +126,11 @@ mod tests {
         let json = r#"{"type":"query","text":"foo"}"#;
         let req: Request = serde_json::from_str(json).unwrap();
         match req {
-            Request::Query { text, modes, prefix } => {
+            Request::Query {
+                text,
+                modes,
+                prefix,
+            } => {
                 assert_eq!(text, "foo");
                 assert!(modes.is_none());
                 assert!(prefix.is_none());
