@@ -145,6 +145,9 @@ fn apply_set(cfg: &mut LuaConfig, t: Table) -> mlua::Result<()> {
     if let Some(v) = t.get::<Option<String>>("search_engine")? {
         cfg.search_engine = Some(v);
     }
+    if let Some(v) = t.get::<Option<Vec<String>>>("filesearch_roots")? {
+        cfg.filesearch_roots = Some(v);
+    }
 
     // Record unknown keys (string-keyed, non-known) for `config validate`.
     for pair in t.pairs::<mlua::Value, mlua::Value>() {

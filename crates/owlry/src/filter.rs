@@ -216,6 +216,18 @@ impl ProviderFilter {
             }
         }
 
+        // `/` is a shorthand alias for the `:file` prefix. `/foo` and `/ foo`
+        // both route to file search with term "foo"; a bare `/` is a partial
+        // prefix with an empty query. This produces an identical ParsedQuery to
+        // `:file foo`, so the daemon path is shared.
+        if let Some(rest) = trimmed.strip_prefix('/') {
+            return ParsedQuery {
+                prefix: Some(ProviderType::Plugin("filesearch".to_string())),
+                tag_filter: None,
+                query: rest.trim_start().to_string(),
+            };
+        }
+
         // Core prefixes — each entry is tried as ":name " (full) and ":name" (partial)
         let core_prefixes: &[(&str, ProviderType)] = &[
             ("app", ProviderType::Application),
@@ -481,6 +493,33 @@ mod tests {
             Some(ProviderType::Plugin("calc".to_string()))
         );
         assert_eq!(result.query, "5+3");
+    }
+
+    #[test]
+    fn slash_alias_routes_to_filesearch_like_file_prefix() {
+        // `/foo` must produce the same ParsedQuery as `:file foo` so file
+        // search is reachable without typing the full prefix.
+        let slash = ProviderFilter::parse_query("/foo");
+        let file = ProviderFilter::parse_query(":file foo");
+        assert_eq!(slash.prefix, file.prefix);
+        assert_eq!(slash.query, file.query);
+        assert_eq!(
+            slash.prefix,
+            Some(ProviderType::Plugin("filesearch".to_string()))
+        );
+        assert_eq!(slash.query, "foo");
+
+        // `/ foo` (space after slash) trims to the same term.
+        let spaced = ProviderFilter::parse_query("/ foo");
+        assert_eq!(spaced.query, "foo");
+
+        // Bare `/` is a partial prefix with an empty query.
+        let bare = ProviderFilter::parse_query("/");
+        assert_eq!(
+            bare.prefix,
+            Some(ProviderType::Plugin("filesearch".to_string()))
+        );
+        assert_eq!(bare.query, "");
     }
 
     #[test]

@@ -28,6 +28,7 @@ pub struct LuaConfig {
     pub frecency: Option<bool>,
     pub frecency_weight: Option<f64>,
     pub search_engine: Option<String>,
+    pub filesearch_roots: Option<Vec<String>>,
 
     /// Keys passed to `owlry.set` that we don't recognise. Surfaced by
     /// `owlry config validate` (Phase 3.9). Not an error — forward-compat.
@@ -135,6 +136,7 @@ pub(crate) const KNOWN_SET_KEYS: &[&str] = &[
     "frecency",
     "frecency_weight",
     "search_engine",
+    "filesearch_roots",
 ];
 
 /// Known keys accepted by `owlry.theme { ... }`. Mirrors the fields of
@@ -210,6 +212,9 @@ impl LuaConfig {
         }
         if let Some(v) = &self.search_engine {
             cfg.providers.search_engine = v.clone();
+        }
+        if let Some(v) = &self.filesearch_roots {
+            cfg.providers.filesearch_roots = v.clone();
         }
 
         // ── owlry.providers ────────────────────────────────────────────
@@ -399,6 +404,21 @@ mod tests {
         assert!(!cfg.providers.frecency);
         assert!((cfg.providers.frecency_weight - 0.75).abs() < f64::EPSILON);
         assert_eq!(cfg.providers.search_engine, "google");
+    }
+
+    #[test]
+    fn merge_overrides_filesearch_roots() {
+        let mut cfg = Config::default();
+        assert!(cfg.providers.filesearch_roots.is_empty());
+        let lc = LuaConfig {
+            filesearch_roots: Some(vec!["~/Documents".into(), "~/code".into()]),
+            ..Default::default()
+        };
+        lc.merge_into(&mut cfg);
+        assert_eq!(
+            cfg.providers.filesearch_roots,
+            vec!["~/Documents".to_string(), "~/code".to_string()]
+        );
     }
 
     #[test]
