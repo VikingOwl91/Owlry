@@ -8,7 +8,11 @@
 
 A lightweight, owl-themed application launcher for Wayland, built with GTK4 and Layer Shell. Single-binary, configurable, fast.
 
-> **2.0 highlights.** Owlry collapsed from 15 AUR packages and a dynamic plugin system into one binary. All providers (apps, commands, calculator, converter, power, bookmarks, clipboard, emoji, ssh, systemd, websearch, filesearch) are compiled in and gated by cargo features. The AUR build ships everything; `cargo install` consumers can pick a subset. See [`docs/RESTRUCTURE-V2.md`](docs/RESTRUCTURE-V2.md) for the full rewrite story.
+<p align="center">
+  <img src="assets/owlry-demo.gif" alt="Owlry — calculator, converter, web search, and power actions in the default theme" width="760">
+</p>
+
+> **Where it stands (2.1).** Owlry collapsed from 15 AUR packages and a dynamic plugin system into a single binary: every provider (apps, commands, calculator, converter, power, clipboard, emoji, ssh, systemd, web search, file search) is compiled in and gated by a cargo feature. Configuration is Lua-first — `~/.config/owlry/owlry.lua`, with TOML kept as a back-compat fallback until 3.0. The AUR build ships everything; `cargo install` consumers pick a subset. See [`docs/RESTRUCTURE-V2.md`](docs/RESTRUCTURE-V2.md) for the rewrite story and [`docs/lua-api.md`](docs/lua-api.md) for the config surface.
 
 ## Features
 
@@ -384,7 +388,7 @@ owlry  (single binary)
 
 Daemon:
 ├── Built-in providers     applications, commands, power, calculator, converter
-├── Optional providers     bookmarks, clipboard, emoji, ssh, systemd, websearch, filesearch
+├── Optional providers     clipboard, emoji, ssh, systemd, websearch, filesearch
 │                          (compiled in per cargo feature)
 ├── Frecency tracking      auto-saved every 5 min; flushed on SIGTERM/SIGINT
 └── IPC server             $XDG_RUNTIME_DIR/owlry/owlry.sock (newline-delimited JSON)
@@ -393,6 +397,20 @@ Daemon:
 The daemon keeps providers and items warm in memory; the UI launches instantly because there's no work to do at startup. The UI client is a thin GTK4 layer that streams queries and renders results.
 
 Set `OWLRY_SOCKET=/path/to/sock` to override the socket location — useful for running a development daemon alongside a production one.
+
+## Performance
+
+Because the daemon keeps every provider's items warm in memory, a query is just a frecency-ranked fuzzy match over cached data plus a Unix-socket round-trip — no per-keystroke disk or subprocess work on the hot path.
+
+Typical latencies, measured against a warm daemon (single machine, informational — not a benchmark):
+
+| Path | Latency |
+|------|---------|
+| Query round-trip (UI → daemon → results) | ~2–7 ms |
+| Result rendering (15 rows) | ~3 ms |
+| Frecency-ranked fuzzy match over all providers | low single-digit ms |
+
+File search (`:file` / `/`) is the one provider that shells out (`fd`/`locate`). It runs **only** on its explicit prefix and is bounded — depth limit, directory exclusions, result cap, and a wall-clock timeout — so it never blocks the rest of the result set.
 
 ## Roadmap
 
