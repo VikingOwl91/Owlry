@@ -18,6 +18,11 @@ use std::rc::Rc;
 
 const APP_ID: &str = "org.owlry.launcher";
 
+/// Process-start timestamp, set once at the top of `main()`. Lets `on_activate`
+/// measure the pre-activate gap (GApplication/GTK/Wayland/D-Bus init) that the
+/// `t0`-relative deltas below cannot see. Enable with RUST_LOG=debug.
+pub static BOOT: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
 pub struct OwlryApp {
     app: Application,
 }
@@ -43,11 +48,24 @@ impl OwlryApp {
     fn on_activate(app: &Application, args: &CliArgs) {
         debug!("Activating Owlry");
 
+        // Startup phase timing. Enable with RUST_LOG=debug to confirm where
+        // per-open latency goes (GTK build vs. layer-shell vs. present vs. the
+        // initial daemon query). Deltas are cumulative from activate().
+        let t0 = std::time::Instant::now();
+        if let Some(boot) = BOOT.get() {
+            debug!(
+                "startup: activate reached +{:.1?} after process boot (GTK/display/D-Bus init)",
+                boot.elapsed()
+            );
+        }
+
         // Register bundled icon resources
         gio::resources_register_include!("icons.gresource")
             .expect("Failed to register icon resources");
+        debug!("startup: gresource registered +{:.1?}", t0.elapsed());
 
         let config = Rc::new(RefCell::new(Config::load_or_default()));
+        debug!("startup: config loaded +{:.1?}", t0.elapsed());
 
         // Build backend based on mode
         let dmenu_mode = DmenuProvider::has_stdin_data();
@@ -81,6 +99,8 @@ impl OwlryApp {
             }
         };
 
+        debug!("startup: backend ready +{:.1?}", t0.elapsed());
+
         let backend = Rc::new(RefCell::new(backend));
 
         // Create filter from CLI args, profile, and config
@@ -107,6 +127,7 @@ impl OwlryApp {
             ProviderFilter::new(None, None, &config.borrow().providers, &tabs)
         };
         let filter = Rc::new(RefCell::new(filter));
+        debug!("startup: filter built +{:.1?}", t0.elapsed());
 
         let window = MainWindow::new(
             app,
@@ -115,6 +136,7 @@ impl OwlryApp {
             filter.clone(),
             args.prompt.clone(),
         );
+        debug!("startup: MainWindow built +{:.1?}", t0.elapsed());
 
         // Set up layer shell for Wayland overlay behavior
         window.init_layer_shell();
@@ -130,17 +152,35 @@ impl OwlryApp {
 
         // Position from top
         window.set_margin(Edge::Top, 200);
+        debug!("startup: layer-shell configured +{:.1?}", t0.elapsed());
 
         // Set up icon theme fallbacks
         Self::setup_icon_theme();
+        debug!("startup: icon theme set +{:.1?}", t0.elapsed());
 
         // Load CSS styling with config for theming
         Self::load_css(&config.borrow());
+        debug!("startup: CSS loaded +{:.1?}", t0.elapsed());
+
+        // Fires when the surface is actually mapped by the compositor — the
+        // closest signal to "the user sees the window". Captures first-frame /
+        // GPU cost that happens after present() returns.
+        {
+            let t0_map = t0;
+            window.connect_map(move |_| {
+                debug!(
+                    "startup: window mapped (first paint) +{:.1?}",
+                    t0_map.elapsed()
+                );
+            });
+        }
 
         window.present();
+        debug!("startup: present() returned +{:.1?}", t0.elapsed());
 
         // Populate results AFTER present() so the window appears immediately
         window.schedule_initial_results();
+        debug!("startup: scheduled initial results +{:.1?}", t0.elapsed());
     }
 
     /// Create a local backend as fallback when daemon is unavailable.

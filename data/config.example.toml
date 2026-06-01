@@ -164,3 +164,8 @@ frecency_weight = 0.3    # 0.0 = disabled, 1.0 = strong boost
 # Options: google, duckduckgo, bing, startpage, searxng, brave, ecosia
 # Or a custom URL: "https://search.example.com/?q={query}"
 search_engine = "duckduckgo"
+
+# Root directories for file search (the :file prefix or the / alias). "~/" is
+# expanded; non-existent entries are dropped. Empty (default) searches $HOME.
+# File search is opt-in — it never runs on a bare query, only under :file / /.
+# filesearch_roots = ["~/Documents", "~/code"]

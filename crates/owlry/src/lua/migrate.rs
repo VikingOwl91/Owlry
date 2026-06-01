@@ -354,6 +354,15 @@ fn emit_set_section(out: &mut String, cfg: &Config) {
     if cfg.providers.search_engine != d.providers.search_engine {
         entries.push(("search_engine", lua_string(&cfg.providers.search_engine)));
     }
+    if cfg.providers.filesearch_roots != d.providers.filesearch_roots {
+        let items: Vec<String> = cfg
+            .providers
+            .filesearch_roots
+            .iter()
+            .map(|r| lua_string(r))
+            .collect();
+        entries.push(("filesearch_roots", format!("{{ {} }}", items.join(", "))));
+    }
 
     if entries.is_empty() {
         return;

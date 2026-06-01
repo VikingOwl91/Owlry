@@ -620,6 +620,11 @@ impl MainWindow {
                     // Clear the source ID since we're now executing
                     *debounce_source_for_closure.borrow_mut() = None;
 
+                    // Search latency timing (keystroke path). The 50ms debounce
+                    // precedes this closure; `dispatch_t` measures from query
+                    // dispatch through IPC return to painted rows.
+                    let dispatch_t = std::time::Instant::now();
+
                     let cfg = config.borrow();
                     let max_results = cfg.general.max_results;
                     drop(cfg);
@@ -643,11 +648,17 @@ impl MainWindow {
 
                         gtk4::glib::spawn_future_local(async move {
                             if let Ok(result) = rx.await {
+                                log::debug!(
+                                    "search: dispatch→IPC return +{:.1?} ({} items)",
+                                    dispatch_t.elapsed(),
+                                    result.items.len()
+                                );
                                 // Discard stale results: the user has typed something new
                                 // since this query was dispatched.
                                 if search_entry_for_stale.text().as_str() != raw_text_at_dispatch {
                                     return;
                                 }
+                                let paint_t = std::time::Instant::now();
                                 results_list_cb.remove_all();
 
                                 let items = result.items;
@@ -667,6 +678,12 @@ impl MainWindow {
                                 lazy.all_results = items;
                                 lazy.displayed_count = initial_count;
                                 lazy.query = query_for_highlight;
+                                log::debug!(
+                                    "search: paint {} rows +{:.1?} | total dispatch→paint +{:.1?}",
+                                    initial_count,
+                                    paint_t.elapsed(),
+                                    dispatch_t.elapsed()
+                                );
                             }
                         });
                     } else {
@@ -1192,15 +1209,26 @@ impl MainWindow {
         let current_results = self.current_results.clone();
         let lazy_state = self.lazy_state.clone();
 
+        let scheduled_at = std::time::Instant::now();
         gtk4::glib::idle_add_local_once(move || {
+            log::debug!(
+                "startup: initial-results idle fired +{:.1?} after schedule",
+                scheduled_at.elapsed()
+            );
             let cfg = config.borrow();
             let max_results = cfg.general.max_results;
             drop(cfg);
 
+            let query_start = std::time::Instant::now();
             let results =
                 backend
                     .borrow_mut()
                     .search("", max_results, &filter.borrow(), &config.borrow());
+            log::debug!(
+                "startup: initial daemon query returned {} items in {:.1?}",
+                results.len(),
+                query_start.elapsed()
+            );
 
             // Clear existing results
             results_list.remove_all();

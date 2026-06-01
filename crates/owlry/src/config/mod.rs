@@ -202,6 +202,11 @@ pub struct ProvidersConfig {
     /// Or a custom URL with a {query} placeholder
     #[serde(default = "default_search_engine")]
     pub search_engine: String,
+    /// Root directories for file search (`:file` / `/`). Each entry may use a
+    /// leading `~/` for the home directory. Empty (the default) searches
+    /// `$HOME`.
+    #[serde(default)]
+    pub filesearch_roots: Vec<String>,
 }
 
 impl Default for ProvidersConfig {
@@ -221,6 +226,7 @@ impl Default for ProvidersConfig {
             frecency: true,
             frecency_weight: 0.3,
             search_engine: "duckduckgo".to_string(),
+            filesearch_roots: Vec::new(),
         }
     }
 }

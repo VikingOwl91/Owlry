@@ -217,6 +217,17 @@ pub trait DynamicProvider: Send + Sync {
     fn query(&self, query: &str) -> Vec<LaunchItem>;
     fn priority(&self) -> u32;
 
+    /// Whether this provider contributes to bare auto-mode queries (no prefix).
+    ///
+    /// Cheap in-process providers (calculator, converter, web search) return
+    /// `true` and run on every keystroke. Providers that shell out and do I/O
+    /// per query (file search) return `false`, so they only run when their
+    /// prefix is explicitly active — otherwise every keystroke spawns a
+    /// subprocess and stalls the whole result set.
+    fn runs_in_auto_mode(&self) -> bool {
+        true
+    }
+
     /// Optional search prefix (e.g. ":calc"). None = no prefix.
     fn prefix(&self) -> Option<&str> {
         None
@@ -337,7 +348,9 @@ impl ProviderManager {
         }
         #[cfg(feature = "filesearch")]
         if cfg_snapshot.filesearch {
-            builtin_dynamic.push(Box::new(filesearch::FileSearchProvider::new()));
+            builtin_dynamic.push(Box::new(filesearch::FileSearchProvider::with_roots(
+                cfg_snapshot.filesearch_roots.clone(),
+            )));
             info!("Registered filesearch provider");
         }
         #[cfg(feature = "websearch")]
@@ -512,6 +525,14 @@ impl ProviderManager {
         if !query.is_empty() {
             for provider in &self.builtin_dynamic {
                 if !filter.is_active(provider.provider_type()) {
+                    continue;
+                }
+                // Expensive providers (file search) only run when their prefix
+                // is explicitly selected — never on a bare auto-mode keystroke.
+                let prefix_active = filter
+                    .active_prefix()
+                    .is_some_and(|p| p == provider.provider_type());
+                if !prefix_active && !provider.runs_in_auto_mode() {
                     continue;
                 }
                 let dynamic_results = provider.query(query);
@@ -927,6 +948,76 @@ mod tests {
         let results = pm.search("fire", 10);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0.name, "Firefox");
+    }
+
+    /// Dynamic provider that counts how often `query()` is invoked, used to
+    /// verify auto-mode gating without shelling out to a real backend.
+    struct SpyDynamic {
+        calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        auto: bool,
+        type_id: String,
+    }
+
+    impl DynamicProvider for SpyDynamic {
+        fn name(&self) -> &str {
+            "Spy"
+        }
+        fn provider_type(&self) -> ProviderType {
+            ProviderType::Plugin(self.type_id.clone())
+        }
+        fn query(&self, _query: &str) -> Vec<LaunchItem> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Vec::new()
+        }
+        fn priority(&self) -> u32 {
+            100
+        }
+        fn runs_in_auto_mode(&self) -> bool {
+            self.auto
+        }
+    }
+
+    fn run_spy_search(auto: bool, prefix: Option<ProviderType>) -> usize {
+        use crate::filter::ProviderFilter;
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let spy = SpyDynamic {
+            calls: calls.clone(),
+            auto,
+            type_id: "filesearch".into(),
+        };
+        let pm = ProviderManager::new(Vec::new(), vec![Box::new(spy)]);
+        let frecency = FrecencyStore::new();
+        let mut filter = ProviderFilter::all();
+        filter.set_prefix(prefix);
+        let _ = pm.search_with_frecency("firefox", 10, &filter, &frecency, 0.0, None);
+        calls.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    #[test]
+    fn expensive_dynamic_provider_skipped_in_auto_mode() {
+        assert_eq!(
+            run_spy_search(false, None),
+            0,
+            "a runs_in_auto_mode()=false provider must not run on a bare auto-mode query"
+        );
+    }
+
+    #[test]
+    fn expensive_dynamic_provider_runs_when_prefix_active() {
+        assert_eq!(
+            run_spy_search(false, Some(ProviderType::Plugin("filesearch".into()))),
+            1,
+            "the provider must run when its own prefix is active"
+        );
+    }
+
+    #[test]
+    fn cheap_dynamic_provider_runs_in_auto_mode() {
+        assert_eq!(
+            run_spy_search(true, None),
+            1,
+            "a runs_in_auto_mode()=true provider must run on a bare auto-mode query"
+        );
     }
 
     // =========================================================================

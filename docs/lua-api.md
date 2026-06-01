@@ -132,6 +132,9 @@ Sets top-level config values. Takes a table of key-value pairs. Calling `owlry.s
 | `frecency` | `boolean` | `true` | Boost frequently/recently used items |
 | `frecency_weight` | `number` | `0.3` | Frecency boost weight (0.0 = off, 1.0 = strong) |
 | `search_engine` | `string` | `"duckduckgo"` | Engine for `:web` / `?` queries (see §6) |
+| `filesearch_roots` | `string[]` | `{}` | Root dirs for `:file` / `/` search (`~/` allowed). Empty searches `$HOME`. Non-existent entries are dropped |
+
+> File search is **opt-in**: it only runs under the `:file` prefix (or the `/` alias), never on a bare query, because each keystroke shells out to `fd`/`locate`. Walks are bounded (depth, excludes, 20 results, 750 ms).
 
 **Example:**
 

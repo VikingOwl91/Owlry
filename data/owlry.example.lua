@@ -33,6 +33,11 @@ owlry.set {
   search_engine   = "duckduckgo",  -- google | duckduckgo | bing |
                                    -- startpage | searxng | brave |
                                    -- ecosia, or a custom "{query}" URL.
+
+  -- Root dirs for file search (the :file prefix or the / alias). "~/" is
+  -- expanded; non-existent entries are dropped. Empty (the default) searches
+  -- $HOME. File search is opt-in only — it never runs on a bare query.
+  -- filesearch_roots = { "~/Documents", "~/code" },
 }
 
 -- ──────────────────────────────────────────────────────────────────────
