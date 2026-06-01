@@ -1,0 +1,13 @@
+# Pin the toolchain so `cargo fmt` / `clippy` behave identically across
+# contributors — rustfmt output is version-sensitive, and unpinned versions
+# drift the formatting baseline (see the repo-wide reformat in `style: cargo
+# fmt --all`). This pins the *development* toolchain; the crate MSRV in
+# Cargo.toml (`rust-version`) is the separate minimum we still compile against.
+#
+# Packaging is unaffected: the AUR clean-chroot build uses Arch's `rust`
+# package (not rustup), which ignores this file, and the PKGBUILD also sets
+# RUSTUP_TOOLCHAIN=stable which overrides it where rustup is present.
+[toolchain]
+channel = "1.96.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
