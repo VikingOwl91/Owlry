@@ -420,7 +420,7 @@ Headline upcoming work:
 - **Lua-driven configuration shipped in 2.1** — `~/.config/owlry/owlry.lua` is the canonical config from 2.1, with TOML kept as a back-compat fallback until 3.0. User-defined providers via `owlry.provider {}`, host helpers under `owlry.util.*`, hot reload, named profiles, theme overrides, and `owlry migrate-config` are all live. See [`docs/lua-api.md`](docs/lua-api.md) for the full surface.
 - **Widget providers return** — weather, MPRIS media controls, pomodoro timer. Deferred from 2.0 while the UI positioning is reworked.
 - **Bookmarks return** — Firefox + Chromium. Deferred from 2.0 to avoid a hard rusqlite/`libsqlite3-sys` dep in the chroot build path; returns with a pure-Rust reader (likely via Firefox's JSON backup files).
-- **Dynamic Lua providers** (2.2) — `owlry.provider { dynamic = true }` for per-keystroke items. 2.1 ships only static (`dynamic = false`) providers.
+- **Dynamic Lua providers** (2.3) — `owlry.provider { dynamic = true }` for per-keystroke items. Current releases ship only static (`dynamic = false`) providers.
 
 ## License
 
