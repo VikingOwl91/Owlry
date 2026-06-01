@@ -37,6 +37,10 @@ fn try_acquire_lock() -> Option<std::fs::File> {
 }
 
 fn main() {
+    // Capture process-start as early as possible so the UI can measure the
+    // pre-activate GTK/display/D-Bus init cost (see app::on_activate timing).
+    let _ = owlry::app::BOOT.set(std::time::Instant::now());
+
     let args = CliArgs::parse_args();
 
     // Subcommand dispatch. Each commands::* function calls std::process::exit
