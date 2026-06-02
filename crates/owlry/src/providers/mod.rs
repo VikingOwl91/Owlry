@@ -25,7 +25,7 @@ pub use application::ApplicationProvider;
 pub use command::CommandProvider;
 pub use dmenu::DmenuProvider;
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use log::info;
@@ -511,6 +511,44 @@ impl ProviderManager {
     }
 
     /// Search with frecency boosting, dynamic providers, and tag filtering.
+    /// Items launched most recently, newest first — backs the `:recent` prefix.
+    ///
+    /// Resolves frecency ids against live static-provider items (frecency only
+    /// stores ids, not launchable items). Dynamic providers are excluded (no
+    /// stable cached items), and ids with no surviving item — e.g. an
+    /// uninstalled app — are silently dropped.
+    pub fn recent_items(
+        &self,
+        frecency: &FrecencyStore,
+        max_results: usize,
+    ) -> Vec<(LaunchItem, i64)> {
+        let entries = frecency.entries();
+        let resolved = self
+            .providers
+            .iter()
+            .filter(|p| p.position() != ProviderPosition::Widget)
+            .flat_map(|p| p.items().iter())
+            .filter_map(|item| entries.get(&item.id).map(|e| (item, e.last_launch)));
+        Self::rank_recent(resolved, max_results)
+    }
+
+    /// Pure ranking core for [`recent_items`]: sort resolved `(item, last_launch)`
+    /// pairs newest-first, truncate to `max_results`, and assign descending
+    /// scores so the order survives the daemon's score-based sort.
+    fn rank_recent<'a>(
+        resolved: impl Iterator<Item = (&'a LaunchItem, DateTime<Utc>)>,
+        max_results: usize,
+    ) -> Vec<(LaunchItem, i64)> {
+        let mut scored: Vec<(&LaunchItem, DateTime<Utc>)> = resolved.collect();
+        scored.sort_by_key(|(_, ts)| std::cmp::Reverse(*ts));
+        scored.truncate(max_results);
+        scored
+            .into_iter()
+            .enumerate()
+            .map(|(idx, (item, _))| (item.clone(), max_results.saturating_sub(idx) as i64))
+            .collect()
+    }
+
     pub fn search_with_frecency(
         &self,
         query: &str,
@@ -891,6 +929,27 @@ mod tests {
             tags: Vec::new(),
             source: ItemSource::Core,
         }
+    }
+
+    #[test]
+    fn rank_recent_orders_newest_first_and_truncates() {
+        let now = Utc::now();
+        let a = make_item("a", "A", ProviderType::Application);
+        let b = make_item("b", "B", ProviderType::Application);
+        let c = make_item("c", "C", ProviderType::Application);
+        // Deliberately unsorted input; c newest, then b, then a.
+        let resolved = vec![
+            (&a, now - chrono::Duration::days(5)),
+            (&c, now),
+            (&b, now - chrono::Duration::days(1)),
+        ];
+
+        let out = ProviderManager::rank_recent(resolved.into_iter(), 2);
+
+        assert_eq!(out.len(), 2, "truncated to max_results");
+        assert_eq!(out[0].0.id, "c", "newest first");
+        assert_eq!(out[1].0.id, "b");
+        assert!(out[0].1 > out[1].1, "descending score preserves order");
     }
 
     #[test]

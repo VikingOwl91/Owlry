@@ -391,6 +391,10 @@ impl Server {
                 modes,
                 prefix,
             } => {
+                // `:recent` routes here as prefix="recent" (via parse_query's
+                // unknown-prefix fallback). It's not a real provider — handle it
+                // by resolving the frecency store instead of fuzzy search.
+                let recent_mode = prefix.as_deref() == Some("recent");
                 let mut filter = match modes {
                     Some(m) => ProviderFilter::from_mode_strings(m),
                     None => ProviderFilter::all(),
@@ -432,14 +436,11 @@ impl Server {
                         };
                     }
                 };
-                let results = pm_guard.search_with_frecency(
-                    text,
-                    max,
-                    &filter,
-                    &frecency_guard,
-                    weight,
-                    None,
-                );
+                let results = if recent_mode {
+                    pm_guard.recent_items(&frecency_guard, max)
+                } else {
+                    pm_guard.search_with_frecency(text, max, &filter, &frecency_guard, weight, None)
+                };
 
                 Response::Results {
                     items: results
