@@ -1147,6 +1147,40 @@ impl MainWindow {
             let index = row.index() as usize;
             let results = current_results.borrow();
             if let Some(item) = results.get(index) {
+                // "Open with…" picker active: the row is an application; a
+                // double-click opens the file with it once (no persistence),
+                // mirroring plain Enter.
+                if let Some(ctx) = submenu_state.borrow().open_with.clone() {
+                    let app = item.clone();
+                    drop(results);
+                    Self::pick_application(&app, &ctx, false, &config.borrow());
+                    window.close();
+                    return;
+                }
+
+                // A file with no associated application: open the picker rather
+                // than the notify-only fallback, matching the Enter path.
+                if let Some(path) = Self::filesearch_open_path(item)
+                    && matches!(
+                        Self::resolve_default_handler(&path),
+                        HandlerResolution::NoAssociation
+                    )
+                {
+                    drop(results);
+                    Self::enter_open_with_picker(
+                        &backend,
+                        &config.borrow(),
+                        &submenu_state,
+                        &results_list_for_click,
+                        &current_results,
+                        &mode_label,
+                        &hints_label,
+                        &search_entry,
+                        &path,
+                    );
+                    return;
+                }
+
                 // Check if this is a submenu item and query the plugin for actions
                 let submenu_result = if submenu::is_submenu_item(item) {
                     if let Some((plugin_id, data)) = submenu::parse_submenu_command(&item.command) {
