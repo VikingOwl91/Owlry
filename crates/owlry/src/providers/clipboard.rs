@@ -165,7 +165,11 @@ impl ClipboardProvider {
             if !out.status.success() || out.stdout.is_empty() {
                 return None;
             }
-            std::fs::write(&path, &out.stdout).ok()?;
+            // Atomic publish: a killed/partial decode must never leave a corrupt
+            // thumbnail that the path.exists() check would then serve forever.
+            let tmp = path.with_extension("tmp");
+            std::fs::write(&tmp, &out.stdout).ok()?;
+            std::fs::rename(&tmp, &path).ok()?;
         }
         Some(path.to_string_lossy().into_owned())
     }

@@ -116,8 +116,14 @@ impl FrecencyStore {
         cfg: &FrecencyPruneConfig,
         now: DateTime<Utc>,
     ) {
-        if cfg.max_age_days > 0 {
-            let cutoff = now - chrono::Duration::days(cfg.max_age_days);
+        // Guard against absurd values (e.g. a huge number meant as "never"):
+        // chrono panics if the cutoff underflows DateTime's range, and
+        // FrecencyStore::with_config -> prune runs on every startup path. An
+        // out-of-range cutoff means "older than the dawn of time" → keep all.
+        if cfg.max_age_days > 0
+            && let Some(cutoff) =
+                chrono::Duration::try_days(cfg.max_age_days).and_then(|d| now.checked_sub_signed(d))
+        {
             entries.retain(|_, e| e.last_launch > cutoff || e.launch_count >= cfg.min_launches);
         }
 
@@ -433,6 +439,21 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert!(entries.contains_key("c") && entries.contains_key("b"));
         assert!(!entries.contains_key("a"));
+    }
+
+    #[test]
+    fn prune_huge_max_age_days_does_not_panic() {
+        // A user setting a giant value (meaning "never") must not crash startup:
+        // an out-of-range cutoff is treated as "keep all".
+        let now = Utc::now();
+        let mut entries = entries_with(&[("a", 1, 0), ("b", 1, 9999)], now);
+        let cfg = FrecencyPruneConfig {
+            max_entries: 0,
+            max_age_days: i64::MAX,
+            min_launches: 3,
+        };
+        FrecencyStore::prune_entries(&mut entries, &cfg, now);
+        assert_eq!(entries.len(), 2, "out-of-range age cutoff keeps everything");
     }
 
     #[test]
