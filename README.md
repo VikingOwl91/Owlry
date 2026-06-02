@@ -217,6 +217,7 @@ pacman -Ssq | owlry dmenu -p "install" | xargs sudo pacman -S
 | `:uuctl` (`:systemd`) | systemd user units | `:uuctl dbus` |
 | `:web` | Web search | `:web rust docs` |
 | `:file` | Files | `:file config` |
+| `:recent` | Recently launched items (newest first) | `:recent` |
 | `:tag:X` | Filter all results by tag | `:tag:development` |
 
 ### Trigger Prefixes
