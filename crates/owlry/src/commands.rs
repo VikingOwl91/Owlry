@@ -4,6 +4,8 @@
 //! after subcommand dispatch and never return.
 
 use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::cli::ConfigAction;
 use crate::client::CoreClient;
@@ -200,7 +202,205 @@ pub fn run_doctor() -> ! {
         }
     }
 
+    // Stale system-level remnants from older installs. Report-only — doctor
+    // never deletes anything; the user decides what to remove.
+    let _ = writeln!(out);
+    print_orphan_report(&mut out, &scan_orphans());
+
     std::process::exit(0);
+}
+
+/// Package-manager ownership of a path, as reported by `pacman -Qo`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Ownership {
+    /// No package owns the path.
+    Unowned,
+    /// Owned by the named package — not an orphan, never reported.
+    Owned(String),
+    /// Ownership could not be determined (no pacman, or unexpected output).
+    Unknown,
+}
+
+/// A known location that older owlry installs may have left behind.
+struct OrphanCandidate {
+    path: PathBuf,
+    reason: &'static str,
+}
+
+/// A candidate confirmed present on disk and worth surfacing to the user.
+struct OrphanFinding {
+    path: PathBuf,
+    reason: &'static str,
+    size_bytes: u64,
+    ownership: Ownership,
+}
+
+/// Parse `pacman -Qo` combined stdout+stderr into an [`Ownership`].
+///
+/// Owned:   "<path> is owned by <pkg> <ver>"
+/// Unowned: "error: No package owns <path>"
+fn parse_pacman_owner(output: &str) -> Ownership {
+    const OWNED_MARKER: &str = " is owned by ";
+    if let Some(idx) = output.find(OWNED_MARKER) {
+        let pkg = output[idx + OWNED_MARKER.len()..]
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_string();
+        Ownership::Owned(pkg)
+    } else if output.contains("No package owns") {
+        Ownership::Unowned
+    } else {
+        Ownership::Unknown
+    }
+}
+
+/// Decide whether a candidate should be reported. Pure (no IO) so the policy
+/// is unit-testable: report paths that exist and aren't owned by a package;
+/// skip missing paths and live, package-owned files.
+fn classify_orphan(
+    candidate: &OrphanCandidate,
+    exists: bool,
+    ownership: Ownership,
+    size_bytes: u64,
+) -> Option<OrphanFinding> {
+    if !exists || matches!(ownership, Ownership::Owned(_)) {
+        return None;
+    }
+    Some(OrphanFinding {
+        path: candidate.path.clone(),
+        reason: candidate.reason,
+        size_bytes,
+        ownership,
+    })
+}
+
+/// Known stale locations left by older owlry installs.
+fn orphan_candidates() -> Vec<OrphanCandidate> {
+    let mut candidates = vec![
+        OrphanCandidate {
+            path: PathBuf::from("/usr/lib/owlry"),
+            reason: "pre-v2 plugin runtimes; the dynamic loader was removed in 2.0",
+        },
+        OrphanCandidate {
+            path: PathBuf::from("/usr/lib/systemd/user/owlryd.service"),
+            reason: "pre-2.0 unit name (now owlry.service)",
+        },
+        OrphanCandidate {
+            path: PathBuf::from("/usr/lib/systemd/user/owlryd.socket"),
+            reason: "pre-2.0 unit name (now owlry.socket)",
+        },
+    ];
+    // Only flag the uncompressed man page when the packaged `.gz` also exists.
+    // On a pure source install (no `.gz`) the uncompressed page IS the live one;
+    // both present is the real problem — `man owlry` may render the stale copy.
+    if Path::new("/usr/share/man/man1/owlry.1.gz").exists() {
+        candidates.push(OrphanCandidate {
+            path: PathBuf::from("/usr/share/man/man1/owlry.1"),
+            reason: "uncompressed man page shadowing the packaged owlry.1.gz (man may render the stale one)",
+        });
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let user_units = Path::new(&home).join(".config/systemd/user");
+        candidates.push(OrphanCandidate {
+            path: user_units.join("owlryd.service"),
+            reason: "pre-2.0 user unit name (now owlry.service)",
+        });
+        candidates.push(OrphanCandidate {
+            path: user_units.join("owlryd.socket"),
+            reason: "pre-2.0 user unit name (now owlry.socket)",
+        });
+    }
+    candidates
+}
+
+/// Recursively sum the size of a file or directory. Best-effort: unreadable
+/// entries are skipped rather than aborting the walk.
+fn path_size(path: &Path) -> u64 {
+    let meta = match std::fs::symlink_metadata(path) {
+        Ok(m) => m,
+        Err(_) => return 0,
+    };
+    if meta.is_dir() {
+        let mut total = 0;
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries.flatten() {
+                total += path_size(&entry.path());
+            }
+        }
+        total
+    } else {
+        meta.len()
+    }
+}
+
+/// Probe package ownership via `pacman -Qo`. Returns [`Ownership::Unknown`]
+/// when pacman is unavailable (non-Arch systems).
+fn pacman_owner(path: &Path) -> Ownership {
+    match Command::new("pacman").arg("-Qo").arg(path).output() {
+        Ok(out) => {
+            let mut combined = String::from_utf8_lossy(&out.stdout).into_owned();
+            combined.push_str(&String::from_utf8_lossy(&out.stderr));
+            parse_pacman_owner(&combined)
+        }
+        Err(_) => Ownership::Unknown,
+    }
+}
+
+/// Scan the known candidate locations and return those present on disk.
+fn scan_orphans() -> Vec<OrphanFinding> {
+    orphan_candidates()
+        .iter()
+        .filter_map(|c| {
+            let exists = c.path.exists();
+            let (size, ownership) = if exists {
+                (path_size(&c.path), pacman_owner(&c.path))
+            } else {
+                (0, Ownership::Unknown)
+            };
+            classify_orphan(c, exists, ownership, size)
+        })
+        .collect()
+}
+
+/// Render bytes as a short human-readable size (e.g. "155.0M").
+fn human_size(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "K", "M", "G", "T"];
+    let mut size = bytes as f64;
+    let mut unit = 0;
+    while size >= 1024.0 && unit < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{bytes}{}", UNITS[0])
+    } else {
+        format!("{size:.1}{}", UNITS[unit])
+    }
+}
+
+fn print_orphan_report(out: &mut impl Write, findings: &[OrphanFinding]) {
+    let _ = writeln!(out, "[stale system files]");
+    if findings.is_empty() {
+        let _ = writeln!(out, "  none found");
+        return;
+    }
+    for f in findings {
+        let note = match &f.ownership {
+            Ownership::Unowned => "no package owns this".to_string(),
+            Ownership::Unknown => "ownership unknown (pacman unavailable)".to_string(),
+            Ownership::Owned(pkg) => format!("owned by {pkg}"),
+        };
+        let _ = writeln!(
+            out,
+            "  {}  {}  — {}",
+            f.path.display(),
+            human_size(f.size_bytes),
+            note
+        );
+        let _ = writeln!(out, "      {}", f.reason);
+    }
+    let _ = writeln!(out, "  doctor only reports these; remove them yourself if unwanted.");
 }
 
 /// `owlry providers [<id>]`: list providers, or show one in detail.
@@ -260,7 +460,12 @@ pub fn run_providers(id: Option<String>) -> ! {
 fn print_provider_list(out: &mut impl Write, list: &[ProviderDesc]) {
     for p in list {
         let prefix = p.prefix.as_deref().unwrap_or("-");
-        let _ = writeln!(out, "  {:<12}  {:<22}  prefix={}", p.id, p.name, prefix);
+        let kind = format!("[{}]", p.kind);
+        let _ = writeln!(
+            out,
+            "  {:<12}  {:<22}  {:<9}  prefix={}",
+            p.id, p.name, kind, prefix
+        );
     }
 }
 
@@ -596,4 +801,68 @@ pub fn run_dmenu(prompt: Option<String>) -> ! {
     };
     let app = crate::app::OwlryApp::new(args);
     std::process::exit(app.run());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_pacman_owner_detects_owned() {
+        let out = "/usr/bin/owlry is owned by owlry 2.3.0-1\n";
+        assert_eq!(parse_pacman_owner(out), Ownership::Owned("owlry".to_string()));
+    }
+
+    #[test]
+    fn parse_pacman_owner_detects_unowned() {
+        // pacman writes this to stderr with a non-zero exit; we merge streams.
+        let out = "error: No package owns /usr/lib/owlry/runtimes\n";
+        assert_eq!(parse_pacman_owner(out), Ownership::Unowned);
+    }
+
+    #[test]
+    fn parse_pacman_owner_unrecognized_is_unknown() {
+        assert_eq!(parse_pacman_owner(""), Ownership::Unknown);
+        assert_eq!(parse_pacman_owner("some other error"), Ownership::Unknown);
+    }
+
+    fn candidate() -> OrphanCandidate {
+        OrphanCandidate {
+            path: PathBuf::from("/usr/lib/owlry"),
+            reason: "test",
+        }
+    }
+
+    #[test]
+    fn classify_orphan_reports_existing_unowned() {
+        let f = classify_orphan(&candidate(), true, Ownership::Unowned, 155).unwrap();
+        assert_eq!(f.path, PathBuf::from("/usr/lib/owlry"));
+        assert_eq!(f.size_bytes, 155);
+        assert_eq!(f.ownership, Ownership::Unowned);
+    }
+
+    #[test]
+    fn classify_orphan_reports_existing_unknown_ownership() {
+        // Non-Arch systems can't probe ownership; still surface the path.
+        assert!(classify_orphan(&candidate(), true, Ownership::Unknown, 10).is_some());
+    }
+
+    #[test]
+    fn classify_orphan_skips_missing_paths() {
+        assert!(classify_orphan(&candidate(), false, Ownership::Unowned, 0).is_none());
+    }
+
+    #[test]
+    fn classify_orphan_skips_package_owned_paths() {
+        let owned = Ownership::Owned("owlry".to_string());
+        assert!(classify_orphan(&candidate(), true, owned, 99).is_none());
+    }
+
+    #[test]
+    fn human_size_scales_units() {
+        assert_eq!(human_size(0), "0B");
+        assert_eq!(human_size(512), "512B");
+        assert_eq!(human_size(1024), "1.0K");
+        assert_eq!(human_size(155 * 1024 * 1024), "155.0M");
+    }
 }

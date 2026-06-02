@@ -56,6 +56,23 @@ impl ProviderPosition {
     }
 }
 
+/// Whether a provider exposes a cached item list (static) or generates
+/// results on every keystroke (dynamic). Surfaced by `owlry doctor`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderKind {
+    Static,
+    Dynamic,
+}
+
+impl ProviderKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ProviderKind::Static => "static",
+            ProviderKind::Dynamic => "dynamic",
+        }
+    }
+}
+
 /// Metadata descriptor for an available provider (used by IPC/daemon API)
 #[derive(Debug, Clone)]
 pub struct ProviderDescriptor {
@@ -66,6 +83,7 @@ pub struct ProviderDescriptor {
     pub position: String,
     pub tab_label: Option<String>,
     pub search_noun: Option<String>,
+    pub kind: ProviderKind,
 }
 
 /// Trust level of a [`LaunchItem`]'s command, used to gate `sh -c` execution.
@@ -733,6 +751,7 @@ impl ProviderManager {
                 position: provider.position().as_str().to_string(),
                 tab_label: provider.tab_label().map(String::from),
                 search_noun: provider.search_noun().map(String::from),
+                kind: ProviderKind::Static,
             });
         }
 
@@ -754,6 +773,7 @@ impl ProviderManager {
                 position: ProviderPosition::Normal.as_str().to_string(),
                 tab_label: provider.tab_label().map(String::from),
                 search_noun: provider.search_noun().map(String::from),
+                kind: ProviderKind::Dynamic,
             });
         }
 
@@ -1383,6 +1403,48 @@ mod tests {
         assert_eq!(d.position, "normal");
         assert_eq!(d.tab_label.as_deref(), Some("Rich"));
         assert_eq!(d.search_noun.as_deref(), Some("rich queries"));
+        assert_eq!(d.kind, ProviderKind::Dynamic);
+    }
+
+    #[test]
+    fn available_providers_marks_static_vs_dynamic_kind() {
+        // Static providers come from `providers`, dynamic from `builtin_dynamic`;
+        // `owlry doctor` distinguishes them by the descriptor's `kind`.
+        struct StaticStub;
+        impl Provider for StaticStub {
+            fn name(&self) -> &str {
+                "Static Stub"
+            }
+            fn provider_type(&self) -> ProviderType {
+                ProviderType::Application
+            }
+            fn refresh(&mut self) {}
+            fn items(&self) -> &[LaunchItem] {
+                &[]
+            }
+        }
+        struct DynStub;
+        impl DynamicProvider for DynStub {
+            fn name(&self) -> &str {
+                "Dyn Stub"
+            }
+            fn provider_type(&self) -> ProviderType {
+                ProviderType::Plugin("dyn-stub".into())
+            }
+            fn query(&self, _q: &str) -> Vec<LaunchItem> {
+                Vec::new()
+            }
+            fn priority(&self) -> u32 {
+                5_000
+            }
+        }
+
+        let pm = ProviderManager::new(vec![Box::new(StaticStub)], vec![Box::new(DynStub)]);
+        let descs = pm.available_providers();
+        let stat = descs.iter().find(|d| d.id == "app").unwrap();
+        let dyn_ = descs.iter().find(|d| d.id == "dyn-stub").unwrap();
+        assert_eq!(stat.kind, ProviderKind::Static);
+        assert_eq!(dyn_.kind, ProviderKind::Dynamic);
     }
 
     #[test]

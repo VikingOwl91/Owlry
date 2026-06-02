@@ -158,6 +158,7 @@ mod tests {
             position: "normal".to_string(),
             tab_label: Some("Shutdown".to_string()),
             search_noun: Some("shutdown actions".to_string()),
+            kind: "static".to_string(),
         };
         let meta = resolve(&ProviderType::Plugin("hs".to_string()), Some(&desc));
         assert_eq!(meta.tab_label, "Shutdown");
@@ -176,6 +177,7 @@ mod tests {
             position: "normal".to_string(),
             tab_label: Some("Calculator".to_string()),
             search_noun: None, // not provided
+            kind: "static".to_string(),
         };
         let meta = resolve(&ProviderType::Plugin("calc".to_string()), Some(&desc));
         assert_eq!(meta.tab_label, "Calculator"); // from IPC

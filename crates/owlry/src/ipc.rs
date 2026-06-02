@@ -81,11 +81,28 @@ pub struct ProviderDesc {
     pub tab_label: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub search_noun: Option<String>,
+    /// Provider kind: "static" (item list cached) or "dynamic" (per-keystroke).
+    /// Defaults to "static" when absent (backwards-compatible with old daemons).
+    #[serde(default = "default_kind")]
+    pub kind: String,
+}
+
+fn default_kind() -> String {
+    "static".to_string()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn provider_desc_without_kind_defaults_to_static() {
+        // Back-compat: a ProviderDesc from an old daemon (pre-2.4) omits `kind`;
+        // it must deserialize to "static" rather than failing.
+        let json = r#"{"id":"app","name":"Applications","icon":"x","position":"normal"}"#;
+        let desc: ProviderDesc = serde_json::from_str(json).unwrap();
+        assert_eq!(desc.kind, "static");
+    }
 
     #[test]
     fn query_request_without_prefix_serializes_without_field() {

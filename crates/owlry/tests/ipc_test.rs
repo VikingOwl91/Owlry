@@ -68,6 +68,7 @@ fn test_providers_response() {
             position: "normal".into(),
             tab_label: None,
             search_noun: None,
+            kind: "static".into(),
         }],
     };
     let json = serde_json::to_string(&resp).unwrap();

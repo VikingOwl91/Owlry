@@ -425,6 +425,7 @@ mod tests {
                 position: "normal".into(),
                 tab_label: None,
                 search_noun: None,
+                kind: "static".into(),
             }],
         };
 

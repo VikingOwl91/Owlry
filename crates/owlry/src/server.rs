@@ -582,6 +582,7 @@ fn descriptor_to_desc(desc: crate::providers::ProviderDescriptor) -> ProviderDes
         position: desc.position,
         tab_label: desc.tab_label,
         search_noun: desc.search_noun,
+        kind: desc.kind.as_str().to_string(),
     }
 }
 
