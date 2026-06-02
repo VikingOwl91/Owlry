@@ -5,11 +5,17 @@
 //! clipboard. Requires `cliphist` and `wl-clipboard` to be installed.
 
 use super::{ItemSource, LaunchItem, Provider, ProviderType};
+use crate::paths;
+use std::path::PathBuf;
 use std::process::Command;
 
 const TYPE_ID: &str = "clipboard";
 const PROVIDER_ICON: &str = "edit-paste";
+/// Fallback icon for image entries when the thumbnail can't be decoded.
+const IMAGE_FALLBACK_ICON: &str = "image-x-generic";
 const DEFAULT_MAX_ENTRIES: usize = 50;
+/// Image type tokens cliphist reports in its `[[ binary data ... ]]` preview.
+const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff", "svg"];
 
 pub struct ClipboardProvider {
     items: Vec<LaunchItem>,
@@ -38,10 +44,35 @@ impl ClipboardProvider {
             .unwrap_or(false)
     }
 
+    /// Detect cliphist's binary-image preview and return a clean display name.
+    ///
+    /// cliphist renders images as `[[ binary data 1.27 MiB png 1920x1080 ]]`;
+    /// we surface that as e.g. `Image — png 1920x1080`. Returns `None` for text
+    /// or non-image binary entries.
+    fn image_display_name(preview: &str) -> Option<String> {
+        let inner = preview
+            .trim()
+            .strip_prefix("[[ binary data")?
+            .strip_suffix("]]")?;
+        let tokens: Vec<&str> = inner.split_whitespace().collect();
+        let ext = tokens
+            .iter()
+            .map(|t| t.to_lowercase())
+            .find(|t| IMAGE_EXTS.contains(&t.as_str()))?;
+        // Dimensions token, e.g. "1920x1080" (optional — older cliphist omits it).
+        let dims = tokens
+            .iter()
+            .find(|t| t.contains('x') && t.chars().all(|c| c.is_ascii_digit() || c == 'x'));
+        Some(match dims {
+            Some(d) => format!("Image — {ext} {d}"),
+            None => format!("Image — {ext}"),
+        })
+    }
+
     fn parse_cliphist_output(output: &str, max_entries: usize) -> Vec<LaunchItem> {
         let mut items = Vec::new();
 
-        for (idx, line) in output.lines().take(max_entries).enumerate() {
+        for line in output.lines().take(max_entries) {
             // cliphist format: "id\tpreview"
             let parts: Vec<&str> = line.splitn(2, '\t').collect();
 
@@ -50,45 +81,104 @@ impl ClipboardProvider {
             }
 
             let clip_id = parts[0];
-            let preview = if parts.len() > 1 {
-                // Truncate long previews (char-safe for UTF-8)
-                let p = parts[1];
-                if p.chars().count() > 80 {
-                    let truncated: String = p.chars().take(77).collect();
-                    format!("{}...", truncated)
-                } else {
-                    p.to_string()
+            let raw_preview = parts.get(1).copied();
+
+            // Image entries get a clean name + image fallback icon + "image" tag
+            // (refresh() swaps the icon for a decoded thumbnail). Everything else
+            // keeps the truncated text preview.
+            let (name, icon, tags) = match raw_preview.and_then(Self::image_display_name) {
+                Some(image_name) => (
+                    image_name,
+                    Some(IMAGE_FALLBACK_ICON.to_string()),
+                    vec!["clipboard".to_string(), "image".to_string()],
+                ),
+                None => {
+                    let preview = match raw_preview {
+                        Some(p) if p.chars().count() > 80 => {
+                            let truncated: String = p.chars().take(77).collect();
+                            format!("{}...", truncated)
+                        }
+                        Some(p) => p.to_string(),
+                        None => "[binary data]".to_string(),
+                    };
+                    let preview_clean = preview
+                        .replace('\n', " ")
+                        .replace('\r', "")
+                        .replace('\t', " ");
+                    (
+                        preview_clean,
+                        Some(PROVIDER_ICON.to_string()),
+                        vec!["clipboard".to_string()],
+                    )
                 }
-            } else {
-                "[binary data]".to_string()
             };
 
-            // Clean up preview - replace newlines/tabs with spaces, strip CR.
-            let preview_clean = preview
-                .replace('\n', " ")
-                .replace('\r', "")
-                .replace('\t', " ");
-
-            // Command to paste this entry: echo "id" | cliphist decode | wl-copy
+            // Paste this entry: `cliphist decode` extracts the id from the
+            // first tab-delimited field of its stdin, so feed "<id>\t". A bare
+            // `echo '<id>'` (no tab) makes cliphist Atoi "<id>\n" and fail.
             let command = format!(
-                "echo '{}' | cliphist decode | wl-copy",
+                "printf '%s\\t' '{}' | cliphist decode | wl-copy",
                 clip_id.replace('\'', "'\\''")
             );
 
             items.push(LaunchItem {
-                id: format!("clipboard:{}", idx),
-                name: preview_clean,
+                // id carries the real cliphist id (not a positional index) so
+                // refresh() can decode the entry's thumbnail.
+                id: format!("clipboard:{}", clip_id),
+                name,
                 description: Some("Copy to clipboard".to_string()),
-                icon: Some(PROVIDER_ICON.to_string()),
+                icon,
                 provider: ProviderType::Plugin(TYPE_ID.into()),
                 command,
                 terminal: false,
-                tags: vec!["clipboard".to_string()],
+                tags,
                 source: ItemSource::Core,
             });
         }
 
         items
+    }
+
+    /// Cache path for a decoded clipboard thumbnail. Extension-less — GTK's
+    /// `Image::from_file` sniffs the format from content.
+    fn thumb_path(clip_id: &str) -> Option<PathBuf> {
+        // clip ids are numeric; guard against path traversal regardless.
+        if clip_id.is_empty() || clip_id.contains(['/', '.']) {
+            return None;
+        }
+        Some(paths::owlry_cache_dir()?.join("clip-thumbs").join(clip_id))
+    }
+
+    /// Decode an image clipboard entry to a cached file, returning its absolute
+    /// path. Cached by clip id; a present file is reused without re-decoding.
+    fn decode_thumb(clip_id: &str) -> Option<String> {
+        use std::io::Write;
+        use std::process::Stdio;
+
+        let path = Self::thumb_path(clip_id)?;
+        if !path.exists() {
+            std::fs::create_dir_all(path.parent()?).ok()?;
+            // Feed "<id>\t" — cliphist decode extracts the id up to the first
+            // tab. Piping via stdin avoids any shell quoting.
+            let mut child = Command::new("cliphist")
+                .arg("decode")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+                .ok()?;
+            child
+                .stdin
+                .take()?
+                .write_all(format!("{clip_id}\t").as_bytes())
+                .ok()?;
+            let out = child.wait_with_output().ok()?;
+            if !out.status.success() || out.stdout.is_empty() {
+                return None;
+            }
+            std::fs::write(&path, &out.stdout).ok()?;
+        }
+        Some(path.to_string_lossy().into_owned())
     }
 }
 
@@ -114,7 +204,20 @@ impl Provider for ClipboardProvider {
         };
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        self.items = Self::parse_cliphist_output(&stdout, self.max_entries);
+        let mut items = Self::parse_cliphist_output(&stdout, self.max_entries);
+
+        // Decode a thumbnail for each image entry and point its icon at the
+        // cached file. Failures keep the image-x-generic fallback icon.
+        for item in &mut items {
+            if item.tags.iter().any(|t| t == "image")
+                && let Some(clip_id) = item.id.strip_prefix("clipboard:")
+                && let Some(path) = Self::decode_thumb(clip_id)
+            {
+                item.icon = Some(path);
+            }
+        }
+
+        self.items = items;
     }
 
     fn items(&self) -> &[LaunchItem] {
@@ -189,12 +292,11 @@ mod tests {
 
     #[test]
     fn test_command_escaping() {
-        let clip_id = "test'id";
-        let command = format!(
-            "echo '{}' | cliphist decode | wl-copy",
-            clip_id.replace('\'', "'\\''")
-        );
-        assert!(command.contains("test'\\''id"));
+        let output = "7\ttext with ' quote\n";
+        let items = ClipboardProvider::parse_cliphist_output(output, DEFAULT_MAX_ENTRIES);
+        // Paste command feeds "<id>\t" to cliphist decode (not a bare id).
+        assert!(items[0].command.starts_with("printf '%s\\t'"));
+        assert!(items[0].command.contains("cliphist decode | wl-copy"));
     }
 
     #[test]
@@ -245,5 +347,53 @@ mod tests {
         assert_eq!(p.icon(), "edit-paste");
         assert_eq!(p.tab_label(), Some("Clipboard"));
         assert_eq!(p.search_noun(), Some("clipboard entries"));
+    }
+
+    #[test]
+    fn image_display_name_detects_image_with_dimensions() {
+        let name =
+            ClipboardProvider::image_display_name("[[ binary data 1.27 MiB png 1920x1080 ]]");
+        assert_eq!(name.as_deref(), Some("Image — png 1920x1080"));
+    }
+
+    #[test]
+    fn image_display_name_detects_image_without_dimensions() {
+        let name = ClipboardProvider::image_display_name("[[ binary data 4 KiB gif ]]");
+        assert_eq!(name.as_deref(), Some("Image — gif"));
+    }
+
+    #[test]
+    fn image_display_name_ignores_text_and_non_image_binary() {
+        assert_eq!(ClipboardProvider::image_display_name("hello world"), None);
+        // Binary but not a known image type.
+        assert_eq!(
+            ClipboardProvider::image_display_name("[[ binary data 2 MiB pdf ]]"),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_cliphist_output_marks_image_entries() {
+        let output = "523\t[[ binary data 1.27 MiB png 1920x1080 ]]\n524\tplain text\n";
+        let items = ClipboardProvider::parse_cliphist_output(output, DEFAULT_MAX_ENTRIES);
+        assert_eq!(items.len(), 2);
+
+        // Image entry: clean name, image tag, fallback icon, id carries clip id.
+        assert_eq!(items[0].name, "Image — png 1920x1080");
+        assert!(items[0].tags.iter().any(|t| t == "image"));
+        assert_eq!(items[0].icon.as_deref(), Some(IMAGE_FALLBACK_ICON));
+        assert_eq!(items[0].id, "clipboard:523");
+
+        // Text entry unchanged.
+        assert_eq!(items[1].name, "plain text");
+        assert!(!items[1].tags.iter().any(|t| t == "image"));
+        assert_eq!(items[1].id, "clipboard:524");
+    }
+
+    #[test]
+    fn thumb_path_rejects_traversal_ids() {
+        assert!(ClipboardProvider::thumb_path("../etc/passwd").is_none());
+        assert!(ClipboardProvider::thumb_path("a/b").is_none());
+        assert!(ClipboardProvider::thumb_path("").is_none());
     }
 }
