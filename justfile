@@ -95,8 +95,11 @@ bump new_version:
     fi
     echo "Bumping owlry from $old to {{new_version}}"
     sed -i 's/^version = ".*"/version = "{{new_version}}"/' "$toml"
+    # Keep the man page .TH header in lockstep with the crate version (date + version).
+    man="data/owlry.1"
+    sed -i "s|^\.TH OWLRY .*|.TH OWLRY 1 \"$(date +%F)\" \"owlry {{new_version}}\" \"User Commands\"|" "$man"
     cargo check -p owlry
-    git add "$toml" Cargo.lock
+    git add "$toml" Cargo.lock "$man"
     git commit -m "chore(owlry): bump version to {{new_version}}"
 
 # === Tagging ===
