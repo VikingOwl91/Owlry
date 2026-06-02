@@ -22,6 +22,14 @@ use std::collections::HashMap;
 use std::process::Command;
 use std::rc::Rc;
 
+/// Context for an active "Open with…" application picker: the file being
+/// opened and its resolved MIME type (used when persisting a default).
+#[derive(Debug, Clone)]
+struct OpenWithContext {
+    path: String,
+    mime: String,
+}
+
 /// Tracks submenu state for services that have action submenus
 #[derive(Debug, Clone, Default)]
 struct SubmenuState {
@@ -35,6 +43,10 @@ struct SubmenuState {
     items: Vec<LaunchItem>,
     /// Saved search text to restore on exit
     saved_search: String,
+    /// When `Some`, the submenu is an "Open with…" application picker for the
+    /// given file; selecting a row opens/associates that file rather than
+    /// launching the app on its own. `None` for regular action submenus.
+    open_with: Option<OpenWithContext>,
 }
 
 /// State for lazy loading results
@@ -452,6 +464,7 @@ impl MainWindow {
             state.display_name = display_name.clone();
             state.items = actions.clone();
             state.saved_search = search_entry.text().to_string();
+            state.open_with = None; // regular action submenu, not a picker
         }
 
         // Update UI
@@ -492,6 +505,7 @@ impl MainWindow {
             let mut state = submenu_state.borrow_mut();
             state.active = false;
             state.items.clear();
+            state.open_with = None;
             state.saved_search.clone()
         };
 
@@ -743,6 +757,42 @@ impl MainWindow {
                 let index = row.index() as usize;
                 let results = current_results_for_activate.borrow();
                 if let Some(item) = results.get(index) {
+                    // "Open with…" picker is active: the selected row is an
+                    // application. Plain Enter opens the file once (no persist).
+                    if let Some(ctx) = submenu_state_for_activate.borrow().open_with.clone() {
+                        let app = item.clone();
+                        drop(results);
+                        Self::pick_application(&app, &ctx, false, &config_for_activate.borrow());
+                        if is_dmenu_mode_for_activate {
+                            std::process::exit(0);
+                        }
+                        window_for_activate.close();
+                        return;
+                    }
+
+                    // A file whose type has no associated application: offer the
+                    // picker instead of the silent notify-only fallback.
+                    if let Some(path) = Self::filesearch_open_path(item)
+                        && matches!(
+                            Self::resolve_default_handler(&path),
+                            HandlerResolution::NoAssociation
+                        )
+                    {
+                        drop(results);
+                        Self::enter_open_with_picker(
+                            &backend_for_activate,
+                            &config_for_activate.borrow(),
+                            &submenu_state_for_activate,
+                            &results_list_for_activate,
+                            &current_results_for_activate,
+                            &mode_label_for_activate,
+                            &hints_label_for_activate,
+                            &search_entry_for_activate,
+                            &path,
+                        );
+                        return;
+                    }
+
                     // Check if this is a submenu item and query the plugin for actions
                     let submenu_result = if submenu::is_submenu_item(item) {
                         if let Some((plugin_id, data)) =
@@ -837,14 +887,19 @@ impl MainWindow {
             });
         }
 
-        // Keyboard navigation
+        // Keyboard navigation. Capture phase so the window sees keys before the
+        // focused entry — required to intercept Shift+Enter before the entry's
+        // `activate` signal fires. Keys we don't act on are passed through with
+        // Propagation::Proceed, so normal typing/Enter reach the entry as usual.
         let key_controller = EventControllerKey::new();
+        key_controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
         let window = self.window.clone();
         let results_list = self.results_list.clone();
         let scrolled = self.scrolled.clone();
         let search_entry = self.search_entry.clone();
-        let _current_results = self.current_results.clone();
+        let current_results = self.current_results.clone();
         let config = self.config.clone();
+        let backend = self.backend.clone();
         let filter = self.filter.clone();
         let filter_buttons = self.filter_buttons.clone();
         let mode_label = self.mode_label.clone();
@@ -1021,6 +1076,55 @@ impl MainWindow {
                         }
                     }
                     gtk4::glib::Propagation::Stop
+                }
+                // Shift+Enter: "Open with…". On a file result, open the app
+                // picker. Inside an active picker, set the chosen app as the
+                // default for the file's type, then open.
+                Key::Return | Key::KP_Enter if shift => {
+                    let selected = results_list
+                        .selected_row()
+                        .or_else(|| results_list.row_at_index(0));
+                    let Some(row) = selected else {
+                        return gtk4::glib::Propagation::Proceed;
+                    };
+                    let index = row.index() as usize;
+
+                    // Inside the picker: persist the chosen app, then open.
+                    let ctx = submenu_state.borrow().open_with.clone();
+                    if let Some(ctx) = ctx {
+                        let Some(app) = current_results.borrow().get(index).cloned() else {
+                            return gtk4::glib::Propagation::Stop;
+                        };
+                        Self::pick_application(&app, &ctx, true, &config.borrow());
+                        if is_dmenu_mode {
+                            std::process::exit(0);
+                        }
+                        window.close();
+                        return gtk4::glib::Propagation::Stop;
+                    }
+
+                    // On a file result: open the "Open with…" picker.
+                    let path = current_results
+                        .borrow()
+                        .get(index)
+                        .and_then(Self::filesearch_open_path);
+                    if let Some(path) = path {
+                        Self::enter_open_with_picker(
+                            &backend,
+                            &config.borrow(),
+                            &submenu_state,
+                            &results_list,
+                            &current_results,
+                            &mode_label,
+                            &hints_label,
+                            &search_entry,
+                            &path,
+                        );
+                        return gtk4::glib::Propagation::Stop;
+                    }
+
+                    // Non-file result: let the entry's activate handler run.
+                    gtk4::glib::Propagation::Proceed
                 }
                 _ => gtk4::glib::Propagation::Proceed,
             }
@@ -1558,6 +1662,161 @@ impl MainWindow {
         }
     }
 
+    /// Enter the "Open with…" application picker for `file_path`.
+    ///
+    /// Reuses the submenu UI: the full installed-app list is shown (searchable
+    /// by typing) and an `OpenWithContext` is recorded so row selection opens
+    /// or associates the file instead of launching the app standalone.
+    #[allow(clippy::too_many_arguments)]
+    fn enter_open_with_picker(
+        backend: &Rc<RefCell<SearchBackend>>,
+        config: &Config,
+        submenu_state: &Rc<RefCell<SubmenuState>>,
+        results_list: &ListBox,
+        current_results: &Rc<RefCell<Vec<LaunchItem>>>,
+        mode_label: &Label,
+        hints_label: &Label,
+        search_entry: &Entry,
+        file_path: &str,
+    ) {
+        let mime = Self::xdg_mime_query(&["query", "filetype", file_path]).unwrap_or_default();
+        let apps = Self::fetch_applications(backend, config);
+        if apps.is_empty() {
+            crate::notify::notify("Open with", "No applications available to open this file");
+            return;
+        }
+
+        let filename = std::path::Path::new(file_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| file_path.to_string());
+
+        {
+            let mut state = submenu_state.borrow_mut();
+            state.active = true;
+            state.service_name = String::new();
+            state.display_name = format!("Open “{}” with…", filename);
+            state.items = apps.clone();
+            state.saved_search = search_entry.text().to_string();
+            state.open_with = Some(OpenWithContext {
+                path: file_path.to_string(),
+                mime,
+            });
+        }
+
+        mode_label.set_label("← Open with…");
+        hints_label.set_label("Enter: open once  Shift+Enter: set as default  Esc: back");
+        search_entry.set_text("");
+        search_entry.set_placeholder_text(Some("Filter applications..."));
+
+        results_list.remove_all();
+        for item in &apps {
+            let row = ResultRow::new(item, "");
+            results_list.append(&row);
+        }
+        if let Some(first_row) = results_list.row_at_index(0) {
+            results_list.select_row(Some(&first_row));
+        }
+        *current_results.borrow_mut() = apps;
+    }
+
+    /// Fetch the full installed-application list (Application provider only).
+    fn fetch_applications(
+        backend: &Rc<RefCell<SearchBackend>>,
+        config: &Config,
+    ) -> Vec<LaunchItem> {
+        let mut filter = ProviderFilter::all();
+        filter.set_prefix(Some(ProviderType::Application));
+        backend.borrow_mut().search("", 1000, &filter, config)
+    }
+
+    /// Open the picker's target file with the chosen application. When
+    /// `persist` is set, also record it as the new default handler for the
+    /// file's MIME type (writes `~/.config/mimeapps.list` via `xdg-mime`).
+    /// Returns true once a launch was attempted (the caller can then close).
+    fn pick_application(
+        app: &LaunchItem,
+        ctx: &OpenWithContext,
+        persist: bool,
+        config: &Config,
+    ) -> bool {
+        if persist && let Some(desktop_id) = Self::desktop_id_basename(&app.id) {
+            if Self::set_default_application(&desktop_id, &ctx.mime) {
+                info!("Set default application for {}: {}", ctx.mime, desktop_id);
+            } else {
+                crate::notify::notify(
+                    "Open with",
+                    &format!("Could not set {} as default for {}", app.name, ctx.mime),
+                );
+            }
+        }
+
+        if let Err(e) = Self::launch_file_with_app(&app.id, &ctx.path, config) {
+            crate::notify::notify(
+                "Open failed",
+                &format!("Failed to open with {}: {}", app.name, e),
+            );
+        }
+        true
+    }
+
+    /// Open `file_path` with a specific application `.desktop` file. Reuses the
+    /// handler parsing so a `Terminal=true` chosen app is wrapped in the
+    /// configured terminal, just like the default-handler path.
+    fn launch_file_with_app(
+        app_desktop_path: &str,
+        file_path: &str,
+        config: &Config,
+    ) -> std::io::Result<std::process::Child> {
+        if let Ok(contents) = std::fs::read_to_string(app_desktop_path)
+            && let Some(handler) = parse_desktop_handler(&contents)
+        {
+            let exec = expand_exec_for_file(&handler.exec, file_path);
+            info!("Opening '{}' with chosen app: {}", file_path, exec);
+            return Self::launch_command(&exec, handler.terminal, config);
+        }
+        // Fallback: let gio launch the .desktop with the file as an argument.
+        info!(
+            "Opening '{}' via gio launch {}",
+            file_path, app_desktop_path
+        );
+        Command::new("gio")
+            .args(["launch", app_desktop_path, file_path])
+            .spawn()
+    }
+
+    /// Persist `desktop_id` as the default application for `mime` via
+    /// `xdg-mime default` (which writes `mimeapps.list` in the spec format).
+    fn set_default_application(desktop_id: &str, mime: &str) -> bool {
+        if mime.is_empty() {
+            return false;
+        }
+        match Command::new("xdg-mime")
+            .args(["default", desktop_id, mime])
+            .status()
+        {
+            Ok(status) => status.success(),
+            Err(e) => {
+                log::warn!("xdg-mime default failed: {}", e);
+                false
+            }
+        }
+    }
+
+    /// Extract the desktop-file id (e.g. `org.gnome.gedit.desktop`) from a full
+    /// application `.desktop` path. Returns `None` for paths that don't name a
+    /// `.desktop` file.
+    fn desktop_id_basename(desktop_path: &str) -> Option<String> {
+        let name = std::path::Path::new(desktop_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())?;
+        if name.ends_with(".desktop") {
+            Some(name)
+        } else {
+            None
+        }
+    }
+
     /// Resolve the default desktop handler for `path` by MIME type.
     ///
     /// Distinguishes "no application is associated" (worth informing the user)
@@ -1847,5 +2106,27 @@ mod tests {
             expand_exec_for_file("nvim %F", "/tmp/it's a file"),
             "nvim '/tmp/it'\\''s a file'"
         );
+    }
+
+    #[test]
+    fn desktop_id_basename_extracts_id_from_path() {
+        assert_eq!(
+            MainWindow::desktop_id_basename("/usr/share/applications/org.gnome.gedit.desktop")
+                .as_deref(),
+            Some("org.gnome.gedit.desktop")
+        );
+        assert_eq!(
+            MainWindow::desktop_id_basename(
+                "/home/u/.local/share/applications/dev.zed.Zed.desktop"
+            )
+            .as_deref(),
+            Some("dev.zed.Zed.desktop")
+        );
+    }
+
+    #[test]
+    fn desktop_id_basename_none_for_non_desktop_paths() {
+        assert!(MainWindow::desktop_id_basename("/usr/bin/nvim").is_none());
+        assert!(MainWindow::desktop_id_basename("").is_none());
     }
 }

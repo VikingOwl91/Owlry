@@ -195,6 +195,7 @@ pacman -Ssq | owlry dmenu -p "install" | xargs sudo pacman -S
 | Key | Action |
 |-----|--------|
 | `Enter` | Launch selected item |
+| `Shift+Enter` | Open a file with… (application picker); in the picker, set as default |
 | `Escape` | Close launcher / exit submenu |
 | `Up` / `Down` | Navigate results |
 | `Tab` | Cycle filter tabs |
@@ -418,9 +419,18 @@ Selecting a file or folder result opens it with the system's **default applicati
 
 - **GUI handler** (Zed, Firefox, an image viewer, a file manager for folders): launched directly via `xdg-open`.
 - **Terminal handler** (`Terminal=true` in the `.desktop` entry — `nvim`, `vim`, `less`, …): owlry reads the handler's `Exec` line and runs it inside your configured terminal (`general.terminal_command`), e.g. `kitty -e nvim <file>`. Plain `xdg-open` would launch these windowless, so without this they'd silently appear to do nothing.
-- **No associated application**: owlry shows a desktop notification (*"No application is associated with …"*) instead of failing silently.
+- **No associated application**: owlry opens the **"Open with…" picker** (below) instead of failing silently.
 
-To change which app opens a given type, set its default the usual freedesktop way, e.g. `xdg-mime default dev.zed.Zed.desktop text/x-c` for Rust source files. The terminal used for terminal handlers follows the `-e` convention; terminals that need a different flag may not pick up the file argument.
+#### "Open with…" picker
+
+To open a file with something other than its default, press **Shift+Enter** on a file result. owlry shows the full installed-application list (searchable by typing); files whose type has *no* default app open this picker on plain **Enter** too. In the picker:
+
+- **Enter** — open the file with the chosen app **once** (nothing is saved).
+- **Shift+Enter** — **set that app as the default** for the file's MIME type (written to `~/.config/mimeapps.list` via `xdg-mime`), then open.
+
+The chosen app is launched the same way as the default handler, so a `Terminal=true` app still opens inside your terminal.
+
+To change a default without the picker, set it the usual freedesktop way, e.g. `xdg-mime default dev.zed.Zed.desktop text/x-c` for Rust source files. The terminal used for terminal handlers follows the `-e` convention; terminals that need a different flag may not pick up the file argument.
 
 ## Roadmap
 
