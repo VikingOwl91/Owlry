@@ -140,6 +140,9 @@ mod tests {
               max_results = 50,
               frecency = false,
               frecency_weight = 0.75,
+              frecency_max_entries = 9000,
+              frecency_max_age_days = 90,
+              frecency_min_launches = 2,
               search_engine = "google",
             }
             "#,
@@ -155,6 +158,9 @@ mod tests {
         assert_eq!(s.max_results, Some(50));
         assert_eq!(s.frecency, Some(false));
         assert_eq!(s.frecency_weight, Some(0.75));
+        assert_eq!(s.frecency_max_entries, Some(9000));
+        assert_eq!(s.frecency_max_age_days, Some(90));
+        assert_eq!(s.frecency_min_launches, Some(2));
         assert_eq!(s.search_engine.as_deref(), Some("google"));
         assert!(s.unknown_settings.is_empty());
     }

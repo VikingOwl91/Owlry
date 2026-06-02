@@ -27,6 +27,9 @@ pub struct LuaConfig {
     pub max_results: Option<usize>,
     pub frecency: Option<bool>,
     pub frecency_weight: Option<f64>,
+    pub frecency_max_entries: Option<usize>,
+    pub frecency_max_age_days: Option<i64>,
+    pub frecency_min_launches: Option<u32>,
     pub search_engine: Option<String>,
     pub filesearch_roots: Option<Vec<String>>,
 
@@ -135,6 +138,9 @@ pub(crate) const KNOWN_SET_KEYS: &[&str] = &[
     "max_results",
     "frecency",
     "frecency_weight",
+    "frecency_max_entries",
+    "frecency_max_age_days",
+    "frecency_min_launches",
     "search_engine",
     "filesearch_roots",
 ];
@@ -209,6 +215,15 @@ impl LuaConfig {
         }
         if let Some(v) = self.frecency_weight {
             cfg.providers.frecency_weight = v;
+        }
+        if let Some(v) = self.frecency_max_entries {
+            cfg.providers.frecency_max_entries = v;
+        }
+        if let Some(v) = self.frecency_max_age_days {
+            cfg.providers.frecency_max_age_days = v;
+        }
+        if let Some(v) = self.frecency_min_launches {
+            cfg.providers.frecency_min_launches = v;
         }
         if let Some(v) = &self.search_engine {
             cfg.providers.search_engine = v.clone();
@@ -396,6 +411,9 @@ mod tests {
         let lc = LuaConfig {
             frecency: Some(false),
             frecency_weight: Some(0.75),
+            frecency_max_entries: Some(9000),
+            frecency_max_age_days: Some(90),
+            frecency_min_launches: Some(2),
             search_engine: Some("google".into()),
             ..Default::default()
         };
@@ -403,6 +421,9 @@ mod tests {
 
         assert!(!cfg.providers.frecency);
         assert!((cfg.providers.frecency_weight - 0.75).abs() < f64::EPSILON);
+        assert_eq!(cfg.providers.frecency_max_entries, 9000);
+        assert_eq!(cfg.providers.frecency_max_age_days, 90);
+        assert_eq!(cfg.providers.frecency_min_launches, 2);
         assert_eq!(cfg.providers.search_engine, "google");
     }
 

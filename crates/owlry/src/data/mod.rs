@@ -1,3 +1,3 @@
 mod frecency;
 
-pub use frecency::FrecencyStore;
+pub use frecency::{FrecencyPruneConfig, FrecencyStore};

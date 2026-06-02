@@ -349,6 +349,24 @@ fn emit_set_section(out: &mut String, cfg: &Config) {
             format!("{}", cfg.providers.frecency_weight),
         ));
     }
+    if cfg.providers.frecency_max_entries != d.providers.frecency_max_entries {
+        entries.push((
+            "frecency_max_entries",
+            cfg.providers.frecency_max_entries.to_string(),
+        ));
+    }
+    if cfg.providers.frecency_max_age_days != d.providers.frecency_max_age_days {
+        entries.push((
+            "frecency_max_age_days",
+            cfg.providers.frecency_max_age_days.to_string(),
+        ));
+    }
+    if cfg.providers.frecency_min_launches != d.providers.frecency_min_launches {
+        entries.push((
+            "frecency_min_launches",
+            cfg.providers.frecency_min_launches.to_string(),
+        ));
+    }
     if cfg.providers.search_engine != d.providers.search_engine {
         entries.push(("search_engine", lua_string(&cfg.providers.search_engine)));
     }

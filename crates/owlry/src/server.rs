@@ -159,7 +159,8 @@ impl Server {
 
         let provider_manager =
             ProviderManager::new_with_config(Arc::clone(&config), user_providers);
-        let frecency = FrecencyStore::new();
+        let frecency =
+            FrecencyStore::with_config(config.read().unwrap().providers.frecency_prune_config());
         let provider_manager = Arc::new(RwLock::new(provider_manager));
 
         // Spawn the hot-reload watcher when an owlry.lua was actually loaded.

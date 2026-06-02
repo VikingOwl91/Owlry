@@ -142,6 +142,15 @@ fn apply_set(cfg: &mut LuaConfig, t: Table) -> mlua::Result<()> {
     if let Some(v) = t.get::<Option<f64>>("frecency_weight")? {
         cfg.frecency_weight = Some(v);
     }
+    if let Some(v) = t.get::<Option<usize>>("frecency_max_entries")? {
+        cfg.frecency_max_entries = Some(v);
+    }
+    if let Some(v) = t.get::<Option<i64>>("frecency_max_age_days")? {
+        cfg.frecency_max_age_days = Some(v);
+    }
+    if let Some(v) = t.get::<Option<u32>>("frecency_min_launches")? {
+        cfg.frecency_min_launches = Some(v);
+    }
     if let Some(v) = t.get::<Option<String>>("search_engine")? {
         cfg.search_engine = Some(v);
     }

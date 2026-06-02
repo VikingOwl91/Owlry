@@ -76,7 +76,8 @@ impl OwlryApp {
             dmenu.enable();
             let core_providers: Vec<Box<dyn Provider>> = vec![Box::new(dmenu)];
             let provider_manager = ProviderManager::new(core_providers, Vec::new());
-            let frecency = FrecencyStore::load_or_default();
+            let frecency =
+                FrecencyStore::with_config(config.borrow().providers.frecency_prune_config());
 
             SearchBackend::Local {
                 providers: Box::new(provider_manager),
@@ -188,7 +189,7 @@ impl OwlryApp {
     /// Only built-in providers run locally — dmenu mode is the typical use case.
     /// All other providers belong to the daemon (Phase 1 keeps the daemon as the
     /// primary path).
-    fn create_local_backend(_config: &Config) -> SearchBackend {
+    fn create_local_backend(config: &Config) -> SearchBackend {
         use crate::providers::{ApplicationProvider, CommandProvider};
 
         let core_providers: Vec<Box<dyn Provider>> = vec![
@@ -197,7 +198,7 @@ impl OwlryApp {
         ];
 
         let provider_manager = ProviderManager::new(core_providers, Vec::new());
-        let frecency = FrecencyStore::load_or_default();
+        let frecency = FrecencyStore::with_config(config.providers.frecency_prune_config());
 
         SearchBackend::Local {
             providers: Box::new(provider_manager),

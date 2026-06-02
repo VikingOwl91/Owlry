@@ -30,6 +30,9 @@ owlry.set {
   max_results     = 100,
   frecency        = true,      -- boost recently / frequently launched items
   frecency_weight = 0.3,       -- 0.0 = off, 1.0 = strong
+  frecency_max_entries  = 5000, -- cap retained entries (0 = unbounded)
+  frecency_max_age_days = 180,  -- drop entries older than this (0 = no age pruning)
+  frecency_min_launches = 3,    -- launches that exempt an old entry from age pruning
   search_engine   = "duckduckgo",  -- google | duckduckgo | bing |
                                    -- startpage | searxng | brave |
                                    -- ecosia, or a custom "{query}" URL.

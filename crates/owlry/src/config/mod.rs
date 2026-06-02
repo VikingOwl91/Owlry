@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use crate::data::FrecencyPruneConfig;
 use crate::paths;
 
 /// A named profile that selects a set of provider modes.
@@ -197,6 +198,16 @@ pub struct ProvidersConfig {
     /// Weight for frecency boost (0.0 = disabled, 1.0 = strong boost)
     #[serde(default = "default_frecency_weight")]
     pub frecency_weight: f64,
+    /// Max frecency entries to retain after startup pruning (0 = unbounded).
+    #[serde(default = "default_frecency_max_entries")]
+    pub frecency_max_entries: usize,
+    /// Drop frecency entries older than this many days at startup, unless they
+    /// have at least `frecency_min_launches` launches (0 = no age pruning).
+    #[serde(default = "default_frecency_max_age_days")]
+    pub frecency_max_age_days: i64,
+    /// Launch count that exempts an old entry from age-based pruning.
+    #[serde(default = "default_frecency_min_launches")]
+    pub frecency_min_launches: u32,
     /// Search engine for web search (used by owlry-plugin-websearch)
     /// Options: google, duckduckgo, bing, startpage, searxng, brave, ecosia
     /// Or a custom URL with a {query} placeholder
@@ -225,8 +236,24 @@ impl Default for ProvidersConfig {
             websearch: true,
             frecency: true,
             frecency_weight: 0.3,
+            frecency_max_entries: 5000,
+            frecency_max_age_days: 180,
+            frecency_min_launches: 3,
             search_engine: "duckduckgo".to_string(),
             filesearch_roots: Vec::new(),
+        }
+    }
+}
+
+impl ProvidersConfig {
+    /// Build the frecency pruning thresholds from this config. Shared by the
+    /// daemon and the UI-side (dmenu / daemonless-fallback) stores so all
+    /// writers prune `frecency.json` with the same configured limits.
+    pub fn frecency_prune_config(&self) -> FrecencyPruneConfig {
+        FrecencyPruneConfig {
+            max_entries: self.frecency_max_entries,
+            max_age_days: self.frecency_max_age_days,
+            min_launches: self.frecency_min_launches,
         }
     }
 }
@@ -322,6 +349,18 @@ fn default_true() -> bool {
 
 fn default_frecency_weight() -> f64 {
     0.3
+}
+
+fn default_frecency_max_entries() -> usize {
+    5000
+}
+
+fn default_frecency_max_age_days() -> i64 {
+    180
+}
+
+fn default_frecency_min_launches() -> u32 {
+    3
 }
 
 /// Detect the best available terminal emulator

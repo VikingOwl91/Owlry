@@ -159,6 +159,9 @@ power = true             # Power actions: shutdown, reboot, lock, etc. (alias: s
 # Data stored in: ~/.local/share/owlry/frecency.json
 frecency = true
 frecency_weight = 0.3    # 0.0 = disabled, 1.0 = strong boost
+frecency_max_entries = 5000     # cap retained entries (0 = unbounded)
+frecency_max_age_days = 180     # drop entries older than this (0 = no age pruning)
+frecency_min_launches = 3       # launches that exempt an old entry from age pruning
 
 # Web search engine (used by owlry-plugin-websearch)
 # Options: google, duckduckgo, bing, startpage, searxng, brave, ecosia

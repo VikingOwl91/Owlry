@@ -33,16 +33,44 @@ const MAX_ENTRIES: usize = 5000;
 const PRUNE_AGE_DAYS: i64 = 180;
 const MIN_LAUNCHES_TO_KEEP: u32 = 3;
 
+/// Thresholds controlling startup pruning of the frecency store. Defaults
+/// match the historical hardcoded constants; the daemon overrides them from
+/// `[providers]` config. A `0` for `max_entries` or `max_age_days` disables
+/// that limit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrecencyPruneConfig {
+    pub max_entries: usize,
+    pub max_age_days: i64,
+    pub min_launches: u32,
+}
+
+impl Default for FrecencyPruneConfig {
+    fn default() -> Self {
+        Self {
+            max_entries: MAX_ENTRIES,
+            max_age_days: PRUNE_AGE_DAYS,
+            min_launches: MIN_LAUNCHES_TO_KEEP,
+        }
+    }
+}
+
 /// Frecency store for tracking and boosting recently/frequently used items
 pub struct FrecencyStore {
     data: FrecencyData,
     path: PathBuf,
     dirty: bool,
+    prune_config: FrecencyPruneConfig,
 }
 
 impl FrecencyStore {
-    /// Create a new frecency store, loading existing data if available
+    /// Create a new frecency store with default prune thresholds.
     pub fn new() -> Self {
+        Self::with_config(FrecencyPruneConfig::default())
+    }
+
+    /// Create a new frecency store, loading existing data and pruning with the
+    /// given thresholds.
+    pub fn with_config(prune_config: FrecencyPruneConfig) -> Self {
         let path = Self::data_path();
         let data = Self::load_from_path(&path).unwrap_or_default();
 
@@ -52,30 +80,49 @@ impl FrecencyStore {
             data,
             path,
             dirty: false,
+            prune_config,
         };
         store.prune();
         store
     }
 
-    /// Remove stale low-usage entries and enforce the hard cap.
-    ///
-    /// Entries older than `PRUNE_AGE_DAYS` with fewer than `MIN_LAUNCHES_TO_KEEP`
-    /// launches are removed. After age-based pruning, entries are sorted by score
-    /// (descending) and the list is truncated to `MAX_ENTRIES`.
+    /// Remove stale low-usage entries and enforce the hard cap, using this
+    /// store's configured thresholds and the current time.
     fn prune(&mut self) {
-        let now = Utc::now();
-        let cutoff = now - chrono::Duration::days(PRUNE_AGE_DAYS);
-
         let before = self.data.entries.len();
-        self.data
-            .entries
-            .retain(|_, e| e.last_launch > cutoff || e.launch_count >= MIN_LAUNCHES_TO_KEEP);
+        Self::prune_entries(&mut self.data.entries, &self.prune_config, Utc::now());
 
-        if self.data.entries.len() > MAX_ENTRIES {
-            // Sort by score descending and keep the top MAX_ENTRIES
-            let mut scored: Vec<(String, f64)> = self
-                .data
-                .entries
+        let removed = before - self.data.entries.len();
+        if removed > 0 {
+            info!(
+                "Frecency: pruned {} stale entries ({} remaining)",
+                removed,
+                self.data.entries.len()
+            );
+            self.dirty = true;
+        }
+    }
+
+    /// Pure pruning policy (no IO, injectable `now`):
+    ///
+    /// 1. Age: when `max_age_days > 0`, drop entries older than that many days
+    ///    unless they have at least `min_launches` launches.
+    /// 2. Cap: when `max_entries > 0` and still over the cap, keep the
+    ///    highest-scoring `max_entries`.
+    ///
+    /// A `0` for either limit disables that stage.
+    fn prune_entries(
+        entries: &mut HashMap<String, FrecencyEntry>,
+        cfg: &FrecencyPruneConfig,
+        now: DateTime<Utc>,
+    ) {
+        if cfg.max_age_days > 0 {
+            let cutoff = now - chrono::Duration::days(cfg.max_age_days);
+            entries.retain(|_, e| e.last_launch > cutoff || e.launch_count >= cfg.min_launches);
+        }
+
+        if cfg.max_entries > 0 && entries.len() > cfg.max_entries {
+            let mut scored: Vec<(String, f64)> = entries
                 .iter()
                 .map(|(k, e)| {
                     (
@@ -87,20 +134,10 @@ impl FrecencyStore {
             scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
             let keep: std::collections::HashSet<String> = scored
                 .into_iter()
-                .take(MAX_ENTRIES)
+                .take(cfg.max_entries)
                 .map(|(k, _)| k)
                 .collect();
-            self.data.entries.retain(|k, _| keep.contains(k));
-        }
-
-        let removed = before - self.data.entries.len();
-        if removed > 0 {
-            info!(
-                "Frecency: pruned {} stale entries ({} remaining)",
-                removed,
-                self.data.entries.len()
-            );
-            self.dirty = true;
+            entries.retain(|k, _| keep.contains(k));
         }
     }
 
@@ -280,6 +317,7 @@ mod tests {
             },
             path: PathBuf::from("/dev/null"),
             dirty: false,
+            prune_config: FrecencyPruneConfig::default(),
         };
         store.data.entries.insert(
             "test".to_string(),
@@ -314,11 +352,99 @@ mod tests {
             data: FrecencyData::default(),
             path: PathBuf::from("/dev/null"),
             dirty: false,
+            prune_config: FrecencyPruneConfig::default(),
         };
 
         store.record_launch("test-item");
 
         assert!(store.dirty, "record_launch should set dirty flag");
         assert_eq!(store.data.entries["test-item"].launch_count, 1);
+    }
+
+    fn entries_with(
+        specs: &[(&str, u32, i64)],
+        now: DateTime<Utc>,
+    ) -> HashMap<String, FrecencyEntry> {
+        specs
+            .iter()
+            .map(|(id, count, days_ago)| {
+                (
+                    id.to_string(),
+                    FrecencyEntry {
+                        launch_count: *count,
+                        last_launch: now - chrono::Duration::days(*days_ago),
+                    },
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn prune_drops_old_low_usage_but_keeps_recent_and_frequent() {
+        let now = Utc::now();
+        let mut entries = entries_with(
+            &[
+                ("recent", 1, 10),  // recent, low usage — keep (within age window)
+                ("old_rare", 1, 400), // old + rare — drop
+                ("old_frequent", 5, 400), // old but >= min_launches — keep
+            ],
+            now,
+        );
+        let cfg = FrecencyPruneConfig {
+            max_entries: 0,
+            max_age_days: 180,
+            min_launches: 3,
+        };
+        FrecencyStore::prune_entries(&mut entries, &cfg, now);
+
+        assert!(entries.contains_key("recent"));
+        assert!(entries.contains_key("old_frequent"));
+        assert!(!entries.contains_key("old_rare"));
+    }
+
+    #[test]
+    fn prune_age_zero_disables_age_pruning() {
+        let now = Utc::now();
+        let mut entries = entries_with(&[("ancient", 1, 9999)], now);
+        let cfg = FrecencyPruneConfig {
+            max_entries: 0,
+            max_age_days: 0,
+            min_launches: 3,
+        };
+        FrecencyStore::prune_entries(&mut entries, &cfg, now);
+        assert!(entries.contains_key("ancient"), "age=0 must keep all entries");
+    }
+
+    #[test]
+    fn prune_caps_to_max_entries_by_score() {
+        let now = Utc::now();
+        // All recent so age pruning is a no-op; cap must keep the two highest
+        // launch_count entries.
+        let mut entries = entries_with(
+            &[("a", 1, 0), ("b", 5, 0), ("c", 9, 0)],
+            now,
+        );
+        let cfg = FrecencyPruneConfig {
+            max_entries: 2,
+            max_age_days: 0,
+            min_launches: 3,
+        };
+        FrecencyStore::prune_entries(&mut entries, &cfg, now);
+        assert_eq!(entries.len(), 2);
+        assert!(entries.contains_key("c") && entries.contains_key("b"));
+        assert!(!entries.contains_key("a"));
+    }
+
+    #[test]
+    fn prune_max_entries_zero_disables_cap() {
+        let now = Utc::now();
+        let mut entries = entries_with(&[("a", 1, 0), ("b", 1, 0), ("c", 1, 0)], now);
+        let cfg = FrecencyPruneConfig {
+            max_entries: 0,
+            max_age_days: 0,
+            min_launches: 3,
+        };
+        FrecencyStore::prune_entries(&mut entries, &cfg, now);
+        assert_eq!(entries.len(), 3, "max_entries=0 must keep everything");
     }
 }
