@@ -131,10 +131,15 @@ Sets top-level config values. Takes a table of key-value pairs. Calling `owlry.s
 | `max_results` | `integer` | `100` | Cap on results returned per query |
 | `frecency` | `boolean` | `true` | Boost frequently/recently used items |
 | `frecency_weight` | `number` | `0.3` | Frecency boost weight (0.0 = off, 1.0 = strong) |
+| `frecency_max_entries` | `integer` | `5000` | Max entries kept after startup pruning (0 = unbounded) |
+| `frecency_max_age_days` | `integer` | `180` | Drop entries older than N days at startup (0 = no age pruning) |
+| `frecency_min_launches` | `integer` | `3` | Launch count that exempts an old entry from age pruning |
 | `search_engine` | `string` | `"duckduckgo"` | Engine for `:web` / `?` queries (see §6) |
 | `filesearch_roots` | `string[]` | `{}` | Root dirs for `:file` / `/` search (`~/` allowed). Empty searches `$HOME`. Non-existent entries are dropped |
 
 > File search is **opt-in**: it only runs under the `:file` prefix (or the `/` alias), never on a bare query, because each keystroke shells out to `fd`/`locate`. Walks are bounded (depth, excludes, 20 results, 750 ms).
+
+> The `frecency_*` pruning thresholds are applied when the store is loaded (daemon startup). Hot-reloading `owlry.lua` does not re-prune the live store — restart the daemon (`systemctl --user restart owlry.service`) to apply changed thresholds.
 
 **Example:**
 

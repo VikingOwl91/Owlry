@@ -37,8 +37,8 @@ Firefox + Chromium bookmarks were deferred from 2.0 — the `rusqlite` dep used 
 
 ## High Value, Low Effort
 
-### Frecency pruning — expose thresholds
-Pruning already runs on startup (`frecency.rs`): entries older than 180 days with `<3` launches are dropped, then the set is truncated to 5000 by score. The remaining work is making those three hardcoded constants configurable — `frecency_max_entries`, `frecency_max_age_days`, `frecency_min_launches` — defaulting to today's values.
+### ~~Frecency pruning — expose thresholds~~ — **landed (ships in 2.4)**
+The startup prune thresholds are now configurable via `[providers]`: `frecency_max_entries` (0 = unbounded), `frecency_max_age_days` (0 = no age pruning), `frecency_min_launches` — defaulting to the historical 5000/180/3. Honored by the daemon and the daemonless (dmenu / fallback) stores alike. Applied at store load; a daemon restart is needed to re-prune after a config change.
 
 ### `:recent` prefix
 Show last N launched items. Note: `FrecencyEntry` stores only `launch_count` + `last_launch` keyed by `item.id` — no name/command — so the daemon must resolve ids against its in-memory provider items and drop dangling ones (e.g. uninstalled apps).
