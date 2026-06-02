@@ -412,6 +412,16 @@ Typical latencies, measured against a warm daemon (single machine, informational
 
 File search (`:file` / `/`) is the one provider that shells out (`fd`/`locate`). It runs **only** on its explicit prefix and is bounded — depth limit, directory exclusions, result cap, and a wall-clock timeout — so it never blocks the rest of the result set.
 
+### Opening files and folders
+
+Selecting a file or folder result opens it with the system's **default application** for that path's MIME type — the same association `xdg-open` uses. How it launches depends on the resolved handler:
+
+- **GUI handler** (Zed, Firefox, an image viewer, a file manager for folders): launched directly via `xdg-open`.
+- **Terminal handler** (`Terminal=true` in the `.desktop` entry — `nvim`, `vim`, `less`, …): owlry reads the handler's `Exec` line and runs it inside your configured terminal (`general.terminal_command`), e.g. `kitty -e nvim <file>`. Plain `xdg-open` would launch these windowless, so without this they'd silently appear to do nothing.
+- **No associated application**: owlry shows a desktop notification (*"No application is associated with …"*) instead of failing silently.
+
+To change which app opens a given type, set its default the usual freedesktop way, e.g. `xdg-mime default dev.zed.Zed.desktop text/x-c` for Rust source files. The terminal used for terminal handlers follows the `-e` convention; terminals that need a different flag may not pick up the file argument.
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for feature ideas and [docs/RESTRUCTURE-V2.md](docs/RESTRUCTURE-V2.md) for the v2 rewrite story.
