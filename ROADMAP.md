@@ -43,8 +43,8 @@ The startup prune thresholds are now configurable via `[providers]`: `frecency_m
 ### ~~`:recent` prefix~~ — **landed (ships in 2.4)**
 `:recent` shows the most recently launched items, newest first. Since `FrecencyEntry` stores only `launch_count` + `last_launch` keyed by `item.id`, the daemon (`ProviderManager::recent_items`) resolves ids against its in-memory static-provider items and drops dangling ones (uninstalled apps, dynamic-provider results). Routed via `parse_query`'s unknown-prefix fallback (`prefix="recent"`) — no IPC change.
 
-### Clipboard images
-`cliphist` supports images. Extend the clipboard provider to show image thumbnails in results.
+### ~~Clipboard images~~ — **landed (ships in 2.4)**
+Image clipboard entries are detected from cliphist's `[[ binary data … ]]` preview, named cleanly (`Image — png 1920x1080`), and decoded to a cached thumbnail under `$XDG_CACHE_HOME/owlry/clip-thumbs/` that the result row renders via `Image::from_file`. (Surfaced and fixed a pre-existing bug: clipboard paste fed `cliphist decode` a bare id, which it rejects — now feeds `<id>\t`.) Future polish: prune stale thumbnails for evicted entries.
 
 ### ~~Dynamic providers in `owlry doctor`~~ — **landed (ships in 2.4)**
 `available_providers()` already enumerated the dynamic providers; `doctor` now labels each `[static]` / `[dynamic]` via a `kind` field on `ProviderDesc`.
