@@ -19,11 +19,11 @@ A lightweight, owl-themed application launcher for Wayland, built with GTK4 and 
 - **Single binary** — UI client, daemon, and providers in one `/usr/bin/owlry`
 - **Client/daemon architecture** — Daemon (`owlry -d`) keeps providers warm; UI appears instantly
 - **Built-in providers** — Apps, PATH commands, calculator, unit/currency converter, power actions
-- **Optional providers** (compiled in via `--features full` on AUR) — Clipboard history, emoji, SSH hosts, systemd user units, web search, filesystem search
+- **Optional providers** (compiled in via `--features full` on AUR) — Clipboard history (with image thumbnails), emoji, SSH hosts, systemd user units, web search, filesystem search
 - **Fuzzy search with tags** — Fast matching across names, descriptions, category tags
 - **Config profiles** — Named mode presets for different workflows
 - **Filter prefixes** — Scope searches with `:app`, `:cmd`, `:power`, `:uuctl`, `:tag:X`, etc.
-- **Frecency ranking** — Frequently/recently used items rank higher
+- **Frecency ranking** — Frequently/recently used items rank higher; `:recent` lists recent launches; startup pruning is configurable
 - **Toggle behavior** — Bind one key to open/close the launcher
 - **GTK4 theming** — System theme by default, 10 built-in themes shipped
 - **Wayland native** — Uses Layer Shell for proper overlay behavior
@@ -143,7 +143,7 @@ owlry --profile <name>         launch UI with a named profile
 
 owlry -d                       run the daemon (alias: `owlry daemon`)
 owlry dmenu [-p <prompt>]      dmenu mode (reads stdin, prints selection)
-owlry doctor                   diagnostics: config + socket + providers
+owlry doctor                   diagnostics: config + socket + providers (static/dynamic) + stale files
 owlry providers [<id>]         list providers (or show details for one)
 owlry config validate          parse config, report errors (exit 1) and warnings (exit 2)
 owlry config show              print the resolved effective config as TOML
@@ -312,6 +312,9 @@ websearch = true                  # `?` or :web
 filesearch = true                 # `/` or :file
 frecency = true                   # boost frequently used items
 frecency_weight = 0.3             # 0.0 disabled .. 1.0 strong
+frecency_max_entries = 5000       # cap retained entries (0 = unbounded)
+frecency_max_age_days = 180       # drop entries older than this (0 = off)
+frecency_min_launches = 3         # launches that exempt an old entry from pruning
 
 # Web search engine: google, duckduckgo, bing, startpage, searxng, brave, ecosia
 # Or a custom URL with a {query} placeholder: "https://example.com/search?q={query}"
