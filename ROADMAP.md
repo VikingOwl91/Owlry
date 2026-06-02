@@ -49,6 +49,9 @@ Show last N launched items. Data already exists in frecency.json — just needs 
 ### Dynamic providers in `owlry doctor`
 Today `doctor` lists static providers only. Surface the dynamic ones (calc, conv, websearch, filesearch) too.
 
+### Orphan reporting in `owlry doctor`
+`doctor` only audits `~/.config/owlry`, so it's blind to stale system-level remnants left by older installs — orphaned `/usr/lib/owlry/runtimes/*.so` from the pre-v2 plugin loader, uncompressed `/usr/share/man/man1/owlry.1` superseded by the `.gz`, old `owlryd.{service,socket}` units. Extend `doctor` to *report* these (path + size + "no package owns this") so the user can decide what to remove. Report-only — `doctor` never deletes anything; surfacing the paths is the whole job, the user takes action themselves.
+
 ---
 
 ## Medium Effort, High Value
