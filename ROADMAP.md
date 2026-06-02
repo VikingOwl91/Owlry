@@ -37,20 +37,20 @@ Firefox + Chromium bookmarks were deferred from 2.0 — the `rusqlite` dep used 
 
 ## High Value, Low Effort
 
-### Frecency pruning
-Add `max_entries` and `max_age_days` config options. Prune old entries on startup to prevent `frecency.json` from growing unbounded.
+### Frecency pruning — expose thresholds
+Pruning already runs on startup (`frecency.rs`): entries older than 180 days with `<3` launches are dropped, then the set is truncated to 5000 by score. The remaining work is making those three hardcoded constants configurable — `frecency_max_entries`, `frecency_max_age_days`, `frecency_min_launches` — defaulting to today's values.
 
 ### `:recent` prefix
-Show last N launched items. Data already exists in frecency.json — just needs a provider to surface it.
+Show last N launched items. Note: `FrecencyEntry` stores only `launch_count` + `last_launch` keyed by `item.id` — no name/command — so the daemon must resolve ids against its in-memory provider items and drop dangling ones (e.g. uninstalled apps).
 
 ### Clipboard images
 `cliphist` supports images. Extend the clipboard provider to show image thumbnails in results.
 
-### Dynamic providers in `owlry doctor`
-Today `doctor` lists static providers only. Surface the dynamic ones (calc, conv, websearch, filesearch) too.
+### ~~Dynamic providers in `owlry doctor`~~ — **landed (ships in 2.4)**
+`available_providers()` already enumerated the dynamic providers; `doctor` now labels each `[static]` / `[dynamic]` via a `kind` field on `ProviderDesc`.
 
-### Orphan reporting in `owlry doctor`
-`doctor` only audits `~/.config/owlry`, so it's blind to stale system-level remnants left by older installs — orphaned `/usr/lib/owlry/runtimes/*.so` from the pre-v2 plugin loader, uncompressed `/usr/share/man/man1/owlry.1` superseded by the `.gz`, old `owlryd.{service,socket}` units. Extend `doctor` to *report* these (path + size + "no package owns this") so the user can decide what to remove. Report-only — `doctor` never deletes anything; surfacing the paths is the whole job, the user takes action themselves.
+### ~~Orphan reporting in `owlry doctor`~~ — **landed (ships in 2.4)**
+`doctor` now reports stale system-level remnants under `[stale system files]` (path + size + `pacman -Qo` ownership): the pre-v2 `/usr/lib/owlry` runtimes dir, old `owlryd.{service,socket}` units, and an uncompressed `owlry.1` man page *only when* the packaged `.gz` also exists (shadowing). Report-only — `doctor` never deletes.
 
 ---
 
