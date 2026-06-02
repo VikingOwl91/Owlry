@@ -113,11 +113,11 @@ impl ClipboardProvider {
                 }
             };
 
-            // Paste this entry: `cliphist decode` extracts the id from the
-            // first tab-delimited field of its stdin, so feed "<id>\t". A bare
-            // `echo '<id>'` (no tab) makes cliphist Atoi "<id>\n" and fail.
+            // Paste this entry. cliphist takes the entry id as an argument;
+            // the old `echo '<id>' | cliphist decode` form piped "<id>\n",
+            // which cliphist Atoi'd (newline included) and rejected.
             let command = format!(
-                "printf '%s\\t' '{}' | cliphist decode | wl-copy",
+                "cliphist decode '{}' | wl-copy",
                 clip_id.replace('\'', "'\\''")
             );
 
@@ -152,27 +152,16 @@ impl ClipboardProvider {
     /// Decode an image clipboard entry to a cached file, returning its absolute
     /// path. Cached by clip id; a present file is reused without re-decoding.
     fn decode_thumb(clip_id: &str) -> Option<String> {
-        use std::io::Write;
-        use std::process::Stdio;
-
         let path = Self::thumb_path(clip_id)?;
         if !path.exists() {
             std::fs::create_dir_all(path.parent()?).ok()?;
-            // Feed "<id>\t" — cliphist decode extracts the id up to the first
-            // tab. Piping via stdin avoids any shell quoting.
-            let mut child = Command::new("cliphist")
+            // cliphist takes the entry id as an argument and writes the raw
+            // bytes to stdout. Fails (exit 1) on a missing id → keep fallback.
+            let out = Command::new("cliphist")
                 .arg("decode")
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::null())
-                .spawn()
+                .arg(clip_id)
+                .output()
                 .ok()?;
-            child
-                .stdin
-                .take()?
-                .write_all(format!("{clip_id}\t").as_bytes())
-                .ok()?;
-            let out = child.wait_with_output().ok()?;
             if !out.status.success() || out.stdout.is_empty() {
                 return None;
             }
@@ -294,9 +283,8 @@ mod tests {
     fn test_command_escaping() {
         let output = "7\ttext with ' quote\n";
         let items = ClipboardProvider::parse_cliphist_output(output, DEFAULT_MAX_ENTRIES);
-        // Paste command feeds "<id>\t" to cliphist decode (not a bare id).
-        assert!(items[0].command.starts_with("printf '%s\\t'"));
-        assert!(items[0].command.contains("cliphist decode | wl-copy"));
+        // Paste passes the entry id as a cliphist argument (not piped stdin).
+        assert_eq!(items[0].command, "cliphist decode '7' | wl-copy");
     }
 
     #[test]
