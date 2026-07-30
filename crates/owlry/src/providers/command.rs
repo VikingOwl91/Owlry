@@ -31,6 +31,34 @@ impl CommandProvider {
             false
         }
     }
+
+    /// Return whether a typed command starts with an executable and includes
+    /// arguments. This is used by the launcher for commands such as
+    /// `mpv VIDEO`; the regular provider cache intentionally remains a list of
+    /// bare PATH commands.
+    pub(crate) fn is_direct_command(command: &str) -> bool {
+        let mut words = command.split_whitespace();
+        let executable = match words.next() {
+            Some(word) if !word.starts_with('-') => word,
+            _ => return false,
+        };
+
+        // A bare command is already handled by the normal CommandProvider
+        // result. The direct path is specifically for command + arguments.
+        if words.next().is_none() {
+            return false;
+        }
+
+        let path = std::path::Path::new(executable);
+        if executable.contains('/') {
+            return Self::is_executable(path);
+        }
+
+        Self::get_path_dirs()
+            .iter()
+            .map(|dir| dir.join(executable))
+            .any(|candidate| Self::is_executable(&candidate))
+    }
 }
 
 impl Provider for CommandProvider {
@@ -104,5 +132,32 @@ impl Provider for CommandProvider {
 
     fn items(&self) -> &[LaunchItem] {
         &self.items
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CommandProvider;
+
+    #[test]
+    fn direct_command_requires_arguments() {
+        assert!(!CommandProvider::is_direct_command("printf"));
+    }
+
+    #[test]
+    fn direct_command_accepts_executable_with_arguments() {
+        assert!(CommandProvider::is_direct_command("printf hello"));
+    }
+
+    #[test]
+    fn direct_command_rejects_unknown_executable() {
+        assert!(!CommandProvider::is_direct_command(
+            "owlry-command-that-does-not-exist hello"
+        ));
+    }
+
+    #[test]
+    fn direct_command_accepts_executable_path_with_arguments() {
+        assert!(CommandProvider::is_direct_command("/bin/printf hello"));
     }
 }

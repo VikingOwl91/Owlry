@@ -21,6 +21,7 @@ A lightweight, owl-themed application launcher for Wayland, built with GTK4 and 
 - **Built-in providers** — Apps, PATH commands, calculator, unit/currency converter, power actions
 - **Optional providers** (compiled in via `--features full` on AUR) — Clipboard history (with image thumbnails), emoji, SSH hosts, systemd user units, web search, filesystem search
 - **Fuzzy search with tags** — Fast matching across names, descriptions, category tags
+- **Direct commands** — Type an executable with arguments (for example `mpv VIDEO`) and press Enter to run the complete command
 - **Config profiles** — Named mode presets for different workflows
 - **Filter prefixes** — Scope searches with `:app`, `:cmd`, `:power`, `:uuctl`, `:tag:X`, etc.
 - **Frecency ranking** — Frequently/recently used items rank higher; `:recent` lists recent launches; startup pruning is configurable

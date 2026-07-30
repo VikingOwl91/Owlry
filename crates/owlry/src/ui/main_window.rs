@@ -2,7 +2,7 @@ use crate::backend::SearchBackend;
 use crate::config::Config;
 use crate::filter::ProviderFilter;
 use crate::ipc::ProviderDesc;
-use crate::providers::{ItemSource, LaunchItem, ProviderType};
+use crate::providers::{CommandProvider, ItemSource, LaunchItem, ProviderType};
 use crate::ui::ResultRow;
 use crate::ui::provider_meta;
 use crate::ui::submenu;
@@ -748,6 +748,27 @@ impl MainWindow {
         let is_dmenu_mode_for_activate = self.is_dmenu_mode;
 
         self.search_entry.connect_activate(move |entry| {
+            // A typed command with arguments takes precedence over a fuzzy
+            // match for the bare executable. For example, entering
+            // `mpv VIDEO` must launch the complete command, not just `mpv`.
+            // Keep this out of submenu/open-with state, where Enter has a
+            // different meaning.
+            if !is_dmenu_mode_for_activate
+                && !submenu_state_for_activate.borrow().active
+                && config_for_activate.borrow().providers.commands
+                && let Some(command) = Self::direct_command_text(&entry.text())
+            {
+                let launch_result =
+                    Self::launch_command(&command, false, &config_for_activate.borrow());
+                if let Err(e) = launch_result {
+                    let msg = format!("Failed to launch '{}': {}", command, e);
+                    log::error!("{}", msg);
+                    crate::notify::notify("Launch failed", &msg);
+                }
+                window_for_activate.close();
+                return;
+            }
+
             let selected = results_list_for_activate
                 .selected_row()
                 .or_else(|| results_list_for_activate.row_at_index(0));
@@ -1228,6 +1249,23 @@ impl MainWindow {
                 }
             }
         });
+    }
+
+    /// Return the command payload for a user-entered direct command.
+    ///
+    /// Bare queries remain normal fuzzy searches unless their first token is
+    /// an executable and there is at least one argument. `:cmd` is accepted as
+    /// an explicit equivalent; other prefixes keep their existing behavior.
+    fn direct_command_text(raw: &str) -> Option<String> {
+        let parsed = ProviderFilter::parse_query(raw);
+        let allowed_scope = parsed.prefix.is_none() || parsed.prefix == Some(ProviderType::Command);
+        if !allowed_scope {
+            return None;
+        }
+
+        let command = parsed.query.trim();
+        (!command.is_empty() && CommandProvider::is_direct_command(command))
+            .then(|| command.to_string())
     }
 
     fn cycle_filter_mode(
@@ -2162,5 +2200,28 @@ mod tests {
     fn desktop_id_basename_none_for_non_desktop_paths() {
         assert!(MainWindow::desktop_id_basename("/usr/bin/nvim").is_none());
         assert!(MainWindow::desktop_id_basename("").is_none());
+    }
+
+    #[test]
+    fn direct_command_text_accepts_bare_command_with_arguments() {
+        assert_eq!(
+            MainWindow::direct_command_text("printf hello").as_deref(),
+            Some("printf hello")
+        );
+    }
+
+    #[test]
+    fn direct_command_text_accepts_cmd_prefix() {
+        assert_eq!(
+            MainWindow::direct_command_text(":cmd printf hello").as_deref(),
+            Some("printf hello")
+        );
+    }
+
+    #[test]
+    fn direct_command_text_keeps_other_prefixes_as_searches() {
+        assert!(MainWindow::direct_command_text(":app printf hello").is_none());
+        assert!(MainWindow::direct_command_text("unknown-command hello").is_none());
+        assert!(MainWindow::direct_command_text("printf").is_none());
     }
 }
