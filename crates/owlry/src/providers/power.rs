@@ -78,6 +78,7 @@ impl PowerProvider {
                 provider: ProviderType::Plugin(TYPE_ID.into()),
                 command: command.to_string(),
                 terminal: false,
+                activation: super::ItemActivation::Launch,
                 tags: vec!["power".into()],
                 source: ItemSource::Core,
             })

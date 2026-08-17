@@ -606,6 +606,7 @@ fn launch_item_to_result(item: LaunchItem, score: i64) -> ResultItem {
         score,
         command: Some(item.command),
         terminal: item.terminal,
+        activation: item.activation,
         tags: item.tags,
         source: item.source.as_str().to_string(),
     }

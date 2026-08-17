@@ -417,6 +417,7 @@ impl EmojiProvider {
                     provider: ProviderType::Plugin(TYPE_ID.into()),
                     command: format!("printf '%s' '{}' | wl-copy", emoji),
                     terminal: false,
+                    activation: super::ItemActivation::Launch,
                     tags,
                     source: ItemSource::Core,
                 }

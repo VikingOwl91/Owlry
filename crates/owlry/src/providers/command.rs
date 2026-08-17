@@ -116,6 +116,7 @@ impl Provider for CommandProvider {
                     provider: ProviderType::Command,
                     command: name,
                     terminal: false,
+                    activation: super::ItemActivation::Launch,
                     tags: Vec::new(),
                     source: ItemSource::Core,
                 };

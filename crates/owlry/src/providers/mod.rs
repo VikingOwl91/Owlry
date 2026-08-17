@@ -29,6 +29,7 @@ use chrono::{DateTime, Utc};
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use log::info;
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "dev-logging")]
 use log::debug;
@@ -114,6 +115,54 @@ impl std::str::FromStr for ItemSource {
     }
 }
 
+/// Typed instruction for what selecting a result does.
+///
+/// `command` remains the launch payload for compatibility with older IPC
+/// peers; control flow such as submenus and provider-internal actions lives
+/// here instead of being inferred from string prefixes.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ItemActivation {
+    #[default]
+    Launch,
+    Submenu {
+        provider_id: String,
+        data: String,
+    },
+    PluginAction {
+        command: String,
+    },
+}
+
+impl ItemActivation {
+    pub fn is_launch(&self) -> bool {
+        matches!(self, Self::Launch)
+    }
+
+    /// Transitional decoder for results produced by pre-typed daemons and
+    /// script providers still using the historical command prefix.
+    pub fn from_legacy_command(command: &str) -> Self {
+        if command.starts_with('!') {
+            return Self::PluginAction {
+                command: command.to_string(),
+            };
+        }
+        let Some(rest) = command.strip_prefix("SUBMENU:") else {
+            return Self::Launch;
+        };
+        let Some((provider_id, data)) = rest.split_once(':') else {
+            return Self::Launch;
+        };
+        if provider_id.is_empty() || data.is_empty() {
+            return Self::Launch;
+        }
+        Self::Submenu {
+            provider_id: provider_id.to_string(),
+            data: data.to_string(),
+        }
+    }
+}
+
 /// Represents a single searchable/launchable item
 #[derive(Debug, Clone)]
 pub struct LaunchItem {
@@ -125,6 +174,7 @@ pub struct LaunchItem {
     pub provider: ProviderType,
     pub command: String,
     pub terminal: bool,
+    pub activation: ItemActivation,
     /// Tags/categories for filtering (e.g., from .desktop Categories)
     pub tags: Vec<String>,
     /// Trust level — gates `sh -c` execution for script plugin items.
@@ -176,8 +226,8 @@ impl std::fmt::Display for ProviderType {
 /// Trait for all search providers.
 ///
 /// Static providers hold a refreshable item cache. Submenu and action support
-/// are optional methods — implement them only if the provider produces
-/// `SUBMENU:` items or handles plugin-defined action commands.
+/// are optional methods — implement them only if the provider produces typed
+/// submenu activations or handles plugin-defined action commands.
 pub trait Provider: Send + Sync {
     #[allow(dead_code)]
     fn name(&self) -> &str;
@@ -210,8 +260,8 @@ pub trait Provider: Send + Sync {
         0
     }
 
-    /// Generate submenu actions for an item whose command starts with `SUBMENU:`.
-    /// `data` is everything after the type_id prefix.
+    /// Generate submenu actions for an item's [`ItemActivation::Submenu`].
+    /// `data` is the provider-owned payload from that activation.
     /// Default: no submenu support.
     fn submenu_actions(&self, _data: &str) -> Vec<LaunchItem> {
         Vec::new()
@@ -851,7 +901,7 @@ impl ProviderManager {
 
     /// Query a provider for submenu actions.
     ///
-    /// Called when a user selects a `SUBMENU:plugin_id:data` item. The provider's
+    /// Called when a user selects a typed submenu item. The provider's
     /// `submenu_actions(data)` is invoked to produce the action list.
     pub fn query_submenu_actions(
         &self,
@@ -939,6 +989,7 @@ mod tests {
             provider,
             command: format!("run-{}", id),
             terminal: false,
+            activation: ItemActivation::Launch,
             tags: Vec::new(),
             source: ItemSource::Core,
         }

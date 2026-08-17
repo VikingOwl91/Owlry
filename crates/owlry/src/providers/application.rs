@@ -211,6 +211,7 @@ impl Provider for ApplicationProvider {
                 provider: ProviderType::Application,
                 command: run_cmd,
                 terminal: desktop_entry.terminal(),
+                activation: super::ItemActivation::Launch,
                 tags,
                 source: ItemSource::Core,
             };

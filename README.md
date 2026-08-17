@@ -196,6 +196,7 @@ pacman -Ssq | owlry dmenu -p "install" | xargs sudo pacman -S
 | Key | Action |
 |-----|--------|
 | `Enter` | Launch selected item |
+| `Right Arrow` | Open contextual actions for the selected item |
 | `Shift+Enter` | Open a file with… (application picker); in the picker, set as default |
 | `Escape` | Close launcher / exit submenu |
 | `Up` / `Down` | Navigate results |

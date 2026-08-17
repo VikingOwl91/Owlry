@@ -48,6 +48,7 @@ fn test_results_response_roundtrip() {
             score: 95,
             command: Some("firefox".into()),
             terminal: false,
+            activation: owlry::providers::ItemActivation::Launch,
             tags: vec![],
             source: "core".into(),
         }],
@@ -164,6 +165,7 @@ fn test_terminal_field_roundtrip() {
         score: 50,
         command: Some("htop".into()),
         terminal: true,
+        activation: owlry::providers::ItemActivation::Launch,
         tags: vec![],
         source: "cmd".into(),
     };

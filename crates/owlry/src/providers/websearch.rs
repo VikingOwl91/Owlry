@@ -131,6 +131,7 @@ impl WebSearchProvider {
             provider: ProviderType::Plugin("websearch".into()),
             command,
             terminal: false,
+            activation: super::ItemActivation::Launch,
             tags: vec!["web".into(), "search".into()],
             source: ItemSource::Core,
         })

@@ -8,7 +8,7 @@ use crate::config::Config;
 use crate::data::FrecencyStore;
 use crate::filter::ProviderFilter;
 use crate::ipc::{ProviderDesc, ResultItem};
-use crate::providers::{ItemSource, LaunchItem, ProviderManager, ProviderType};
+use crate::providers::{ItemActivation, ItemSource, LaunchItem, ProviderManager, ProviderType};
 use log::warn;
 use std::sync::{Arc, Mutex};
 
@@ -403,6 +403,12 @@ impl SearchBackend {
 fn result_to_launch_item(item: ResultItem) -> LaunchItem {
     let provider: ProviderType = item.provider.parse().unwrap_or(ProviderType::Application);
     let source: ItemSource = item.source.parse().unwrap_or(ItemSource::Core);
+    let command = item.command.unwrap_or_default();
+    let activation = if item.activation.is_launch() {
+        ItemActivation::from_legacy_command(&command)
+    } else {
+        item.activation
+    };
     LaunchItem {
         id: item.id,
         name: item.title,
@@ -417,8 +423,9 @@ fn result_to_launch_item(item: ResultItem) -> LaunchItem {
             Some(item.icon)
         },
         provider,
-        command: item.command.unwrap_or_default(),
+        command,
         terminal: item.terminal,
+        activation,
         tags: item.tags,
         source,
     }

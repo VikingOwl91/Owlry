@@ -84,6 +84,7 @@ impl DynamicProvider for ConverterProvider {
                     r.raw_value.replace('\'', "'\\''")
                 ),
                 terminal: false,
+                activation: super::ItemActivation::Launch,
                 tags: vec!["converter".into(), "units".into()],
                 source: ItemSource::Core,
             })

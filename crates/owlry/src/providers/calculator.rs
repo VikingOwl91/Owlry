@@ -57,6 +57,7 @@ impl DynamicProvider for CalculatorProvider {
                     provider: ProviderType::Plugin("calc".into()),
                     command: copy_cmd,
                     terminal: false,
+                    activation: super::ItemActivation::Launch,
                     tags: vec!["math".into(), "calculator".into()],
                     source: ItemSource::Core,
                 }]

@@ -4,7 +4,7 @@
 //! disable/status/journal as submenu actions. type_id stays `uuctl` for CLI
 //! and config back-compat.
 
-use super::{ItemSource, LaunchItem, Provider, ProviderType};
+use super::{ItemActivation, ItemSource, LaunchItem, Provider, ProviderType};
 use std::process::Command;
 
 const TYPE_ID: &str = "uuctl";
@@ -68,9 +68,7 @@ impl SystemdProvider {
                 format!("{} {} ({})", status_icon, description, sub_state)
             };
 
-            // SUBMENU:<type_id>:<data> is the protocol the UI uses to route
-            // a selection back to this provider's submenu_actions().
-            let submenu_data = format!("SUBMENU:{}:{}:{}", TYPE_ID, unit_name, is_active);
+            let submenu_data = format!("{}:{}", unit_name, is_active);
 
             let icon = if is_active {
                 "emblem-ok-symbolic"
@@ -84,8 +82,14 @@ impl SystemdProvider {
                 description: Some(status_desc),
                 icon: Some(icon.to_string()),
                 provider: ProviderType::Plugin(TYPE_ID.into()),
-                command: submenu_data,
+                // Keep the legacy command during the IPC transition so older
+                // clients can still open this submenu.
+                command: format!("SUBMENU:{TYPE_ID}:{submenu_data}"),
                 terminal: false,
+                activation: ItemActivation::Submenu {
+                    provider_id: TYPE_ID.to_string(),
+                    data: submenu_data,
+                },
                 tags: vec!["systemd".to_string(), "service".to_string()],
                 source: ItemSource::Core,
             });
@@ -181,6 +185,7 @@ fn make_action(id: &str, name: &str, command: String, desc: String, icon: &str) 
         provider: ProviderType::Plugin(TYPE_ID.into()),
         command,
         terminal: false,
+        activation: ItemActivation::Launch,
         tags: vec!["systemd".to_string(), "service".to_string()],
         source: ItemSource::Core,
     }
@@ -272,7 +277,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_systemctl_output_extracts_services_with_submenu_command() {
+    fn parse_systemctl_output_extracts_services_with_typed_submenu() {
         let output = "
 foo.service                          loaded active running Foo Service
 bar.service                          loaded inactive dead Bar Service
@@ -281,13 +286,25 @@ baz@autostart.service               loaded active running Baz App
         let items = SystemdProvider::parse_systemctl_output(output);
         assert_eq!(items.len(), 3);
 
-        // Active service: SUBMENU command with is_active=true.
+        // Active service: typed submenu target with is_active=true.
         assert_eq!(items[0].name, "foo");
-        assert!(items[0].command.contains("SUBMENU:uuctl:foo.service:true"));
+        assert_eq!(
+            items[0].activation,
+            ItemActivation::Submenu {
+                provider_id: "uuctl".into(),
+                data: "foo.service:true".into(),
+            }
+        );
 
-        // Inactive service: SUBMENU command with is_active=false.
+        // Inactive service: typed submenu target with is_active=false.
         assert_eq!(items[1].name, "bar");
-        assert!(items[1].command.contains("SUBMENU:uuctl:bar.service:false"));
+        assert_eq!(
+            items[1].activation,
+            ItemActivation::Submenu {
+                provider_id: "uuctl".into(),
+                data: "bar.service:false".into(),
+            }
+        );
 
         // Display name cleaning strips @autostart suffix.
         assert_eq!(items[2].name, "baz");

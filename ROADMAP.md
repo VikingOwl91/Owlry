@@ -56,24 +56,24 @@ Image clipboard entries are detected from cliphist's `[[ binary data … ]]` pre
 
 ## Medium Effort, High Value
 
-### Actions on any result
-Generalize the submenu system beyond systemd. Every result type gets contextual actions:
+### ~~Actions on any result~~ — **first pass landed**
+Press Right Arrow on a launchable result to open its contextual action menu. Plain Enter keeps its existing primary behavior, and systemd service results continue to open their provider submenu directly. Result activation is now typed across provider, IPC, backend, and UI boundaries; the old `SUBMENU:` command encoding remains only as a compatibility path for older peers and script providers.
 
 | Provider | Actions |
 |----------|---------|
-| Applications | Open, Open in terminal, Show .desktop location |
-| Files | Open, Open folder, Copy path, Delete |
-| SSH | Connect, Copy hostname, Edit config |
-| Bookmarks | Open, Copy URL, Open incognito |
-| Clipboard | Paste, Delete from history |
+| Any launchable result | Its existing primary Open, Run, Copy, or Connect action |
+| Applications | Open in terminal, show `.desktop` location |
+| Files | Open containing folder, copy path, move to trash |
+| Commands | Run in terminal |
+| SSH | Copy host alias, edit SSH config |
 
-This is the difference between a launcher and a command palette. The `Provider::submenu_actions()` trait method (added in 2.0 for the systemd provider) is the foundation.
+Bookmark actions remain pending until bookmarks return. Removing individual clipboard-history entries is also still future work.
 
-### Result action capture
-Calculator shows `= 5+3 → 8`. Allow pressing Tab or Ctrl+C to copy the result to clipboard instead of launching. Useful for calculator output, file paths, URLs.
+### ~~Result action capture~~ — **landed with contextual actions**
+Calculator and converter results expose Copy as their primary action. File paths and SSH host aliases expose explicit Copy actions. Plain Enter keeps copying calculator and converter output as before.
 
-### Split the 1000+ LOC files
-`providers/mod.rs`, `ui/main_window.rs`, `providers/converter/units.rs` are all over a thousand lines each. Carve them into focused modules to make code review and onboarding less painful. (Phase 5 hygiene in the v2 plan.)
+### Split the remaining 1000+ LOC files
+Contextual-action construction now lives in `ui/actions.rs` instead of adding another provider-specific branch to `ui/main_window.rs`. `providers/mod.rs`, `ui/main_window.rs`, and `providers/converter/units.rs` still need further focused extraction. (Phase 5 hygiene in the v2 plan.)
 
 ---
 
@@ -106,8 +106,8 @@ After Lua config lands and we profile startup honestly: if the daemon's keep-pro
 ### `expr-solver-lib` evaluation
 The calculator's `expr-solver-lib` dep is small and old. If it stagnates further or becomes unsupported, switch to `evalexpr` v13+ which is actively maintained.
 
-### Submenu protocol redesign
-The `SUBMENU:<plugin_id>:<data>` string-encoded command is a workable hack. A typed IPC variant would be cleaner — keep the surface in `Request::Submenu` but stop overloading the `command` field. (Phase 5 hygiene.)
+### ~~Submenu protocol redesign~~ — **landed**
+Results now carry a typed activation variant for launches, submenus, and provider actions. Legacy `SUBMENU:<plugin_id>:<data>` commands are decoded only at compatibility boundaries. (Phase 5 hygiene.)
 
 ### Double-daemon spawn
 Pre-2.0, the systemd unit and a Hyprland `exec-once = owlryd` could both spawn a daemon. The 2.0 socket-activation path (`owlry.socket`) eliminates the need for an explicit autostart — verify nothing else still launches the daemon directly. (Phase 5 hygiene.)
@@ -116,4 +116,4 @@ Pre-2.0, the systemd unit and a Hyprland `exec-once = owlryd` could both spawn a
 
 ## Priority
 
-If we had to pick one for the next release: **Actions on any result**. It transforms every provider from "search and launch" to "search and do anything". The ROI is massive and the trait foundation is already in 2.0.
+If we had to pick one for the next release: **Window switcher with live thumbnails**. The contextual-action foundation is now in place; a window provider would add a genuinely new workflow on top of it.

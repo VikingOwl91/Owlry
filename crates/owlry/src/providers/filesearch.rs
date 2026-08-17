@@ -267,6 +267,7 @@ impl FileSearchProvider {
                     provider: ProviderType::Plugin(TYPE_ID.into()),
                     command,
                     terminal: false,
+                    activation: super::ItemActivation::Launch,
                     tags: vec!["file".to_string()],
                     source: ItemSource::Core,
                 }

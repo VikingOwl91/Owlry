@@ -2,8 +2,9 @@ use crate::backend::SearchBackend;
 use crate::config::Config;
 use crate::filter::ProviderFilter;
 use crate::ipc::ProviderDesc;
-use crate::providers::{CommandProvider, ItemSource, LaunchItem, ProviderType};
+use crate::providers::{CommandProvider, ItemActivation, ItemSource, LaunchItem, ProviderType};
 use crate::ui::ResultRow;
+use crate::ui::actions;
 use crate::ui::provider_meta;
 use crate::ui::submenu;
 use gtk4::gdk::Key;
@@ -390,6 +391,7 @@ impl MainWindow {
             "Tab: cycle".to_string(),
             "↑↓: nav".to_string(),
             "Enter: launch".to_string(),
+            "→: actions".to_string(),
             "Esc: close".to_string(),
         ];
 
@@ -814,25 +816,14 @@ impl MainWindow {
                         return;
                     }
 
-                    // Check if this is a submenu item and query the plugin for actions
-                    let submenu_result = if submenu::is_submenu_item(item) {
-                        if let Some((plugin_id, data)) =
-                            submenu::parse_submenu_command(&item.command)
-                        {
-                            // Clone values before dropping borrow
-                            let plugin_id = plugin_id.to_string();
-                            let data = data.to_string();
-                            let display_name = item.name.clone();
-                            drop(results); // Release borrow before querying
-                            backend_for_activate.borrow_mut().query_submenu_actions(
-                                &plugin_id,
-                                &data,
-                                &display_name,
-                            )
-                        } else {
-                            drop(results);
-                            None
-                        }
+                    let submenu_result = if let Some(request) = submenu::request_for_item(item) {
+                        let display_name = item.name.clone();
+                        drop(results);
+                        backend_for_activate.borrow_mut().query_submenu_actions(
+                            &request.provider_id,
+                            &request.data,
+                            &display_name,
+                        )
                     } else {
                         None
                     };
@@ -1022,6 +1013,33 @@ impl MainWindow {
                     }
                     gtk4::glib::Propagation::Stop
                 }
+                Key::Right if !submenu_state.borrow().active => {
+                    let selected = results_list
+                        .selected_row()
+                        .or_else(|| results_list.row_at_index(0));
+                    let Some(row) = selected else {
+                        return gtk4::glib::Propagation::Proceed;
+                    };
+                    let Some(item) = current_results.borrow().get(row.index() as usize).cloned()
+                    else {
+                        return gtk4::glib::Propagation::Proceed;
+                    };
+                    let item_actions = actions::for_item(&item);
+                    if item_actions.is_empty() {
+                        return gtk4::glib::Propagation::Proceed;
+                    }
+                    Self::enter_submenu(
+                        &submenu_state,
+                        &results_list,
+                        &current_results,
+                        &mode_label,
+                        &hints_label,
+                        &search_entry,
+                        format!("{} — Actions", item.name),
+                        item_actions,
+                    );
+                    gtk4::glib::Propagation::Stop
+                }
                 // Tab cycles through filter modes (only when not in submenu)
                 Key::Tab if !ctrl => {
                     if !submenu_state.borrow().active {
@@ -1202,21 +1220,14 @@ impl MainWindow {
                     return;
                 }
 
-                // Check if this is a submenu item and query the plugin for actions
-                let submenu_result = if submenu::is_submenu_item(item) {
-                    if let Some((plugin_id, data)) = submenu::parse_submenu_command(&item.command) {
-                        // Clone values before dropping borrow
-                        let plugin_id = plugin_id.to_string();
-                        let data = data.to_string();
-                        let display_name = item.name.clone();
-                        drop(results);
-                        backend
-                            .borrow_mut()
-                            .query_submenu_actions(&plugin_id, &data, &display_name)
-                    } else {
-                        drop(results);
-                        None
-                    }
+                let submenu_result = if let Some(request) = submenu::request_for_item(item) {
+                    let display_name = item.name.clone();
+                    drop(results);
+                    backend.borrow_mut().query_submenu_actions(
+                        &request.provider_id,
+                        &request.data,
+                        &display_name,
+                    )
                 } else {
                     None
                 };
@@ -1500,15 +1511,21 @@ impl MainWindow {
         config: &Config,
         backend: &Rc<RefCell<SearchBackend>>,
     ) -> bool {
-        // Check for plugin internal commands (format: PLUGIN_ID:action)
-        // These are handled by the plugin itself, not launched as shell commands
-        if backend.borrow_mut().execute_plugin_action(&item.command) {
-            // Plugin handled the action - don't close window
-            // User might want to see updated state (e.g., pomodoro timer)
-            return false;
+        match &item.activation {
+            ItemActivation::PluginAction { command } => {
+                // Provider-internal actions update state in place, so keep the
+                // window open for the refreshed result set.
+                if !backend.borrow_mut().execute_plugin_action(command) {
+                    let message = format!("No provider handled action '{command}'");
+                    log::warn!("{message}");
+                    crate::notify::notify("Action failed", &message);
+                }
+                return false;
+            }
+            ItemActivation::Submenu { .. } => return false,
+            ItemActivation::Launch => {}
         }
 
-        // Regular item launch
         Self::launch_item(item, config, backend);
         true
     }
@@ -1544,9 +1561,7 @@ impl MainWindow {
             let allowed = cmd.is_empty()
                 || cmd.starts_with("xdg-open ")
                 || cmd.starts_with("wl-copy")
-                || cmd.starts_with("wl-paste")
-                || cmd.starts_with("SUBMENU:")
-                || cmd.starts_with('!');
+                || cmd.starts_with("wl-paste");
             if !allowed {
                 let msg = format!(
                     "Blocked untrusted script plugin command from '{}': {}",
@@ -2084,6 +2099,7 @@ mod tests {
             provider,
             command: "xdg-open '/tmp/x'".into(),
             terminal: false,
+            activation: ItemActivation::Launch,
             tags: Vec::new(),
             source: ItemSource::Core,
         }

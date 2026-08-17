@@ -133,6 +133,7 @@ impl ClipboardProvider {
                 provider: ProviderType::Plugin(TYPE_ID.into()),
                 command,
                 terminal: false,
+                activation: super::ItemActivation::Launch,
                 tags,
                 source: ItemSource::Core,
             });

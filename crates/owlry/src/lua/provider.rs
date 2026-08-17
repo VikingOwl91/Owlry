@@ -140,6 +140,7 @@ fn parse_item(t: &Table, provider_id: &str, idx: usize) -> mlua::Result<LaunchIt
         .transpose()?
         .unwrap_or_default();
 
+    let activation = crate::providers::ItemActivation::from_legacy_command(&command);
     Ok(LaunchItem {
         id: format!("{}:{}:{}", provider_id, idx, name),
         name,
@@ -148,6 +149,7 @@ fn parse_item(t: &Table, provider_id: &str, idx: usize) -> mlua::Result<LaunchIt
         provider: ProviderType::Plugin(provider_id.to_string()),
         command,
         terminal,
+        activation,
         tags,
         source: ItemSource::ScriptPlugin,
     })

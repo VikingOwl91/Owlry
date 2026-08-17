@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::providers::ItemActivation;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Request {
@@ -57,6 +59,8 @@ pub struct ResultItem {
     pub command: Option<String>,
     #[serde(default)]
     pub terminal: bool,
+    #[serde(default, skip_serializing_if = "ItemActivation::is_launch")]
+    pub activation: ItemActivation,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
     /// Item trust level: "core" or "script_plugin".
@@ -154,5 +158,30 @@ mod tests {
             }
             other => panic!("expected Query, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn legacy_result_without_activation_defaults_to_launch() {
+        let json = r#"{
+            "id":"demo","title":"Demo","description":"","icon":"",
+            "provider":"cmd","score":1,"command":"demo","terminal":false,
+            "source":"core"
+        }"#;
+        let result: ResultItem = serde_json::from_str(json).unwrap();
+        assert_eq!(result.activation, ItemActivation::Launch);
+    }
+
+    #[test]
+    fn submenu_activation_roundtrips_as_typed_data() {
+        let activation = ItemActivation::Submenu {
+            provider_id: "uuctl".into(),
+            data: "demo.service:true".into(),
+        };
+        let json = serde_json::to_string(&activation).unwrap();
+        assert!(json.contains(r#""kind":"submenu""#));
+        assert_eq!(
+            serde_json::from_str::<ItemActivation>(&json).unwrap(),
+            activation
+        );
     }
 }

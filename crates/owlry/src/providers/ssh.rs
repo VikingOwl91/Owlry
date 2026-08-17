@@ -176,6 +176,7 @@ impl SshProvider {
             provider: ProviderType::Plugin(TYPE_ID.into()),
             command,
             terminal: false,
+            activation: super::ItemActivation::Launch,
             tags: vec!["ssh".to_string(), "remote".to_string()],
             source: ItemSource::Core,
         });
