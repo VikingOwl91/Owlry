@@ -9,8 +9,8 @@
 //! journal to learn their config is broken).
 //!
 //! The watcher debounces editor save bursts (vim's atomic rename emits
-//! several events per save) and only acts on events touching the watched
-//! file. The Lua state held in [`crate::server::Server::_lua_ctx`] is
+//! several events per save) and acts on `owlry.lua` plus Lua modules below
+//! its config directory. The Lua state held in [`crate::server::Server::_lua_ctx`] is
 //! atomically replaced; user-provider items continue to point at live
 //! Lua functions because [`super::LuaProvider`] holds its own
 //! `Arc<Lua>` clone.
@@ -62,8 +62,8 @@ impl ConfigWatcher {
             // Drop the result if the receiver is gone — we're shutting down.
             let _ = tx.send(res);
         })?;
-        watcher.watch(&watch_dir, RecursiveMode::NonRecursive)?;
-        info!("hot-reload: watching {}", lua_path.display());
+        watcher.watch(&watch_dir, RecursiveMode::Recursive)?;
+        info!("hot-reload: watching {} recursively", watch_dir.display());
 
         let watched = lua_path.clone();
         let handle = thread::spawn(move || {
@@ -118,9 +118,19 @@ fn run_watch_loop(
     }
 }
 
-/// Return true if any path in this event refers to the watched file.
+/// Return true if an event touches `owlry.lua` or another Lua source below
+/// its config directory. Watching the directory recursively makes modular
+/// configs using `require` reload when their local modules change too.
 fn event_touches(ev: &Event, lua_path: &Path) -> bool {
-    ev.paths.iter().any(|p| p == lua_path)
+    let Some(watch_dir) = lua_path.parent() else {
+        return false;
+    };
+
+    ev.paths.iter().any(|path| {
+        path == lua_path
+            || (path.starts_with(watch_dir)
+                && path.extension().is_some_and(|extension| extension == "lua"))
+    })
 }
 
 /// Re-evaluate `owlry.lua` in a fresh context and, on success, swap the
@@ -140,68 +150,9 @@ fn reload(
         }
     };
 
-    let new_ctx = match loaded.lua {
-        Some(ctx) => ctx,
-        None => {
-            // load_lua_path always sets Some on success; this branch is a
-            // defensive belt-and-braces — only reachable if the helper
-            // contract changes.
-            warn!("hot-reload: LoadedConfig had no LuaContext after success");
-            return;
-        }
-    };
-
-    // Build the user-provider boxes against the NEW Lua handle BEFORE
-    // taking any write locks so we hold them as briefly as possible.
-    let new_user_providers: Vec<Box<dyn Provider>> = loaded
-        .user_providers
-        .iter()
-        .cloned()
-        .map(|spec| Box::new(LuaProvider::new(spec, new_ctx.lua_handle())) as Box<dyn Provider>)
-        .collect();
-
-    // Swap order matters:
-    //   1. Config → so any read that races a reload sees consistent
-    //      "new config + maybe old PM" rather than "new PM + old config".
-    //   2. ProviderManager → rebuild from the freshly-written config plus
-    //      the new user providers.
-    //   3. Lua context → replace last; the old Box<dyn Provider>s inside
-    //      the dropped PM still held the old Arc<Lua>, so the OLD state
-    //      doesn't actually drop until those go too. The new
-    //      LuaProviders inside new_pm hold the new Arc<Lua>.
-    {
-        let mut cfg_guard = match config.write() {
-            Ok(g) => g,
-            Err(_) => {
-                warn!("hot-reload: config lock poisoned; aborting reload");
-                return;
-            }
-        };
-        *cfg_guard = loaded.config;
-    }
-
-    let new_pm = ProviderManager::new_with_config(Arc::clone(config), new_user_providers);
-
-    {
-        let mut pm_guard = match pm.write() {
-            Ok(g) => g,
-            Err(_) => {
-                warn!("hot-reload: provider lock poisoned; aborting reload");
-                return;
-            }
-        };
-        *pm_guard = new_pm;
-    }
-
-    {
-        let mut ctx_guard = match lua_ctx.lock() {
-            Ok(g) => g,
-            Err(_) => {
-                warn!("hot-reload: lua context lock poisoned; aborting reload");
-                return;
-            }
-        };
-        *ctx_guard = Some(new_ctx);
+    if let Err(message) = apply_loaded_config(loaded, config, pm, lua_ctx) {
+        warn!("hot-reload: {message}; keeping previous config");
+        return;
     }
 
     info!("hot-reload: applied {}", lua_path.display());
@@ -211,6 +162,42 @@ fn reload(
         .icon("emblem-default")
         .timeout(notify_rust::Timeout::Milliseconds(3_000))
         .show();
+}
+
+/// Prepare and atomically install a fully resolved daemon configuration.
+///
+/// Both the filesystem watcher and SIGHUP use this path. All replacement
+/// objects are built before any state lock is taken; all three locks are then
+/// acquired before the first write, so lock poisoning cannot leave a partial
+/// reload behind.
+pub(crate) fn apply_loaded_config(
+    loaded: LoadedConfig,
+    config: &Arc<RwLock<Config>>,
+    pm: &Arc<RwLock<ProviderManager>>,
+    lua_ctx: &Arc<Mutex<Option<LuaContext>>>,
+) -> Result<(), &'static str> {
+    let new_user_providers: Vec<Box<dyn Provider>> = match &loaded.lua {
+        Some(ctx) => loaded
+            .user_providers
+            .iter()
+            .cloned()
+            .map(|spec| Box::new(LuaProvider::new(spec, ctx.lua_handle())) as Box<dyn Provider>)
+            .collect(),
+        None => Vec::new(),
+    };
+    let new_pm = ProviderManager::new_with_provider_config(
+        loaded.config.providers.clone(),
+        new_user_providers,
+    );
+
+    let mut cfg_guard = config.write().map_err(|_| "config lock poisoned")?;
+    let mut pm_guard = pm.write().map_err(|_| "provider lock poisoned")?;
+    let mut ctx_guard = lua_ctx.lock().map_err(|_| "Lua context lock poisoned")?;
+
+    *cfg_guard = loaded.config;
+    *pm_guard = new_pm;
+    *ctx_guard = loaded.lua;
+    Ok(())
 }
 
 /// Surface a reload failure to both the log and the user's desktop. The
@@ -369,9 +356,49 @@ mod tests {
     }
 
     #[test]
-    fn event_touches_matches_only_watched_path() {
+    fn applying_non_lua_config_clears_lua_runtime_and_user_providers() {
+        use crate::data::FrecencyStore;
+        use crate::filter::ProviderFilter;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let lua_path = write_file(
+            dir.path(),
+            "owlry.lua",
+            r#"
+            owlry.provider {
+              id = "temporary",
+              items = function() return { { name = "temporary item", command = "true" } } end,
+            }
+            "#,
+        );
+        let (config, pm, lua_ctx) = fresh_daemon_state(&lua_path);
+
+        apply_loaded_config(LoadedConfig::defaults(), &config, &pm, &lua_ctx)
+            .expect("apply defaults");
+
+        assert!(lua_ctx.lock().unwrap().is_none());
+        let results = pm.read().unwrap().search_with_frecency(
+            "temporary item",
+            100,
+            &ProviderFilter::all(),
+            &FrecencyStore::new(),
+            0.0,
+            None,
+        );
+        assert!(
+            !results
+                .iter()
+                .any(|(item, _)| item.name == "temporary item"),
+            "removing owlry.lua must remove its user providers"
+        );
+    }
+
+    #[test]
+    fn event_touches_matches_main_and_nested_lua_files() {
         let watched = PathBuf::from("/tmp/owlry-test/owlry.lua");
         let other = PathBuf::from("/tmp/owlry-test/other.txt");
+        let module = PathBuf::from("/tmp/owlry-test/modules/work.lua");
+        let outside = PathBuf::from("/tmp/elsewhere/work.lua");
         let ev_match = Event {
             kind: notify::EventKind::Modify(notify::event::ModifyKind::Any),
             paths: vec![watched.clone()],
@@ -382,8 +409,20 @@ mod tests {
             paths: vec![other.clone()],
             attrs: Default::default(),
         };
+        let ev_module = Event {
+            kind: notify::EventKind::Modify(notify::event::ModifyKind::Any),
+            paths: vec![module],
+            attrs: Default::default(),
+        };
+        let ev_outside = Event {
+            kind: notify::EventKind::Modify(notify::event::ModifyKind::Any),
+            paths: vec![outside],
+            attrs: Default::default(),
+        };
         assert!(event_touches(&ev_match, &watched));
+        assert!(event_touches(&ev_module, &watched));
         assert!(!event_touches(&ev_miss, &watched));
+        assert!(!event_touches(&ev_outside, &watched));
     }
 
     #[test]

@@ -200,27 +200,63 @@ impl Server {
 
     /// Accept connections in a loop, spawning a thread per client.
     pub fn run(&self) -> io::Result<()> {
-        // SIGHUP handler: reload config from disk into the shared Arc<RwLock<Config>>.
+        // SIGHUP reloads the same complete state as the Lua file watcher:
+        // effective config, enabled providers, user providers, and Lua context.
+        #[cfg(feature = "lua")]
         {
             use signal_hook::consts::SIGHUP;
             use signal_hook::iterator::Signals;
             let config = Arc::clone(&self.config);
+            let provider_manager = Arc::clone(&self.provider_manager);
+            let lua_ctx = Arc::clone(&self._lua_ctx);
             let mut signals = Signals::new([SIGHUP]).map_err(io::Error::other)?;
             thread::spawn(move || {
                 for _sig in signals.forever() {
-                    match Config::load() {
-                        Ok(new_cfg) => match config.write() {
-                            Ok(mut cfg) => {
-                                *cfg = new_cfg;
-                                info!("Config reloaded via SIGHUP");
-                            }
-                            Err(_) => {
-                                warn!("SIGHUP: config lock poisoned; reload skipped");
-                            }
+                    match LoadedConfig::load() {
+                        Ok(loaded) => match crate::lua::watcher::apply_loaded_config(
+                            loaded,
+                            &config,
+                            &provider_manager,
+                            &lua_ctx,
+                        ) {
+                            Ok(()) => info!("Config and providers reloaded via SIGHUP"),
+                            Err(message) => warn!("SIGHUP: {message}; reload skipped"),
                         },
                         Err(e) => {
                             warn!("SIGHUP: failed to reload config: {}", e);
                         }
+                    }
+                }
+            });
+        }
+
+        #[cfg(not(feature = "lua"))]
+        {
+            use signal_hook::consts::SIGHUP;
+            use signal_hook::iterator::Signals;
+            let config = Arc::clone(&self.config);
+            let provider_manager = Arc::clone(&self.provider_manager);
+            let mut signals = Signals::new([SIGHUP]).map_err(io::Error::other)?;
+            thread::spawn(move || {
+                for _sig in signals.forever() {
+                    match Config::load() {
+                        Ok(new_cfg) => {
+                            let new_pm = ProviderManager::new_with_provider_config(
+                                new_cfg.providers.clone(),
+                                Vec::new(),
+                            );
+                            let cfg_guard = config.write();
+                            let pm_guard = provider_manager.write();
+                            match (cfg_guard, pm_guard) {
+                                (Ok(mut cfg), Ok(mut pm)) => {
+                                    *cfg = new_cfg;
+                                    *pm = new_pm;
+                                    info!("Config and providers reloaded via SIGHUP");
+                                }
+                                _ => warn!("SIGHUP: state lock poisoned; reload skipped"),
+                            }
+                        }
+                        Err(e) => warn!("SIGHUP: failed to reload config: {}", e),
                     }
                 }
             });

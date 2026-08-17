@@ -246,7 +246,7 @@ Owlry follows the [XDG Base Directory Specification](https://specifications.free
 | `/usr/share/doc/owlry/config.example.toml` | Example TOML configuration |
 | `/usr/share/owlry/themes/` | Bundled themes |
 
-Config resolution order (per [`docs/lua-api.md`](docs/lua-api.md) §2): `owlry.lua` → `config.toml` → built-in defaults. When `owlry.lua` is present `config.toml` is ignored entirely (an info log notes this at daemon startup). The daemon watches `owlry.lua` and hot-reloads on save; broken edits surface as desktop notifications and keep the previous state alive.
+Config resolution order (per [`docs/lua-api.md`](docs/lua-api.md) §2): `owlry.lua` → `config.toml` → built-in defaults. When `owlry.lua` is present `config.toml` is ignored entirely (an info log notes this at daemon startup). The daemon watches `owlry.lua` and Lua modules below its config directory and hot-reloads on save; broken edits surface as desktop notifications and keep the previous state alive.
 
 ### Quick Start (Lua config — preferred from 2.1+)
 

@@ -478,7 +478,7 @@ The migrator is **deterministic** — running it twice on the same input produce
 | Profile keybinds (per-key Lua functions)? | **Deferred to 2.2** | Needs careful design re: which thread runs the function |
 | Error reporting depth: traceback in UI banner? | **No in 2.1** — log to journal, surface via `owlry doctor` | UI banner gets noisy fast |
 | Allow `owlry.lua` to be a directory of files merged together? | **No** — single file. Users wanting modularity use Lua `require` | |
-| Multi-file config via `require`? | **Yes, supported transparently** — same hot-reload watcher follows `require`d files | Standard Lua semantics |
+| Multi-file config via `require`? | **Yes, for modules below the `owlry.lua` config directory** — the watcher reloads on changes to any `.lua` file in that tree | Standard Lua semantics; modules outside the config tree require SIGHUP |
 
 ---
 

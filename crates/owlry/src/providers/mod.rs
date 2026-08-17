@@ -316,6 +316,19 @@ impl ProviderManager {
             }
         };
 
+        Self::new_with_provider_config(cfg_snapshot, user_providers)
+    }
+
+    /// Build a manager from an already-resolved provider configuration.
+    ///
+    /// Reload paths use this variant to prepare the complete replacement
+    /// before taking the daemon's state locks, so config, providers, and the
+    /// Lua context can be swapped together without exposing a half-built
+    /// manager.
+    pub(crate) fn new_with_provider_config(
+        cfg_snapshot: crate::config::ProvidersConfig,
+        user_providers: Vec<Box<dyn Provider>>,
+    ) -> Self {
         let mut core_providers: Vec<Box<dyn Provider>> = vec![
             Box::new(ApplicationProvider::new()),
             Box::new(CommandProvider::new()),
