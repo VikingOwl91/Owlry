@@ -400,7 +400,10 @@ fn print_orphan_report(out: &mut impl Write, findings: &[OrphanFinding]) {
         );
         let _ = writeln!(out, "      {}", f.reason);
     }
-    let _ = writeln!(out, "  doctor only reports these; remove them yourself if unwanted.");
+    let _ = writeln!(
+        out,
+        "  doctor only reports these; remove them yourself if unwanted."
+    );
 }
 
 /// `owlry providers [<id>]`: list providers, or show one in detail.
@@ -810,7 +813,10 @@ mod tests {
     #[test]
     fn parse_pacman_owner_detects_owned() {
         let out = "/usr/bin/owlry is owned by owlry 2.3.0-1\n";
-        assert_eq!(parse_pacman_owner(out), Ownership::Owned("owlry".to_string()));
+        assert_eq!(
+            parse_pacman_owner(out),
+            Ownership::Owned("owlry".to_string())
+        );
     }
 
     #[test]

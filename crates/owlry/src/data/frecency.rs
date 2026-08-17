@@ -390,8 +390,8 @@ mod tests {
         let now = Utc::now();
         let mut entries = entries_with(
             &[
-                ("recent", 1, 10),  // recent, low usage — keep (within age window)
-                ("old_rare", 1, 400), // old + rare — drop
+                ("recent", 1, 10),        // recent, low usage — keep (within age window)
+                ("old_rare", 1, 400),     // old + rare — drop
                 ("old_frequent", 5, 400), // old but >= min_launches — keep
             ],
             now,
@@ -418,7 +418,10 @@ mod tests {
             min_launches: 3,
         };
         FrecencyStore::prune_entries(&mut entries, &cfg, now);
-        assert!(entries.contains_key("ancient"), "age=0 must keep all entries");
+        assert!(
+            entries.contains_key("ancient"),
+            "age=0 must keep all entries"
+        );
     }
 
     #[test]
@@ -426,10 +429,7 @@ mod tests {
         let now = Utc::now();
         // All recent so age pruning is a no-op; cap must keep the two highest
         // launch_count entries.
-        let mut entries = entries_with(
-            &[("a", 1, 0), ("b", 5, 0), ("c", 9, 0)],
-            now,
-        );
+        let mut entries = entries_with(&[("a", 1, 0), ("b", 5, 0), ("c", 9, 0)], now);
         let cfg = FrecencyPruneConfig {
             max_entries: 2,
             max_age_days: 0,
