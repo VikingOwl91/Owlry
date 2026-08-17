@@ -43,7 +43,7 @@ toml = "0.8"
 
 # Provider system & search
 fuzzy-matcher = "0.3"
-freedesktop-desktop-entry = "0.8"
+freedesktop-desktop-entry = { version = "0.8", default-features = false }
 
 # Data & filesystem
 fs2 = "0.4"
