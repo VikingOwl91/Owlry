@@ -448,8 +448,9 @@ fn detect_de_terminal() -> Option<String> {
     } else if is_sway {
         // Sway: foot is the recommended terminal (lightweight, Wayland-native)
         &["foot", "alacritty", "kitty", "wezterm"]
-    } else if let Some(ref de) = desktop {
-        match de.as_str() {
+    } else {
+        let de = desktop.as_deref()?;
+        match de {
             s if s.contains("gnome") => &["gnome-terminal", "gnome-console", "kgx"],
             s if s.contains("kde") || s.contains("plasma") => &["konsole"],
             s if s.contains("xfce") => &["xfce4-terminal"],
@@ -464,8 +465,6 @@ fn detect_de_terminal() -> Option<String> {
             s if s.contains("sway") => &["foot", "alacritty", "kitty", "wezterm"],
             _ => return None,
         }
-    } else {
-        return None;
     };
 
     for term in candidates {

@@ -1329,7 +1329,7 @@ impl MainWindow {
                     }
                     f.restore_all_mode();
                 }
-                for (_, button) in buttons.borrow().iter() {
+                for button in buttons.borrow().values() {
                     button.set_active(true);
                 }
             } else {

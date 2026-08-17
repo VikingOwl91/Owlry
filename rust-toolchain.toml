@@ -8,6 +8,6 @@
 # package (not rustup), which ignores this file, and the PKGBUILD also sets
 # RUSTUP_TOOLCHAIN=stable which overrides it where rustup is present.
 [toolchain]
-channel = "1.96.0"
+channel = "1.97.1"
 components = ["rustfmt", "clippy"]
 profile = "minimal"
