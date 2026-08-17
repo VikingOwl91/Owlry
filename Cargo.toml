@@ -16,7 +16,6 @@ repository = "https://somegit.dev/Owlibou/owlry"
 lto = true
 codegen-units = 1
 panic = "abort"
-strip = true
 opt-level = "z"
 
 [profile.dev]

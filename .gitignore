@@ -3,6 +3,9 @@ CLAUDE.md
 .worktrees/
 media.md
 
+# Local Graphify analysis outputs
+/graphify-out/
+
 # AUR packages (each is its own git repo for aur.archlinux.org)
 # Track PKGBUILD and .SRCINFO, ignore build artifacts and sub-repo .git
 aur/*/.git/
