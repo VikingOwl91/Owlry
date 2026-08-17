@@ -1,5 +1,9 @@
 use super::*;
-use crate::providers::ItemSource;
+use crate::providers::{ItemActivation, ItemSource};
+use log::info;
+
+#[cfg(feature = "dev-logging")]
+use log::debug;
 use std::process::Command;
 
 impl MainWindow {

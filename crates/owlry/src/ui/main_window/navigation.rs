@@ -1,6 +1,11 @@
 use super::*;
+use crate::ui::actions;
 use gtk4::gdk::Key;
 use gtk4::{EventControllerKey, ListBoxRow};
+use log::info;
+
+#[cfg(feature = "dev-logging")]
+use log::debug;
 
 impl MainWindow {
     /// Scroll the given row into view within the scrolled window
