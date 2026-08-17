@@ -315,14 +315,20 @@ build_one() {
     fi
 
     info "[$pkg] Running extra-x86_64-build..."
-    (
+    # build_one is called as an `if` condition below, which disables Bash's
+    # errexit handling inside the function. Propagate the chroot builder's
+    # status explicitly so a failed build cannot be masked by the artifact
+    # lookup that follows.
+    if ! (
         cd "$pkgdir"
         if [[ ${#inject[@]} -gt 0 ]]; then
             extra-x86_64-build "${build_args[@]+"${build_args[@]}"}" -- "${inject[@]}"
         else
             extra-x86_64-build "${build_args[@]+"${build_args[@]}"}"
         fi
-    )
+    ); then
+        return 1
+    fi
 
     # Record artifact for potential injection into dependents
     local artifact
