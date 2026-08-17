@@ -226,8 +226,8 @@ fn apply_provider(cfg: &mut LuaConfig, t: Table) -> mlua::Result<()> {
 
     if dynamic {
         return Err(mlua::Error::RuntimeError(format!(
-            "owlry.provider({}): `dynamic = true` is not yet supported (lands in 2.2). \
-             Drop the field or set it to false; 2.1 caches items once at startup.",
+            "owlry.provider({}): `dynamic = true` is not yet supported. \
+             Drop the field or set it to false; Owlry currently caches items once at startup.",
             id
         )));
     }

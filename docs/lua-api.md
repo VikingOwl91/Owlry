@@ -148,7 +148,7 @@ owlry.set { theme = "owl", width = 900 }
 owlry.set { font_size = 16 }   -- merged: theme + width still applied
 ```
 
-Unknown keys produce a `owlry config validate` warning, not an error — forward-compat for 2.2+ keys.
+Unknown keys produce an `owlry config validate` warning, not an error, so future settings remain forward-compatible.
 
 ---
 
@@ -227,13 +227,13 @@ owlry.provider {
 | Field | Type | Required | Default | What it does |
 |---|---|---|---|---|
 | `id` | `string` | yes | — | Unique provider ID. Used for filter matching (`-m <id>`) and tab listings. Must be lowercase, alphanumeric + `-`/`_`. |
-| `items` | `function(query: string) -> table` | yes | — | Returns the list of items. Called on every query if `dynamic = true`, otherwise cached after the first call (see `refresh` below). |
+| `items` | `function(query: string) -> table` | yes | — | Returns the list of items. Current releases call it once with an empty query and cache the result. |
 | `prefix` | `string \| nil` | no | `nil` | Search prefix (e.g. `":hs "`). Typing the prefix narrows results to this provider. |
 | `name` | `string` | no | `id` capitalised | Display name shown in `owlry providers`. |
 | `tab_label` | `string` | no | `name` | Tab button text. |
 | `icon` | `string` | no | `"application-x-addon"` | XDG icon name shown next to items. |
 | `search_noun` | `string` | no | `id` | Search placeholder noun (e.g. "Search SSH hosts…"). |
-| `dynamic` | `boolean` | no | `false` | If true, `items` is called on every keystroke. If false, `items` is called once at startup and cached. **2.1 ships only `false` (static); `true` arrives in 2.2.** |
+| `dynamic` | `boolean` | no | `false` | If false, `items` is called once at startup and cached. **Current releases support only `false` (static); `true` is planned but has no assigned release.** |
 | `priority` | `integer` | no | `0` | Tiebreaker for ordering when multiple providers match. Higher = first. |
 
 **The item table:**
@@ -251,7 +251,7 @@ Each entry in the table returned by `items` is itself a table:
 
 **Multiple `owlry.provider` calls accumulate** — each call registers an additional provider. Calling twice with the same `id` overrides the previous registration (warning emitted).
 
-**Lifecycle:** the provider's `items` function is called by the daemon. It runs in the Lua state with the full host API available (see §5). It must return within a reasonable time — slow `items` functions block the UI. If you need to do work that takes >100ms, cache it externally and refresh on demand (see `dynamic = true` for the 2.2 path).
+**Lifecycle:** the provider's `items` function is called by the daemon. It runs in the Lua state with the full host API available (see §5). It must return within a reasonable time — slow `items` functions block the UI. If you need to do work that takes >100ms, cache it externally; dynamic per-query Lua providers are not supported yet.
 
 ---
 
@@ -307,7 +307,7 @@ User code runs in a Lua 5.4 state with the `mlua` runtime. Beyond the standard l
 ### 5.2 What's NOT in scope
 
 - **No process spawning at config-load time for non-trivial setup.** Provider `items` functions can shell out via `owlry.util.shell`, but the top-level config eval should be fast. If the daemon spends >500ms running `owlry.lua` at startup, something's wrong.
-- **No network helpers in 2.1.** If a user provider needs HTTP, they can `os.execute("curl ...")` for now. A first-class `owlry.util.http_get` lands in 2.2.
+- **No network helpers yet.** If a user provider needs HTTP, it can use `owlry.util.shell("curl ...")` for now. A first-class `owlry.util.http_get` is planned but has no assigned release.
 - **No reactive state.** Each provider's `items` function should be stateless (or use local upvalues for caching). Cross-call state via shared mutable globals will work but isn't a supported pattern.
 
 ### 5.3 Sandbox stance
@@ -397,11 +397,11 @@ Profiles override `owlry.providers` for the launch but inherit `owlry.set` / `ow
 
 ## 7. Hot reload
 
-The daemon watches `owlry.lua` and any files it `require`s. On save:
+The daemon watches `owlry.lua` and `.lua` modules below its config directory. On save:
 
 1. Re-evaluate the Lua state in an isolated context.
 2. If eval succeeds → swap the new config into the running daemon. Providers reload. No window flicker; no socket disconnect.
-3. If eval fails → keep the old config alive. The error is logged to the daemon journal and surfaced on the next `owlry doctor` invocation.
+3. If eval fails → keep the old config alive. The error is logged to the daemon journal and shown immediately in a desktop notification.
 
 There is **no `systemctl reload`** required. Edit the file, save, the next query reflects the change.
 
@@ -431,12 +431,6 @@ owlry config show
 ```
 
 Prints the **resolved** config as TOML (yes, TOML — for diffability and consistency with how `owlry config show` works today). Useful for debugging "what does owlry actually see?"
-
-```bash
-owlry config show --lua
-```
-
-Prints the resolved config as a Lua file (round-trippable). Useful for `owlry migrate-config` diff comparison.
 
 ---
 
@@ -475,8 +469,8 @@ The migrator is **deterministic** — running it twice on the same input produce
 |---|---|---|
 | Auto-add user providers to `owlry.tabs` when tabs is non-empty? | **No** — explicit tabs list is explicit | Easy to revisit; user feedback after 2.1 will decide |
 | `owlry.theme` separate vs folded into `owlry.set`? | **Separate** — themes are big enough to deserve their own verb | Matches Hyprland's `general` / `decoration` split |
-| Profile keybinds (per-key Lua functions)? | **Deferred to 2.2** | Needs careful design re: which thread runs the function |
-| Error reporting depth: traceback in UI banner? | **No in 2.1** — log to journal, surface via `owlry doctor` | UI banner gets noisy fast |
+| Profile keybinds (per-key Lua functions)? | **Deferred; no release assigned** | Needs careful design re: which thread runs the function |
+| Error reporting depth: traceback in UI banner? | **Desktop notification + journal** | Keeps failures visible without destabilising the UI |
 | Allow `owlry.lua` to be a directory of files merged together? | **No** — single file. Users wanting modularity use Lua `require` | |
 | Multi-file config via `require`? | **Yes, for modules below the `owlry.lua` config directory** — the watcher reloads on changes to any `.lua` file in that tree | Standard Lua semantics; modules outside the config tree require SIGHUP |
 
@@ -488,7 +482,7 @@ The migrator is **deterministic** — running it twice on the same input produce
 |---|---|---|---|
 | **2.0** (shipped) | not supported | canonical | `owlry migrate-config` exists as a stub |
 | **2.1** (Phase 3) | opt-in preview | still works | `owlry migrate-config` becomes functional |
-| **2.2** (Phase 3 polish) | preferred; documented | works but warning emitted on load | dynamic providers, `owlry.bind`, `owlry.util.http_get` |
+| **2.x** (current) | preferred; documented | supported fallback | Lua providers remain static; dynamic providers, `owlry.bind`, and `owlry.util.http_get` are future work |
 | **3.0** (D18) | canonical | **removed** | `owlry config validate` errors loudly when TOML is found without `owlry.lua` |
 
 ---

@@ -237,6 +237,12 @@ mod tests {
     use super::*;
     use std::io::Write;
 
+    type DaemonState = (
+        Arc<RwLock<Config>>,
+        Arc<RwLock<ProviderManager>>,
+        Arc<Mutex<Option<LuaContext>>>,
+    );
+
     fn write_file(dir: &Path, name: &str, contents: &str) -> PathBuf {
         let path = dir.join(name);
         let mut f = std::fs::File::create(&path).expect("create");
@@ -244,13 +250,7 @@ mod tests {
         path
     }
 
-    fn fresh_daemon_state(
-        lua_path: &Path,
-    ) -> (
-        Arc<RwLock<Config>>,
-        Arc<RwLock<ProviderManager>>,
-        Arc<Mutex<Option<LuaContext>>>,
-    ) {
+    fn fresh_daemon_state(lua_path: &Path) -> DaemonState {
         let loaded = LoadedConfig::load_lua_path(lua_path).expect("initial load");
         let ctx = loaded.lua.expect("lua ctx after load");
         let user_providers: Vec<Box<dyn Provider>> = loaded

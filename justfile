@@ -35,22 +35,30 @@ run-debug *ARGS:
 
 # === Quality ===
 
-# Run the full test matrix used in CI: no-default-features then --features full.
+# Run the full test matrix used in CI.
 test:
-    cargo test --workspace --no-default-features
-    cargo test --workspace --features full
+    cargo test --locked --workspace --no-default-features
+    cargo test --locked --workspace --all-features
 
-# cargo check + clippy across both feature axes.
+# cargo check + strict clippy across both feature axes.
 check:
-    cargo check --workspace --no-default-features
-    cargo check --workspace --features full
-    cargo clippy --workspace --features full
+    cargo check --locked --workspace --no-default-features
+    cargo check --locked --workspace --all-features
+    cargo clippy --locked --workspace --all-targets --no-default-features -- -D warnings
+    cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 
 fmt:
     cargo fmt --all
 
 fmt-check:
     cargo fmt --all --check
+
+# Fail on vulnerabilities and informational security warnings such as unsound crates.
+audit:
+    cargo audit --deny warnings
+
+# Complete local/CI quality gate.
+verify: fmt-check check test audit
 
 clean:
     cargo clean

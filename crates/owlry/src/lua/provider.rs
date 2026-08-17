@@ -1,11 +1,10 @@
 //! [`LuaProvider`] — bridges a [`LuaProviderSpec`] (a captured `owlry.provider {}`
 //! registration) onto the host-side [`Provider`] trait.
 //!
-//! Phase 3.3 ships **static** providers only (per `docs/lua-api.md` §4.4,
-//! "2.1 ships only `dynamic = false`"): the Lua `items` function is called
+//! Owlry currently ships **static** Lua providers only (per
+//! `docs/lua-api.md` §4.4): the Lua `items` function is called
 //! once via [`Provider::refresh`] with an empty query, results are cached,
-//! and subsequent `Provider::items` calls return that cache. `dynamic = true`
-//! lands in Phase 3 follow-up (2.2).
+//! and subsequent `Provider::items` calls return that cache.
 //!
 //! Errors raised by the user's `items` function are logged and result in an
 //! empty cache for that refresh — the daemon must never crash because of a
@@ -423,7 +422,7 @@ mod registration_tests {
     }
 
     #[test]
-    fn dynamic_true_is_rejected_in_2_1() {
+    fn dynamic_true_is_rejected_with_current_behavior() {
         let err = run(r#"
             owlry.provider {
               id = "x", dynamic = true,
@@ -433,11 +432,7 @@ mod registration_tests {
         .unwrap_err();
         let msg = format!("{}", err);
         assert!(msg.contains("dynamic"), "got: {}", msg);
-        assert!(
-            msg.contains("2.2"),
-            "should mention 2.2 roadmap; got: {}",
-            msg
-        );
+        assert!(msg.contains("once at startup"), "got: {}", msg);
     }
 
     #[test]

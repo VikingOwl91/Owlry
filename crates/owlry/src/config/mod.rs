@@ -777,7 +777,7 @@ impl LoadedConfig {
     pub(crate) fn load_lua_path(lua_path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
         // If a TOML config sits alongside the Lua file, surface that we're
         // ignoring it. Per spec §2: "TOML is ignored entirely when Lua is
-        // present." A 2.2 release will upgrade this to a warning; 3.0
+        // present." A future release may upgrade this to a warning; 3.0
         // removes TOML support entirely.
         if let Some(toml_path) = paths::config_file()
             && toml_path.exists()

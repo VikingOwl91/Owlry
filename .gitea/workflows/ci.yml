@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Install system dependencies
+        run: pacman -Syu --noconfirm --needed rust cargo cargo-audit just gtk4 gtk4-layer-shell nodejs
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run quality gate
+        env:
+          CARGO_TERM_COLOR: always
+          RUST_BACKTRACE: "1"
+        run: just verify

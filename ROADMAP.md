@@ -25,7 +25,7 @@ owlry.provider {
 }
 ```
 
-**2.2 follow-ups:** dynamic (per-keystroke) Lua providers via `dynamic = true`; `owlry.bind` for runtime keybindings; `owlry.util.http_get`.
+**Future follow-ups:** dynamic (per-keystroke) Lua providers via `dynamic = true`; `owlry.bind` for runtime keybindings; `owlry.util.http_get`. These do not have an assigned release yet.
 
 ### Widget providers return
 Weather, MPRIS media controls, and pomodoro timer were deferred from 2.0 while the widget-row UI is redesigned. They'll come back as a feature group once the placement model is settled. ([D20 in the v2 plan](docs/RESTRUCTURE-V2.md).)

@@ -49,7 +49,7 @@ pub fn validate(cfg: &LuaConfig) -> ValidationReport {
     // owlry.set — unknown keys (recorded at eval time).
     for key in &cfg.unknown_settings {
         report.warnings.push(format!(
-            "owlry.set: unknown key `{}` — ignored (forward-compat for 2.2+ keys)",
+            "owlry.set: unknown key `{}` — ignored for forward compatibility",
             key
         ));
     }

@@ -67,7 +67,7 @@ pub struct LuaConfig {
     /// Per-key last-write-wins. Empty by default (no overrides).
     pub theme_colors: ThemeColors,
 
-    /// Theme keys we don't recognise (forward-compat for 2.2+ palette
+    /// Theme keys we don't recognise (forward-compat for future palette
     /// additions). Surfaced by `owlry config validate` (Phase 3.9).
     pub unknown_theme_keys: Vec<String>,
 
@@ -575,8 +575,10 @@ mod tests {
         cfg.appearance.colors.text = Some("#ffffff".into());
 
         // Lua overlays only the accent — background and text must survive.
-        let mut lua_colors = ThemeColors::default();
-        lua_colors.accent = Some("#ff00ff".into());
+        let lua_colors = ThemeColors {
+            accent: Some("#ff00ff".into()),
+            ..Default::default()
+        };
         let lc = LuaConfig {
             theme_colors: lua_colors,
             ..Default::default()
@@ -591,8 +593,10 @@ mod tests {
     #[test]
     fn theme_name_and_colours_compose() {
         let mut cfg = Config::default();
-        let mut lua_colors = ThemeColors::default();
-        lua_colors.background = Some("#1e1e2e".into());
+        let lua_colors = ThemeColors {
+            background: Some("#1e1e2e".into()),
+            ..Default::default()
+        };
         let lc = LuaConfig {
             theme_name: Some("nord".into()),
             theme_colors: lua_colors,
