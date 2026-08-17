@@ -6,7 +6,9 @@
 
 use super::{ItemSource, LaunchItem, Provider, ProviderType};
 use crate::paths;
-use std::path::PathBuf;
+use std::collections::HashSet;
+use std::io;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const TYPE_ID: &str = "clipboard";
@@ -142,11 +144,57 @@ impl ClipboardProvider {
     /// Cache path for a decoded clipboard thumbnail. Extension-less — GTK's
     /// `Image::from_file` sniffs the format from content.
     fn thumb_path(clip_id: &str) -> Option<PathBuf> {
-        // clip ids are numeric; guard against path traversal regardless.
-        if clip_id.is_empty() || clip_id.contains(['/', '.']) {
+        // cliphist ids are numeric; accepting nothing else also prevents path
+        // traversal and keeps cache pruning scoped to files Owlry owns.
+        if !Self::valid_clip_id(clip_id) {
             return None;
         }
         Some(paths::owlry_cache_dir()?.join("clip-thumbs").join(clip_id))
+    }
+
+    fn valid_clip_id(clip_id: &str) -> bool {
+        !clip_id.is_empty() && clip_id.bytes().all(|byte| byte.is_ascii_digit())
+    }
+
+    /// Remove cached thumbnails whose cliphist ids are no longer present.
+    ///
+    /// Only numeric files and Owlry's numeric `.tmp` files are candidates;
+    /// unrelated files and every directory are deliberately left untouched.
+    fn prune_thumb_cache_dir(
+        cache_dir: &Path,
+        active_image_ids: &HashSet<&str>,
+    ) -> io::Result<usize> {
+        let entries = match std::fs::read_dir(cache_dir) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(0),
+            Err(error) => return Err(error),
+        };
+        let mut removed = 0;
+
+        for entry in entries {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            if !file_type.is_file() && !file_type.is_symlink() {
+                continue;
+            }
+
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else {
+                continue;
+            };
+            let (clip_id, is_temporary) = match name.strip_suffix(".tmp") {
+                Some(id) if Self::valid_clip_id(id) => (id, true),
+                _ if Self::valid_clip_id(name) => (name, false),
+                _ => continue,
+            };
+
+            if is_temporary || !active_image_ids.contains(clip_id) {
+                std::fs::remove_file(entry.path())?;
+                removed += 1;
+            }
+        }
+
+        Ok(removed)
     }
 
     /// Decode an image clipboard entry to a cached file, returning its absolute
@@ -198,6 +246,21 @@ impl Provider for ClipboardProvider {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut items = Self::parse_cliphist_output(&stdout, self.max_entries);
+
+        let active_image_ids: HashSet<&str> = items
+            .iter()
+            .filter(|item| item.tags.iter().any(|tag| tag == "image"))
+            .filter_map(|item| item.id.strip_prefix("clipboard:"))
+            .collect();
+        if let Some(cache_dir) = paths::owlry_cache_dir().map(|dir| dir.join("clip-thumbs")) {
+            match Self::prune_thumb_cache_dir(&cache_dir, &active_image_ids) {
+                Ok(removed) if removed > 0 => {
+                    log::debug!("pruned {removed} stale clipboard thumbnail(s)");
+                }
+                Ok(_) => {}
+                Err(error) => log::warn!("failed to prune clipboard thumbnails: {error}"),
+            }
+        }
 
         // Decode a thumbnail for each image entry and point its icon at the
         // cached file. Failures keep the image-x-generic fallback icon.
@@ -386,6 +449,39 @@ mod tests {
     fn thumb_path_rejects_traversal_ids() {
         assert!(ClipboardProvider::thumb_path("../etc/passwd").is_none());
         assert!(ClipboardProvider::thumb_path("a/b").is_none());
+        assert!(ClipboardProvider::thumb_path("not-a-number").is_none());
         assert!(ClipboardProvider::thumb_path("").is_none());
+    }
+
+    #[test]
+    fn prune_thumb_cache_removes_only_owned_stale_files() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("11"), b"active").expect("active thumb");
+        std::fs::write(dir.path().join("22"), b"stale").expect("stale thumb");
+        std::fs::write(dir.path().join("11.tmp"), b"partial").expect("temporary thumb");
+        std::fs::write(dir.path().join("notes.txt"), b"foreign").expect("foreign file");
+        std::fs::create_dir(dir.path().join("33")).expect("numeric directory");
+        let active = HashSet::from(["11"]);
+
+        let removed =
+            ClipboardProvider::prune_thumb_cache_dir(dir.path(), &active).expect("prune cache");
+
+        assert_eq!(removed, 2);
+        assert!(dir.path().join("11").exists());
+        assert!(!dir.path().join("22").exists());
+        assert!(!dir.path().join("11.tmp").exists());
+        assert!(dir.path().join("notes.txt").exists());
+        assert!(dir.path().join("33").is_dir());
+    }
+
+    #[test]
+    fn prune_thumb_cache_tolerates_missing_directory() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let missing = dir.path().join("missing");
+        assert_eq!(
+            ClipboardProvider::prune_thumb_cache_dir(&missing, &HashSet::new())
+                .expect("missing cache is empty"),
+            0
+        );
     }
 }
