@@ -64,6 +64,10 @@ fn main() {
             init_logger();
             commands::run_dmenu(prompt);
         }
+        Some(Command::Selector { prompt }) => {
+            init_logger();
+            commands::run_selector(prompt);
+        }
         None => {
             // Fall through to UI launch below.
         }

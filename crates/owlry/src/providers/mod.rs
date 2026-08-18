@@ -13,6 +13,8 @@ pub(crate) mod clipboard;
 pub(crate) mod emoji;
 #[cfg(feature = "filesearch")]
 pub(crate) mod filesearch;
+#[cfg(feature = "rofimoji")]
+pub(crate) mod rofimoji;
 #[cfg(feature = "ssh")]
 pub(crate) mod ssh;
 #[cfg(feature = "systemd")]
@@ -398,6 +400,11 @@ impl ProviderManager {
         if cfg_snapshot.emoji {
             core_providers.push(Box::new(emoji::EmojiProvider::new()));
             info!("Registered emoji provider");
+        }
+        #[cfg(feature = "rofimoji")]
+        if cfg_snapshot.rofimoji {
+            core_providers.push(Box::new(rofimoji::RofimojiProvider::new()));
+            info!("Registered rofimoji provider");
         }
         #[cfg(feature = "ssh")]
         if cfg_snapshot.ssh {

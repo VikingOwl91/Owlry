@@ -439,6 +439,9 @@ fn emit_providers_section(out: &mut String, cfg: &Config) {
     if cfg.providers.emoji {
         enabled.push("emoji");
     }
+    if cfg.providers.rofimoji {
+        enabled.push("rofimoji");
+    }
     if cfg.providers.filesearch {
         enabled.push("filesearch");
     }
@@ -452,7 +455,7 @@ fn emit_providers_section(out: &mut String, cfg: &Config) {
     // Skip emission if all providers are enabled (the default). Lua
     // semantics treat "no owlry.providers call" identically to "all
     // built-ins enabled", so omitting keeps the output minimal.
-    if enabled.len() == 11 {
+    if enabled.len() == 12 {
         return;
     }
 

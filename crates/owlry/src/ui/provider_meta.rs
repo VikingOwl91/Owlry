@@ -61,6 +61,11 @@ fn hardcoded(provider: &ProviderType) -> ProviderMeta {
                 css_class: "owlry-filter-emoji".to_string(),
                 search_noun: "emoji".to_string(),
             },
+            "rofimoji" => ProviderMeta {
+                tab_label: "Characters".to_string(),
+                css_class: "owlry-filter-rofimoji".to_string(),
+                search_noun: "emoji and kaomoji".to_string(),
+            },
             "filesearch" => ProviderMeta {
                 tab_label: "Files".to_string(),
                 css_class: "owlry-filter-file".to_string(),

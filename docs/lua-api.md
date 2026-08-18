@@ -76,7 +76,7 @@ owlry.set {
 -- ──────────────────────────────────────────────────────────────────────────
 owlry.providers {
   "app", "cmd", "calc", "conv", "power",     -- always-on built-ins
-  "systemd", "ssh", "websearch", "filesearch", "emoji", "clipboard",
+  "systemd", "ssh", "websearch", "filesearch", "emoji", "rofimoji", "clipboard",
 }
 
 -- ──────────────────────────────────────────────────────────────────────────
@@ -163,7 +163,7 @@ owlry.providers { "app", "cmd", "calc", "conv", "power" }
 **Rules:**
 
 - A provider must be in this list to produce any results. If it's not enabled, neither typing its prefix (`:foo`) nor including it in `owlry.tabs` will make it active.
-- Built-in IDs are: `app`, `cmd`, `dmenu`, `calc`, `conv`, `power`, `systemd` (alias: `uuctl`), `ssh`, `clipboard`, `emoji`, `websearch`, `filesearch`. Pre-2.0 aliases (`sys`, `system` → `power`; `uuctl` → `systemd`) still work.
+- Built-in IDs are: `app`, `cmd`, `dmenu`, `calc`, `conv`, `power`, `systemd` (alias: `uuctl`), `ssh`, `clipboard`, `emoji`, `rofimoji`, `websearch`, `filesearch`. Pre-2.0 aliases (`sys`, `system` → `power`; `uuctl` → `systemd`) still work. `rofimoji` also accepts `chars`, `characters`, and `kaomoji`.
 - User providers defined via `owlry.provider {}` **auto-join the enabled set** — you don't list them here unless you want to.
 - Calling `owlry.providers` multiple times **replaces** the list (it's not additive). Use one call.
 - If a feature isn't compiled into the binary (e.g. someone built with `--no-default-features`), the provider is silently ignored at runtime — `owlry doctor` reports the mismatch.
@@ -191,9 +191,9 @@ owlry.tabs { "app", "cmd", "uuctl" }
 **The `tabs` ⊆ `providers` rule, made obvious:**
 
 ```
-provider IS enabled         ┌──────────────────────────────────────────┐
-(runs, contributes results) │ app cmd power calc conv systemd ssh emoji│   <- owlry.providers
-                            └─────┬─────┬───────────────┬──────────────┘
+provider IS enabled         ┌──────────────────────────────────────────────────────┐
+(runs, contributes results) │ app cmd power calc conv systemd ssh emoji rofimoji     │ <- owlry.providers
+                            └─────┬─────┬───────────────┬──────────────────────────┘
                                   │     │               │
                             ┌─────▼─────▼───────────────▼──────────────┐
                             │ app cmd                  uuctl           │   <- owlry.tabs

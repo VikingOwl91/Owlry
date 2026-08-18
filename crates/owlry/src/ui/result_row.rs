@@ -7,15 +7,14 @@ pub struct ResultRow {
     row: ListBoxRow,
 }
 
-/// Check if a string looks like an emoji (starts with a non-ASCII character
-/// and is very short - typically 1-4 chars for complex emojis with ZWJ)
+/// Check if an icon value is Unicode text (emoji, kaomoji, or another glyph)
+/// rather than an icon-theme name or a filesystem/resource path.
 fn is_emoji_icon(s: &str) -> bool {
     if s.is_empty() {
         return false;
     }
-    // Emojis are non-ASCII and typically very short (1-8 chars for complex ZWJ sequences)
     let first_char = s.chars().next().unwrap();
-    !first_char.is_ascii() && s.chars().count() <= 8
+    !first_char.is_ascii()
 }
 
 /// Check if this item should be highlighted based on the query.
@@ -65,8 +64,21 @@ impl ResultRow {
 
         // Icon - handle GResource paths, file paths, icon names, emojis, and fallbacks
         let icon_widget: Widget = if let Some(icon_path) = &item.icon {
-            if is_emoji_icon(icon_path) {
-                // Emoji character - display as text label
+            if let Some(text) = icon_path.strip_prefix("text:") {
+                // Explicit Unicode/text icon. The empty form is useful for
+                // aligned rows that deliberately have no visual icon.
+                let emoji_label = Label::builder()
+                    .label(text)
+                    .width_request(32)
+                    .height_request(32)
+                    .valign(gtk4::Align::Center)
+                    .halign(gtk4::Align::Center)
+                    .build();
+                emoji_label.add_css_class("owlry-result-icon");
+                emoji_label.add_css_class("owlry-emoji-icon");
+                emoji_label.upcast()
+            } else if is_emoji_icon(icon_path) {
+                // Backwards-compatible handling for existing emoji icons.
                 let emoji_label = Label::builder()
                     .label(icon_path)
                     .width_request(32)

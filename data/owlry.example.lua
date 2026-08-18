@@ -55,7 +55,7 @@ owlry.providers {
   "power",                                     -- shutdown / reboot / lock
   "systemd",                                   -- user units (:uuctl)
   "ssh", "websearch", "filesearch",            -- search-style providers
-  "emoji", "clipboard",                        -- pickers
+  "emoji", "rofimoji", "clipboard",             -- emoji/kaomoji pickers
 }
 
 -- ──────────────────────────────────────────────────────────────────────

@@ -12,14 +12,14 @@ A lightweight, owl-themed application launcher for Wayland, built with GTK4 and 
   <img src="assets/owlry-demo.gif" alt="Owlry — calculator, converter, web search, and power actions in the default theme" width="760">
 </p>
 
-> **Where it stands (2.1).** Owlry collapsed from 15 AUR packages and a dynamic plugin system into a single binary: every provider (apps, commands, calculator, converter, power, clipboard, emoji, ssh, systemd, web search, file search) is compiled in and gated by a cargo feature. Configuration is Lua-first — `~/.config/owlry/owlry.lua`, with TOML kept as a back-compat fallback until 3.0. The AUR build ships everything; `cargo install` consumers pick a subset. See [`docs/RESTRUCTURE-V2.md`](docs/RESTRUCTURE-V2.md) for the rewrite story and [`docs/lua-api.md`](docs/lua-api.md) for the config surface.
+> **Where it stands (2.1).** Owlry collapsed from 15 AUR packages and a dynamic plugin system into a single binary: every provider (apps, commands, calculator, converter, power, clipboard, emoji, rofimoji, ssh, systemd, web search, file search) is compiled in and gated by a cargo feature. Configuration is Lua-first — `~/.config/owlry/owlry.lua`, with TOML kept as a back-compat fallback until 3.0. The AUR build ships everything; `cargo install` consumers pick a subset. See [`docs/RESTRUCTURE-V2.md`](docs/RESTRUCTURE-V2.md) for the rewrite story and [`docs/lua-api.md`](docs/lua-api.md) for the config surface.
 
 ## Features
 
 - **Single binary** — UI client, daemon, and providers in one `/usr/bin/owlry`
 - **Client/daemon architecture** — Daemon (`owlry -d`) keeps providers warm; UI appears instantly
 - **Built-in providers** — Apps, PATH commands, calculator, unit/currency converter, power actions
-- **Optional providers** (compiled in via `--features full` on AUR) — Clipboard history (with image thumbnails), emoji, SSH hosts, systemd user units, web search, filesystem search
+- **Optional providers** (compiled in via `--features full` on AUR) — Clipboard history (with image thumbnails), emoji, rofimoji emoji/kaomoji picker, SSH hosts, systemd user units, web search, filesystem search
 - **Fuzzy search with tags** — Fast matching across names, descriptions, category tags
 - **Direct commands** — Type an executable with arguments (for example `mpv VIDEO`) and press Enter to run the complete command
 - **Config profiles** — Named mode presets for different workflows
@@ -76,6 +76,7 @@ Cargo features (pick a subset if you don't need everything):
 | `dmenu`       | Pipe-based selection                      | yes |
 | `clipboard`   | Clipboard history (`cliphist`)            | opt-in |
 | `emoji`       | Emoji picker (`wl-clipboard`)             | opt-in |
+| `rofimoji`    | Emoji + kaomoji picker (external `rofimoji`) | opt-in |
 | `ssh`         | SSH hosts from `~/.ssh/config`            | opt-in |
 | `systemd`     | systemd user units (type_id: `uuctl`)     | opt-in |
 | `websearch`   | Web search (DuckDuckGo / configurable)    | opt-in |
@@ -215,6 +216,7 @@ pacman -Ssq | owlry dmenu -p "install" | xargs sudo pacman -S
 | `:conv` | Converter | `:conv 5 ft to m` |
 | `:clip` | Clipboard | `:clip password` |
 | `:emoji` | Emoji | `:emoji heart` |
+| `:rofimoji` (`:chars`, `:kaomoji`) | Emoji + kaomoji picker | `:rofimoji` |
 | `:ssh` | SSH hosts | `:ssh server` |
 | `:uuctl` (`:systemd`) | systemd user units | `:uuctl dbus` |
 | `:web` | Web search | `:web rust docs` |
@@ -309,6 +311,7 @@ power = true                      # `:power` shutdown/reboot/lock (alias: system
 systemd = true                    # `:uuctl` user units (alias: uuctl)
 clipboard = true                  # via cliphist
 emoji = true                      # picker via wl-clipboard
+rofimoji = true                   # emoji + kaomoji picker via rofimoji
 ssh = true                        # ~/.ssh/config hosts
 websearch = true                  # `?` or :web
 filesearch = true                 # `/` or :file
@@ -395,7 +398,7 @@ owlry  (single binary)
 
 Daemon:
 ├── Built-in providers     applications, commands, power, calculator, converter
-├── Optional providers     clipboard, emoji, ssh, systemd, websearch, filesearch
+├── Optional providers     clipboard, emoji, rofimoji, ssh, systemd, websearch, filesearch
 │                          (compiled in per cargo feature)
 ├── Frecency tracking      auto-saved every 5 min; flushed on SIGTERM/SIGINT
 └── IPC server             $XDG_RUNTIME_DIR/owlry/owlry.sock (newline-delimited JSON)

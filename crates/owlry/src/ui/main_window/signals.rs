@@ -81,6 +81,7 @@ impl MainWindow {
                         "calc" => "calculator",
                         "clipboard" => "clipboard",
                         "emoji" => "emoji",
+                        "rofimoji" => "emoji and kaomoji",
                         "filesearch" => "files",
                         "media" => "media",
                         "pomodoro" => "pomodoro",

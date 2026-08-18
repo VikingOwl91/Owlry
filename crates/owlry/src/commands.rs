@@ -806,6 +806,14 @@ pub fn run_dmenu(prompt: Option<String>) -> ! {
     std::process::exit(app.run());
 }
 
+/// `owlry selector`: named alias for the line-oriented dmenu protocol.
+///
+/// Keeping this as a separate command gives external integrations a stable
+/// name without changing the existing `owlry dmenu` behavior.
+pub fn run_selector(prompt: Option<String>) -> ! {
+    run_dmenu(prompt);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

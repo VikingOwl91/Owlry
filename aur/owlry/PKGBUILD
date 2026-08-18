@@ -15,6 +15,11 @@ makedepends=('cargo')
 optdepends=(
     'cliphist: clipboard history provider'
     'wl-clipboard: clipboard write and emoji copy'
+    'rofimoji: emoji, kaomoji, and Unicode character picker'
+    'xdotool: optional X11 rofimoji typer'
+    'wtype: optional Wayland rofimoji typer'
+    'ydotool: optional fallback Wayland rofimoji typer'
+    'wl-ime-type: optional Wayland IME rofimoji typer'
     'fd: filesystem search provider (primary backend)'
     'plocate: filesystem search provider (fallback backend)'
 )

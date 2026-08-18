@@ -44,7 +44,7 @@ pub struct CliArgs {
     ///
     /// Core modes: app, cmd, dmenu, auto
     /// Built-in modes: calc, conv, power
-    /// Optional modes (cargo features): bm, clip, emoji, ssh, systemd/uuctl, web, file
+    /// Optional modes (cargo features): bm, clip, emoji, rofimoji, ssh, systemd/uuctl, web, file
     #[arg(long, short = 'm', value_parser = parse_provider, value_name = "MODE")]
     pub mode: Option<ProviderType>,
 
@@ -67,6 +67,13 @@ pub enum Command {
 
     /// dmenu-compatible mode: read stdin, print the selection to stdout.
     Dmenu {
+        /// Prompt text shown in the search input.
+        #[arg(long, short = 'p', value_name = "TEXT")]
+        prompt: Option<String>,
+    },
+
+    /// Selector protocol mode for integrations such as rofimoji.
+    Selector {
         /// Prompt text shown in the search input.
         #[arg(long, short = 'p', value_name = "TEXT")]
         prompt: Option<String>,
@@ -198,6 +205,15 @@ mod tests {
         match args.command {
             Some(Command::Dmenu { prompt }) => assert_eq!(prompt.as_deref(), Some("Pick:")),
             other => panic!("expected Dmenu, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn selector_subcommand_with_prompt_parses() {
+        let args = CliArgs::try_parse_from(["owlry", "selector", "-p", "Pick:"]).unwrap();
+        match args.command {
+            Some(Command::Selector { prompt }) => assert_eq!(prompt.as_deref(), Some("Pick:")),
+            other => panic!("expected Selector, got {other:?}"),
         }
     }
 

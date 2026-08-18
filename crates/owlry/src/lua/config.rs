@@ -315,6 +315,7 @@ fn apply_providers_list(p: &mut crate::config::ProvidersConfig, list: &[String])
     p.systemd = false;
     p.clipboard = false;
     p.emoji = false;
+    p.rofimoji = false;
     p.filesearch = false;
     p.ssh = false;
     p.websearch = false;
@@ -330,6 +331,7 @@ fn apply_providers_list(p: &mut crate::config::ProvidersConfig, list: &[String])
             "ssh" => p.ssh = true,
             "clipboard" | "clip" => p.clipboard = true,
             "emoji" => p.emoji = true,
+            "rofimoji" | "chars" | "characters" | "kaomoji" => p.rofimoji = true,
             "filesearch" | "file" => p.filesearch = true,
             "websearch" | "web" | "search" => p.websearch = true,
             // dmenu is a CLI-mode-only provider with no ProvidersConfig bool.

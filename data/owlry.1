@@ -28,7 +28,7 @@ Start the UI in single-provider mode. Core modes:
 Built-in modes:
 .BR calc ", " conv ", " power .
 Optional modes (depend on cargo features at build time):
-.BR bm ", " clip ", " emoji ", " ssh ", " systemd ", " uuctl ", " web ", " file .
+.BR bm ", " clip ", " emoji ", " rofimoji ", " ssh ", " systemd ", " uuctl ", " web ", " file .
 .TP
 .BI \-\-profile " NAME"
 Launch the UI with a named profile. Profiles are defined under
@@ -58,6 +58,12 @@ Equivalent to
 .BR "dmenu " [\fB\-p\fR\ \fIPROMPT\fR]
 Read items from standard input, present them in the launcher UI, print the
 selection to standard output. Runs locally; the daemon is not required.
+.TP
+.BR "selector " [\fB\-p\fR\ \fIPROMPT\fR]
+Selector-protocol alias for
+.BR dmenu .
+Intended for integrations such as rofimoji; reads newline-delimited choices
+from standard input and writes the selected choice to standard output.
 .TP
 .B doctor
 Print diagnostics: config status, daemon socket reachability, and the list of

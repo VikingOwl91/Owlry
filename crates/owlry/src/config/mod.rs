@@ -183,6 +183,10 @@ pub struct ProvidersConfig {
     /// Enable emoji picker provider
     #[serde(default = "default_true")]
     pub emoji: bool,
+    /// Enable the optional rofimoji emoji/kaomoji picker integration.
+    /// The provider stays empty when the `rofimoji` executable is absent.
+    #[serde(default = "default_true")]
+    pub rofimoji: bool,
     /// Enable filesystem search provider (uses fd or mlocate)
     #[serde(default = "default_true")]
     pub filesearch: bool,
@@ -231,6 +235,7 @@ impl Default for ProvidersConfig {
             systemd: true,
             clipboard: true,
             emoji: true,
+            rofimoji: true,
             filesearch: true,
             ssh: true,
             websearch: true,

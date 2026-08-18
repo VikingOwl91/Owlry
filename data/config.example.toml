@@ -61,7 +61,7 @@ max_results = 100
 
 # Header tabs — provider tabs shown in the UI bar (Ctrl+1..9 to toggle)
 # Core values: app, cmd, dmenu
-# Plugin values: uuctl, calc, clip, emoji, file, ssh, power, web, bm
+# Plugin values: uuctl, calc, clip, emoji, rofimoji, file, ssh, power, web, bm
 # Any installed plugin's type_id is valid (e.g. "weather", "media")
 tabs = ["app", "cmd", "uuctl"]
 
@@ -154,6 +154,7 @@ commands = true          # Executables from $PATH
 calculator = true        # Math expressions (= or calc trigger)
 converter = true         # Unit/currency conversion (> trigger)
 power = true             # Power actions: shutdown, reboot, lock, etc. (alias: system)
+rofimoji = true          # Emoji + kaomoji picker via the optional rofimoji command
 
 # Frecency — boost frequently/recently used items
 # Data stored in: ~/.local/share/owlry/frecency.json
