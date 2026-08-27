@@ -166,8 +166,14 @@ impl Server {
             FrecencyStore::with_config(config.read().unwrap().providers.frecency_prune_config());
         let provider_manager = Arc::new(RwLock::new(provider_manager));
 
+        // Watch unconditionally: `ApplicationProvider` is always registered
+        // (see `new_with_provider_config`), `providers.applications` only gates
+        // filtering in `filter.rs`, and SIGHUP / Lua reload can flip that flag
+        // long after startup. Deciding the watcher's lifetime from boot config
+        // would strand it off for the rest of the daemon's life.
         let _application_watcher = match crate::application_watcher::ApplicationWatcher::spawn(
             crate::paths::system_data_dirs(),
+            crate::paths::xdg_application_dirs(),
             Arc::clone(&provider_manager),
         ) {
             Ok(watcher) => Some(watcher),
@@ -544,12 +550,15 @@ impl Server {
                     }
                 };
                 match provider {
-                    Some(provider) => match pm_guard.refresh_provider(provider) {
-                        Some(_) => Response::Ack,
-                        None => Response::Error {
-                            message: format!("unknown refreshable provider '{provider}'"),
-                        },
-                    },
+                    Some(provider) => {
+                        if pm_guard.refresh_provider(provider) {
+                            Response::Ack
+                        } else {
+                            Response::Error {
+                                message: format!("unknown refreshable provider '{provider}'"),
+                            }
+                        }
+                    }
                     None => {
                         pm_guard.refresh_all();
                         Response::Ack

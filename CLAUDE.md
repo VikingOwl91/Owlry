@@ -151,6 +151,11 @@ Two traits in `src/providers/mod.rs`:
 - **`Provider`** — static providers (apps, commands, power, bookmarks, clipboard, emoji, ssh, systemd). Populate `self.items` in `refresh()`, return `&self.items` from `items()`. Optional: `prefix()`, `icon()`, `tab_label()`, `search_noun()`, `position()`, `priority()`, `submenu_actions(data)`, `execute_action(command)`.
 - **`DynamicProvider`** — per-keystroke providers (calculator, converter, filesearch, websearch). Generate items in `query(text)`. No `refresh`/`items` cache.
 
+Static provider caches are kept fresh by the application-directory watcher
+(`application_watcher.rs`) and `owlry refresh [<id>]`; uuctl resolves unit
+state when a submenu opens rather than at discovery time. See
+[`docs/provider-freshness.md`](docs/provider-freshness.md).
+
 `ProviderManager::new_with_config` is the canonical registration site. Each provider is gated by both a cargo feature (compile-time) and a config flag in `[providers]` (runtime).
 
 ## Submenu protocol
