@@ -173,6 +173,7 @@ impl Server {
         // would strand it off for the rest of the daemon's life.
         let _application_watcher = match crate::application_watcher::ApplicationWatcher::spawn(
             crate::paths::system_data_dirs(),
+            crate::paths::xdg_application_dirs(),
             Arc::clone(&provider_manager),
         ) {
             Ok(watcher) => Some(watcher),

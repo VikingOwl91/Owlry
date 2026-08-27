@@ -5,7 +5,7 @@
 
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock, mpsc};
+use std::sync::{Arc, Mutex, RwLock, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -22,60 +22,172 @@ const DEBOUNCE: Duration = Duration::from_millis(500);
 /// Upper bound on how long a continuous event stream can defer the refresh.
 const MAX_DEBOUNCE: Duration = Duration::from_secs(5);
 
+/// The set of directories the watcher is tracking, plus the handle needed to
+/// start watching a bootstrap target once it appears.
+struct WatchPlan {
+    watcher: Arc<Mutex<RecommendedWatcher>>,
+    /// Directories currently watched recursively; events under these matter.
+    dirs: Vec<PathBuf>,
+    /// Effective XDG application dirs that did not exist at startup. Their
+    /// parent is watched non-recursively so their creation is observable.
+    pending: Vec<PathBuf>,
+}
+
+impl WatchPlan {
+    /// Does this event concern a watched application directory, or the
+    /// appearance of a bootstrap target?
+    fn is_relevant(&self, event: &Event) -> bool {
+        event_touches_applications(event, &self.dirs)
+            || event
+                .paths
+                .iter()
+                .any(|path| self.pending.iter().any(|target| path.starts_with(target)))
+    }
+
+    /// Promote any bootstrap target that now exists to a real recursive watch.
+    fn promote_ready(&mut self) {
+        let mut still_pending = Vec::with_capacity(self.pending.len());
+        for target in std::mem::take(&mut self.pending) {
+            if !target.is_dir() {
+                still_pending.push(target);
+                continue;
+            }
+            let resolved = std::fs::canonicalize(&target).unwrap_or_else(|_| target.clone());
+            let watched = match self.watcher.lock() {
+                Ok(mut watcher) => watcher.watch(&resolved, RecursiveMode::Recursive),
+                Err(_) => {
+                    warn!("application refresh: watcher lock poisoned");
+                    still_pending.push(target);
+                    continue;
+                }
+            };
+            match watched {
+                Ok(()) => {
+                    info!(
+                        "application refresh: {} appeared; now watching it",
+                        resolved.display()
+                    );
+                    self.dirs.push(resolved);
+                }
+                Err(error) => {
+                    warn!(
+                        "application refresh: cannot watch {}: {error}",
+                        resolved.display()
+                    );
+                    still_pending.push(target);
+                }
+            }
+        }
+        self.pending = still_pending;
+    }
+}
+
 /// Keeps application-directory watches alive for the daemon lifetime.
 pub struct ApplicationWatcher {
-    _watcher: RecommendedWatcher,
+    _watcher: Arc<Mutex<RecommendedWatcher>>,
     _thread: thread::JoinHandle<()>,
 }
 
 impl ApplicationWatcher {
-    pub fn spawn(dirs: Vec<PathBuf>, pm: Arc<RwLock<ProviderManager>>) -> notify::Result<Self> {
+    /// `dirs` is every directory the application provider scans. `bootstrap`
+    /// is the subset whose creation should be watched for when absent — the
+    /// effective XDG locations only, per `paths::xdg_application_dirs`.
+    pub fn spawn(
+        dirs: Vec<PathBuf>,
+        bootstrap: Vec<PathBuf>,
+        pm: Arc<RwLock<ProviderManager>>,
+    ) -> notify::Result<Self> {
         let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
-        let mut watcher = notify::recommended_watcher(move |res| {
+        let watcher = notify::recommended_watcher(move |res| {
             let _ = tx.send(res);
         })?;
+        let watcher = Arc::new(Mutex::new(watcher));
 
-        let mut application_dirs = Vec::new();
+        let bootstrap: HashSet<PathBuf> = bootstrap.into_iter().collect();
+        let mut plan = WatchPlan {
+            watcher: Arc::clone(&watcher),
+            dirs: Vec::new(),
+            pending: Vec::new(),
+        };
         let mut seen = HashSet::new();
+        let mut seen_parents = HashSet::new();
+
         for dir in dirs {
-            // Only ever watch a directory that exists. Walking up to the
-            // nearest existing ancestor would put a *recursive* watch on
-            // $HOME, /var/lib or /run for the nix/flatpak/snap entries that
-            // `paths::system_data_dirs` lists unconditionally and that are
-            // absent on most systems.
-            if !dir.is_dir() {
+            if dir.is_dir() {
+                // Canonicalise before both watching and matching: notify
+                // reports resolved paths, so storing the unresolved form would
+                // make every `starts_with` check below fail on systems where a
+                // component is a symlink.
+                let dir = std::fs::canonicalize(&dir).unwrap_or(dir);
+                if !seen.insert(dir.clone()) {
+                    continue;
+                }
+                match plan.watcher.lock() {
+                    Ok(mut watcher) => match watcher.watch(&dir, RecursiveMode::Recursive) {
+                        Ok(()) => plan.dirs.push(dir),
+                        // Best effort: one unwatchable directory must not
+                        // disable watching for the others.
+                        Err(error) => warn!(
+                            "application refresh: cannot watch {}: {error}",
+                            dir.display()
+                        ),
+                    },
+                    Err(_) => return Err(notify::Error::generic("watcher lock poisoned")),
+                }
                 continue;
             }
-            // Canonicalise before both watching and matching: notify reports
-            // resolved paths, so storing the unresolved form here would make
-            // every `starts_with` check in `event_touches_applications` fail
-            // on systems where a component is a symlink.
-            let dir = std::fs::canonicalize(&dir).unwrap_or(dir);
-            if !seen.insert(dir.clone()) {
+
+            // Absent. Only effective XDG locations get a bootstrap watch, and
+            // only on their *immediate* parent — never further up. The
+            // Flatpak/Snap/Nix fallbacks are skipped here on purpose: their
+            // parents are absent too, so bootstrapping them would mean
+            // recursively watching /var/lib, $HOME or /run.
+            if !bootstrap.contains(&dir) {
                 continue;
             }
-            match watcher.watch(&dir, RecursiveMode::Recursive) {
-                Ok(()) => application_dirs.push(dir),
-                // Best effort: one unwatchable directory must not disable
-                // watching for the others.
-                Err(error) => warn!(
-                    "application refresh: cannot watch {}: {error}",
-                    dir.display()
-                ),
+            let Some(parent) = dir.parent() else {
+                continue;
+            };
+            if !parent.is_dir() {
+                continue;
             }
+            let Some(name) = dir.file_name() else {
+                continue;
+            };
+            let parent = std::fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf());
+            let target = parent.join(name);
+            if seen_parents.insert(parent.clone()) {
+                match plan.watcher.lock() {
+                    // NonRecursive: this level only, enough to see the
+                    // directory being created and nothing else.
+                    Ok(mut watcher) => {
+                        if let Err(error) = watcher.watch(&parent, RecursiveMode::NonRecursive) {
+                            warn!(
+                                "application refresh: cannot watch {} for {} appearing: {error}",
+                                parent.display(),
+                                target.display()
+                            );
+                            continue;
+                        }
+                    }
+                    Err(_) => return Err(notify::Error::generic("watcher lock poisoned")),
+                }
+            }
+            plan.pending.push(target);
         }
 
-        if application_dirs.is_empty() {
+        if plan.dirs.is_empty() && plan.pending.is_empty() {
             return Err(notify::Error::generic(
                 "no application directories could be watched",
             ));
         }
 
         info!(
-            "application refresh: watching {} directories",
-            application_dirs.len()
+            "application refresh: watching {} directories ({} awaiting creation)",
+            plan.dirs.len(),
+            plan.pending.len()
         );
-        let handle = thread::spawn(move || run_watch_loop(rx, pm, application_dirs));
+        let handle = thread::spawn(move || run_watch_loop(rx, pm, plan));
         Ok(Self {
             _watcher: watcher,
             _thread: handle,
@@ -86,9 +198,9 @@ impl ApplicationWatcher {
 fn run_watch_loop(
     rx: mpsc::Receiver<notify::Result<Event>>,
     pm: Arc<RwLock<ProviderManager>>,
-    application_dirs: Vec<PathBuf>,
+    plan: WatchPlan,
 ) {
-    run_watch_loop_with_refresh(rx, application_dirs, || {
+    run_watch_loop_with_refresh(rx, plan, || {
         // Walk the desktop entries before taking the lock — the scan is the
         // slow part and holding the write lock across it would block every
         // query for its duration.
@@ -108,7 +220,7 @@ fn run_watch_loop(
 
 fn run_watch_loop_with_refresh(
     rx: mpsc::Receiver<notify::Result<Event>>,
-    application_dirs: Vec<PathBuf>,
+    mut plan: WatchPlan,
     mut refresh: impl FnMut(),
 ) {
     loop {
@@ -118,7 +230,7 @@ fn run_watch_loop_with_refresh(
         };
 
         match first {
-            Ok(event) if event_touches_applications(&event, &application_dirs) => {}
+            Ok(event) if plan.is_relevant(&event) => {}
             Ok(_) => continue,
             Err(error) => {
                 warn!("application refresh: watcher backend error: {error}");
@@ -138,6 +250,9 @@ fn run_watch_loop_with_refresh(
             }
         }
 
+        // A bootstrap target may have just been created — start watching it
+        // before the rescan, so entries written into it afterwards are seen.
+        plan.promote_ready();
         refresh();
     }
 }
@@ -215,9 +330,13 @@ mod tests {
             .expect("watch applications dir");
 
         let (done_tx, done_rx) = mpsc::channel();
-        let watched = vec![apps.clone()];
+        let plan = WatchPlan {
+            watcher: Arc::new(Mutex::new(watcher)),
+            dirs: vec![apps.clone()],
+            pending: Vec::new(),
+        };
         let handle = thread::spawn(move || {
-            run_watch_loop_with_refresh(rx, watched, || {
+            run_watch_loop_with_refresh(rx, plan, || {
                 let _ = done_tx.send(());
             });
         });
@@ -232,8 +351,61 @@ mod tests {
             .recv_timeout(Duration::from_secs(10))
             .expect("refresh must fire for a .desktop write in a watched directory");
 
-        drop(watcher);
-        let _ = handle.join();
+        drop(handle);
+    }
+
+    /// The reported case: `$XDG_DATA_HOME/applications` does not exist when the
+    /// daemon starts. Only the parent is watched, non-recursively; creating the
+    /// directory has to promote it to a real watch so the first `.desktop`
+    /// written into it is seen without a manual refresh or a restart.
+    #[test]
+    fn target_created_after_start_is_promoted_and_delivers() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data_home = std::fs::canonicalize(dir.path()).expect("canonicalize");
+        let apps = data_home.join("applications");
+        assert!(!apps.exists(), "target must be absent at start");
+
+        let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
+        let watcher = notify::recommended_watcher(move |res| {
+            let _ = tx.send(res);
+        })
+        .expect("watcher");
+        let watcher = Arc::new(Mutex::new(watcher));
+        watcher
+            .lock()
+            .unwrap()
+            .watch(&data_home, RecursiveMode::NonRecursive)
+            .expect("bootstrap watch on the parent");
+
+        let plan = WatchPlan {
+            watcher: Arc::clone(&watcher),
+            dirs: Vec::new(),
+            pending: vec![apps.clone()],
+        };
+
+        let (done_tx, done_rx) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            run_watch_loop_with_refresh(rx, plan, || {
+                let _ = done_tx.send(());
+            });
+        });
+
+        std::fs::create_dir(&apps).expect("create the application directory");
+        done_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("creating the target must wake the watcher and promote it");
+
+        // Promoted: an entry written inside it now reaches the refresh too.
+        std::fs::write(
+            apps.join("example.desktop"),
+            "[Desktop Entry]\nType=Application\nName=Example\nExec=/bin/true\n",
+        )
+        .expect("write desktop entry");
+        done_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("a .desktop written into the promoted directory must refresh");
+
+        drop(handle);
     }
 
     #[test]
@@ -249,9 +421,14 @@ mod tests {
         drop(tx);
 
         let mut refreshes = 0;
-        run_watch_loop_with_refresh(rx, vec![PathBuf::from("/tmp/applications")], || {
-            refreshes += 1
-        });
+        let plan = WatchPlan {
+            watcher: Arc::new(Mutex::new(
+                notify::recommended_watcher(|_| {}).expect("watcher"),
+            )),
+            dirs: vec![PathBuf::from("/tmp/applications")],
+            pending: Vec::new(),
+        };
+        run_watch_loop_with_refresh(rx, plan, || refreshes += 1);
 
         assert_eq!(refreshes, 1);
     }
