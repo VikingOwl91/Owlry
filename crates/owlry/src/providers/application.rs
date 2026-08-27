@@ -91,6 +91,18 @@ impl ApplicationProvider {
     fn get_application_dirs() -> Vec<std::path::PathBuf> {
         paths::system_data_dirs()
     }
+
+    /// Scan the XDG application directories and build the item list.
+    ///
+    /// Deliberately an associated function taking no `&self`: callers that
+    /// hold a lock over the provider set (the application watcher) run this
+    /// first and install the result with [`Provider::set_items`], so the
+    /// filesystem walk never happens while the write lock is held.
+    pub fn scan() -> Vec<LaunchItem> {
+        let mut provider = Self::default();
+        provider.rescan();
+        provider.items
+    }
 }
 
 impl Provider for ApplicationProvider {
@@ -103,6 +115,21 @@ impl Provider for ApplicationProvider {
     }
 
     fn refresh(&mut self) {
+        self.rescan();
+    }
+
+    fn set_items(&mut self, items: Vec<LaunchItem>) -> bool {
+        self.items = items;
+        true
+    }
+
+    fn items(&self) -> &[LaunchItem] {
+        &self.items
+    }
+}
+
+impl ApplicationProvider {
+    fn rescan(&mut self) {
         self.items.clear();
 
         let dirs = Self::get_application_dirs();
@@ -230,10 +257,6 @@ impl Provider for ApplicationProvider {
 
         // Sort alphabetically by name
         self.items.sort_by_key(|i| i.name.to_lowercase());
-    }
-
-    fn items(&self) -> &[LaunchItem] {
-        &self.items
     }
 }
 

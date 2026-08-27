@@ -237,6 +237,17 @@ pub trait Provider: Send + Sync {
     fn refresh(&mut self);
     fn items(&self) -> &[LaunchItem];
 
+    /// Install a pre-built item list, returning whether the provider took it.
+    ///
+    /// Lets a caller run an expensive scan *outside* the provider lock and
+    /// install the result under a short write lock, the same build-then-swap
+    /// discipline `lua::watcher::apply_loaded_config` uses. Providers that
+    /// cannot build their items independently keep the default and are
+    /// refreshed in place via `refresh()`.
+    fn set_items(&mut self, _items: Vec<LaunchItem>) -> bool {
+        false
+    }
+
     /// Short label for UI tab button (e.g., "Shutdown"). None = use default.
     fn tab_label(&self) -> Option<&str> {
         None
@@ -903,6 +914,23 @@ impl ProviderManager {
         }
         info!("Provider '{}' not found for refresh", provider_id);
         None
+    }
+
+    /// Install a pre-built item list into one provider, chosen by id or alias.
+    ///
+    /// Returns false when no provider matches or the provider does not accept
+    /// pre-built items. Used by the application watcher so the desktop-entry
+    /// scan runs before the write lock is taken.
+    pub fn install_items(&mut self, provider_id: &str, items: Vec<LaunchItem>) -> bool {
+        let Ok(requested) = provider_id.parse::<ProviderType>() else {
+            return false;
+        };
+        for provider in &mut self.providers {
+            if provider.provider_type() == requested {
+                return provider.set_items(items);
+            }
+        }
+        false
     }
 
     /// Query a provider for submenu actions.
