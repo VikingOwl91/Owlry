@@ -553,12 +553,15 @@ impl Server {
                     }
                 };
                 match provider {
-                    Some(provider) => match pm_guard.refresh_provider(provider) {
-                        Some(_) => Response::Ack,
-                        None => Response::Error {
-                            message: format!("unknown refreshable provider '{provider}'"),
-                        },
-                    },
+                    Some(provider) => {
+                        if pm_guard.refresh_provider(provider) {
+                            Response::Ack
+                        } else {
+                            Response::Error {
+                                message: format!("unknown refreshable provider '{provider}'"),
+                            }
+                        }
+                    }
                     None => {
                         pm_guard.refresh_all();
                         Response::Ack

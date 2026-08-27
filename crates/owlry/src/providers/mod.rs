@@ -903,17 +903,21 @@ impl ProviderManager {
     ///
     /// Returns the provider's display name when it exists, so callers can
     /// report an unknown id instead of treating it as a successful no-op.
-    pub fn refresh_provider(&mut self, provider_id: &str) -> Option<&str> {
-        let requested = provider_id.parse::<ProviderType>().ok()?;
+    pub fn refresh_provider(&mut self, provider_id: &str) -> bool {
+        // `ProviderType::from_str` is infallible — an unknown id becomes
+        // `Plugin(id)`, so the loop below is what actually rejects it.
+        let Ok(requested) = provider_id.parse::<ProviderType>() else {
+            return false;
+        };
         for provider in &mut self.providers {
             if provider.provider_type() == requested {
                 provider.refresh();
                 info!("Refreshed provider '{}'", provider.name());
-                return Some(provider.name());
+                return true;
             }
         }
         info!("Provider '{}' not found for refresh", provider_id);
-        None
+        false
     }
 
     /// Install a pre-built item list into one provider, chosen by id or alias.
@@ -1106,15 +1110,15 @@ mod tests {
         ];
         let mut pm = ProviderManager::new(providers, Vec::new());
 
-        assert_eq!(pm.refresh_provider("app"), Some("Applications"));
-        assert_eq!(pm.refresh_provider("application"), Some("Applications"));
-        assert_eq!(pm.refresh_provider("applications"), Some("Applications"));
-        assert_eq!(pm.refresh_provider("cmd"), Some("Commands"));
-        assert_eq!(pm.refresh_provider("command"), Some("Commands"));
-        assert_eq!(pm.refresh_provider("commands"), Some("Commands"));
-        assert_eq!(pm.refresh_provider("uuctl"), Some("User Units"));
-        assert_eq!(pm.refresh_provider("systemd"), Some("User Units"));
-        assert_eq!(pm.refresh_provider("todo"), Some("Todo"));
+        assert!(pm.refresh_provider("app"));
+        assert!(pm.refresh_provider("application"));
+        assert!(pm.refresh_provider("applications"));
+        assert!(pm.refresh_provider("cmd"));
+        assert!(pm.refresh_provider("command"));
+        assert!(pm.refresh_provider("commands"));
+        assert!(pm.refresh_provider("uuctl"));
+        assert!(pm.refresh_provider("systemd"));
+        assert!(pm.refresh_provider("todo"));
     }
 
     #[test]
@@ -1124,7 +1128,7 @@ mod tests {
             ProviderType::Application,
         ))];
         let mut pm = ProviderManager::new(providers, Vec::new());
-        assert!(pm.refresh_provider("nonexistent").is_none());
+        assert!(!pm.refresh_provider("nonexistent"));
     }
 
     #[test]
