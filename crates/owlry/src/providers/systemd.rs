@@ -298,22 +298,15 @@ fn make_action(id: &str, name: &str, command: String, desc: String, icon: &str) 
 
 /// Build the action list for a unit.
 ///
-/// `is_active` is `None` when the runtime state could not be resolved. In that
-/// case only actions that are correct either way are offered — Restart starts
-/// a stopped unit and restarts a running one, whereas Start/Stop/Kill would be
-/// guessing.
+/// `is_active` is `None` when the runtime state could not be resolved — a
+/// transitional unit (activating/deactivating/reloading) or an unreachable user
+/// bus. Lifecycle actions are selected only from a stable state, so `None`
+/// offers just the state-independent set (Status/Journal/Enable/Disable) built
+/// below; Start, Stop, Restart, Reload and Kill all stay behind a known state.
 fn actions_for_service(unit: &str, display: &str, is_active: Option<bool>) -> Vec<LaunchItem> {
     let mut actions = Vec::new();
 
-    if is_active.is_none() {
-        actions.push(make_action(
-            &format!("systemd:restart:{}", unit),
-            "↻ Restart",
-            format!("systemctl --user restart {}", unit),
-            format!("Restart {}", display),
-            "view-refresh",
-        ));
-    } else if is_active == Some(true) {
+    if is_active == Some(true) {
         actions.push(make_action(
             &format!("systemd:restart:{}", unit),
             "↻ Restart",
@@ -342,7 +335,7 @@ fn actions_for_service(unit: &str, display: &str, is_active: Option<bool>) -> Ve
             format!("Force kill {}", display),
             "edit-delete",
         ));
-    } else {
+    } else if is_active == Some(false) {
         actions.push(make_action(
             &format!("systemd:start:{}", unit),
             "▶ Start",
@@ -502,20 +495,24 @@ baz.service       loaded inactive dead Baz
     }
 
     #[test]
-    fn actions_for_unknown_state_offer_restart_but_never_start_or_stop() {
+    fn actions_for_unknown_state_offer_no_lifecycle_actions() {
         let actions = actions_for_service("nginx.service", "nginx", None);
         let ids: Vec<&str> = actions.iter().map(|a| a.id.as_str()).collect();
-        // Correct whichever way the unit is currently pointing.
-        assert!(ids.contains(&"systemd:restart:nginx.service"));
+        // State-independent: safe to offer without knowing what the unit is doing.
         assert!(ids.contains(&"systemd:status:nginx.service"));
         assert!(ids.contains(&"systemd:journal:nginx.service"));
         assert!(ids.contains(&"systemd:enable:nginx.service"));
         assert!(ids.contains(&"systemd:disable:nginx.service"));
-        // These would be a guess about current state.
-        assert!(!ids.contains(&"systemd:start:nginx.service"));
-        assert!(!ids.contains(&"systemd:stop:nginx.service"));
-        assert!(!ids.contains(&"systemd:kill:nginx.service"));
-        assert!(!ids.contains(&"systemd:reload:nginx.service"));
+        // Every lifecycle action requires a stable state to be correct.
+        for denied in [
+            "systemd:start:nginx.service",
+            "systemd:stop:nginx.service",
+            "systemd:restart:nginx.service",
+            "systemd:reload:nginx.service",
+            "systemd:kill:nginx.service",
+        ] {
+            assert!(!ids.contains(&denied), "{denied} must not be offered");
+        }
     }
 
     #[test]

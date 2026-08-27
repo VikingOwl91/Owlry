@@ -166,25 +166,21 @@ impl Server {
             FrecencyStore::with_config(config.read().unwrap().providers.frecency_prune_config());
         let provider_manager = Arc::new(RwLock::new(provider_manager));
 
-        // Nothing to keep fresh when the application provider is switched off.
-        let watch_applications = config
-            .read()
-            .map(|cfg| cfg.providers.applications)
-            .unwrap_or(true);
-        let _application_watcher = if !watch_applications {
-            None
-        } else {
-            match crate::application_watcher::ApplicationWatcher::spawn(
-                crate::paths::system_data_dirs(),
-                Arc::clone(&provider_manager),
-            ) {
-                Ok(watcher) => Some(watcher),
-                Err(error) => {
-                    warn!(
-                        "application refresh disabled: failed to watch XDG application directories; use `owlry refresh app` — {error}"
-                    );
-                    None
-                }
+        // Watch unconditionally: `ApplicationProvider` is always registered
+        // (see `new_with_provider_config`), `providers.applications` only gates
+        // filtering in `filter.rs`, and SIGHUP / Lua reload can flip that flag
+        // long after startup. Deciding the watcher's lifetime from boot config
+        // would strand it off for the rest of the daemon's life.
+        let _application_watcher = match crate::application_watcher::ApplicationWatcher::spawn(
+            crate::paths::system_data_dirs(),
+            Arc::clone(&provider_manager),
+        ) {
+            Ok(watcher) => Some(watcher),
+            Err(error) => {
+                warn!(
+                    "application refresh disabled: failed to watch XDG application directories; use `owlry refresh app` — {error}"
+                );
+                None
             }
         };
 

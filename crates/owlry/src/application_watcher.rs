@@ -195,6 +195,47 @@ mod tests {
         ));
     }
 
+    /// End-to-end: a real `.desktop` write in a really-watched directory has to
+    /// reach the refresh callback. The predicate tests above only prove which
+    /// events *would* be selected, not that any event is delivered at all.
+    #[test]
+    fn writing_a_desktop_file_in_a_watched_dir_reaches_the_refresh() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let apps = dir.path().join("applications");
+        std::fs::create_dir(&apps).expect("create applications dir");
+
+        let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
+        let mut watcher = notify::recommended_watcher(move |res| {
+            let _ = tx.send(res);
+        })
+        .expect("watcher");
+        let apps = std::fs::canonicalize(&apps).unwrap_or(apps);
+        watcher
+            .watch(&apps, RecursiveMode::Recursive)
+            .expect("watch applications dir");
+
+        let (done_tx, done_rx) = mpsc::channel();
+        let watched = vec![apps.clone()];
+        let handle = thread::spawn(move || {
+            run_watch_loop_with_refresh(rx, watched, || {
+                let _ = done_tx.send(());
+            });
+        });
+
+        std::fs::write(
+            apps.join("example.desktop"),
+            "[Desktop Entry]\nType=Application\nName=Example\nExec=/bin/true\n",
+        )
+        .expect("write desktop entry");
+
+        done_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("refresh must fire for a .desktop write in a watched directory");
+
+        drop(watcher);
+        let _ = handle.join();
+    }
+
     #[test]
     fn desktop_event_burst_triggers_one_refresh() {
         let (tx, rx) = mpsc::channel();
