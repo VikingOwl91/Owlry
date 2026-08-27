@@ -105,6 +105,13 @@ Reload config from disk without restarting:
 systemctl --user reload owlry.service     # or: kill -HUP $(pidof owlry)
 ```
 
+Refresh provider data without reloading the daemon:
+
+```bash
+owlry refresh          # all static providers
+owlry refresh app      # one provider from `owlry providers`
+```
+
 **2. Socket activation**
 
 ```bash
@@ -147,10 +154,16 @@ owlry -d                       run the daemon (alias: `owlry daemon`)
 owlry dmenu [-p <prompt>]      dmenu mode (reads stdin, prints selection)
 owlry doctor                   diagnostics: config + socket + providers (static/dynamic) + stale files
 owlry providers [<id>]         list providers (or show details for one)
+owlry refresh [<id>]           refresh all static providers (or one by id)
 owlry config validate          parse config, report errors (exit 1) and warnings (exit 2)
 owlry config show              print the resolved effective config as TOML
 owlry migrate-config [--force] TOML → owlry.lua (deterministic; refuses to overwrite without --force)
 ```
+
+Application directories are watched automatically, so `.desktop` file changes
+appear without restarting Owlry. The `uuctl` provider controls systemd user
+units only; its unit discovery is cached, while submenu Start/Stop actions use
+the unit's current runtime state. See [`docs/provider-freshness.md`](docs/provider-freshness.md).
 
 ### Profiles
 

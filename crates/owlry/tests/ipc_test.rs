@@ -109,9 +109,18 @@ fn test_submenu_request() {
 #[test]
 fn test_refresh_request() {
     let req = Request::Refresh {
-        provider: "clipboard".into(),
+        provider: Some("clipboard".into()),
     };
     let json = serde_json::to_string(&req).unwrap();
+    let parsed: Request = serde_json::from_str(&json).unwrap();
+    assert_eq!(req, parsed);
+}
+
+#[test]
+fn test_refresh_all_request_omits_provider() {
+    let req = Request::Refresh { provider: None };
+    let json = serde_json::to_string(&req).unwrap();
+    assert!(!json.contains("provider"));
     let parsed: Request = serde_json::from_str(&json).unwrap();
     assert_eq!(req, parsed);
 }

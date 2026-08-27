@@ -176,6 +176,22 @@ impl CoreClient {
         }
     }
 
+    /// Refresh all static providers, or one provider identified by its id.
+    pub fn refresh(&mut self, provider: Option<&str>) -> io::Result<()> {
+        self.send(&Request::Refresh {
+            provider: provider.map(str::to_string),
+        })?;
+
+        match self.receive()? {
+            Response::Ack => Ok(()),
+            Response::Error { message } => Err(io::Error::other(message)),
+            other => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("unexpected response to Refresh: {other:?}"),
+            )),
+        }
+    }
+
     /// Toggle the launcher window visibility.
     pub fn toggle(&mut self) -> io::Result<()> {
         self.send(&Request::Toggle)?;
@@ -438,6 +454,34 @@ mod tests {
 
         assert_eq!(providers.len(), 1);
         assert_eq!(providers[0].id, "app");
+    }
+
+    #[test]
+    fn refresh_without_provider_omits_provider_field() {
+        let (sock, rx) = mock_server_capturing(Response::Ack);
+        thread::sleep(Duration::from_millis(50));
+
+        let mut client = CoreClient::connect(&sock).expect("connect");
+        client.refresh(None).expect("refresh");
+
+        let request_line = rx.recv_timeout(Duration::from_secs(2)).expect("captured");
+        let parsed: serde_json::Value = serde_json::from_str(&request_line).expect("parse json");
+        assert_eq!(parsed["type"], "refresh");
+        assert!(parsed.get("provider").is_none());
+    }
+
+    #[test]
+    fn refresh_sends_provider_id() {
+        let (sock, rx) = mock_server_capturing(Response::Ack);
+        thread::sleep(Duration::from_millis(50));
+
+        let mut client = CoreClient::connect(&sock).expect("connect");
+        client.refresh(Some("uuctl")).expect("refresh");
+
+        let request_line = rx.recv_timeout(Duration::from_secs(2)).expect("captured");
+        let parsed: serde_json::Value = serde_json::from_str(&request_line).expect("parse json");
+        assert_eq!(parsed["type"], "refresh");
+        assert_eq!(parsed["provider"], "uuctl");
     }
 
     #[test]

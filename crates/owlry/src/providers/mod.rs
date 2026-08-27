@@ -888,22 +888,21 @@ impl ProviderManager {
         descs
     }
 
-    /// Refresh a specific provider by its type_id.
-    pub fn refresh_provider(&mut self, provider_id: &str) {
+    /// Refresh a specific provider by its type_id or a known [`ProviderType`] alias.
+    ///
+    /// Returns the provider's display name when it exists, so callers can
+    /// report an unknown id instead of treating it as a successful no-op.
+    pub fn refresh_provider(&mut self, provider_id: &str) -> Option<&str> {
+        let requested = provider_id.parse::<ProviderType>().ok()?;
         for provider in &mut self.providers {
-            let matches = match provider.provider_type() {
-                ProviderType::Application => provider_id == "app",
-                ProviderType::Command => provider_id == "cmd",
-                ProviderType::Dmenu => provider_id == "dmenu",
-                ProviderType::Plugin(ref id) => provider_id == id,
-            };
-            if matches {
+            if provider.provider_type() == requested {
                 provider.refresh();
                 info!("Refreshed provider '{}'", provider.name());
-                return;
+                return Some(provider.name());
             }
         }
         info!("Provider '{}' not found for refresh", provider_id);
+        None
     }
 
     /// Query a provider for submenu actions.
@@ -1069,12 +1068,25 @@ mod tests {
     fn test_refresh_provider_core() {
         let app = MockProvider::new("Applications", ProviderType::Application);
         let cmd = MockProvider::new("Commands", ProviderType::Command);
-        let providers: Vec<Box<dyn Provider>> = vec![Box::new(app), Box::new(cmd)];
+        let systemd = MockProvider::new("User Units", ProviderType::Plugin("uuctl".into()));
+        let custom = MockProvider::new("Todo", ProviderType::Plugin("todo".into()));
+        let providers: Vec<Box<dyn Provider>> = vec![
+            Box::new(app),
+            Box::new(cmd),
+            Box::new(systemd),
+            Box::new(custom),
+        ];
         let mut pm = ProviderManager::new(providers, Vec::new());
 
-        pm.refresh_provider("app");
-        pm.refresh_provider("cmd");
-        // Just verifying it doesn't panic.
+        assert_eq!(pm.refresh_provider("app"), Some("Applications"));
+        assert_eq!(pm.refresh_provider("application"), Some("Applications"));
+        assert_eq!(pm.refresh_provider("applications"), Some("Applications"));
+        assert_eq!(pm.refresh_provider("cmd"), Some("Commands"));
+        assert_eq!(pm.refresh_provider("command"), Some("Commands"));
+        assert_eq!(pm.refresh_provider("commands"), Some("Commands"));
+        assert_eq!(pm.refresh_provider("uuctl"), Some("User Units"));
+        assert_eq!(pm.refresh_provider("systemd"), Some("User Units"));
+        assert_eq!(pm.refresh_provider("todo"), Some("Todo"));
     }
 
     #[test]
@@ -1084,7 +1096,7 @@ mod tests {
             ProviderType::Application,
         ))];
         let mut pm = ProviderManager::new(providers, Vec::new());
-        pm.refresh_provider("nonexistent");
+        assert!(pm.refresh_provider("nonexistent").is_none());
     }
 
     #[test]
@@ -1406,7 +1418,7 @@ mod tests {
         };
         let pm = ProviderManager::new(vec![Box::new(prov)], Vec::new());
 
-        let result = pm.query_submenu_actions("uuctl", "foo.service:true", "foo");
+        let result = pm.query_submenu_actions("uuctl", "foo.service", "foo");
         assert!(
             result.is_some(),
             "expected Some when provider matches and returns actions"

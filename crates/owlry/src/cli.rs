@@ -22,6 +22,7 @@ EXAMPLES:
     owlry dmenu [-p <prompt>]       dmenu-compatible mode (reads from stdin)
     owlry doctor                    Diagnostics: providers, config, socket
     owlry providers [<id>]          List providers (or show one)
+    owlry refresh [<id>]            Refresh all providers (or one by id)
     owlry config validate           Check config for errors
     owlry config show               Print resolved effective config
     owlry migrate-config [--force]  TOML → owlry.lua (--force to overwrite)
@@ -85,6 +86,12 @@ pub enum Command {
     /// List providers (or show details for one by id).
     Providers {
         /// Provider id (e.g. `app`, `uuctl`, `power`). Optional.
+        id: Option<String>,
+    },
+
+    /// Refresh all static providers, or one provider by id.
+    Refresh {
+        /// Provider id from `owlry providers` (e.g. `app` or `uuctl`).
         id: Option<String>,
     },
 
@@ -234,6 +241,20 @@ mod tests {
         match args.command {
             Some(Command::Providers { id }) => assert_eq!(id.as_deref(), Some("uuctl")),
             other => panic!("expected Providers, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn refresh_subcommand_with_optional_id() {
+        let args = CliArgs::try_parse_from(["owlry", "refresh"]).unwrap();
+        match args.command {
+            Some(Command::Refresh { id }) => assert!(id.is_none()),
+            other => panic!("expected Refresh, got {other:?}"),
+        }
+        let args = CliArgs::try_parse_from(["owlry", "refresh", "uuctl"]).unwrap();
+        match args.command {
+            Some(Command::Refresh { id }) => assert_eq!(id.as_deref(), Some("uuctl")),
+            other => panic!("expected Refresh, got {other:?}"),
         }
     }
 

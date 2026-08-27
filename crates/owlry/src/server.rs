@@ -107,6 +107,9 @@ pub struct Server {
     /// watcher thread; kept alive for the daemon's lifetime.
     #[cfg(feature = "lua")]
     _lua_watcher: Option<crate::lua::ConfigWatcher>,
+    /// Filesystem watcher that refreshes application entries when watched XDG
+    /// directories receive `.desktop` file changes.
+    _application_watcher: Option<crate::application_watcher::ApplicationWatcher>,
 }
 
 impl Server {
@@ -163,6 +166,19 @@ impl Server {
             FrecencyStore::with_config(config.read().unwrap().providers.frecency_prune_config());
         let provider_manager = Arc::new(RwLock::new(provider_manager));
 
+        let _application_watcher = match crate::application_watcher::ApplicationWatcher::spawn(
+            crate::paths::system_data_dirs(),
+            Arc::clone(&provider_manager),
+        ) {
+            Ok(watcher) => Some(watcher),
+            Err(error) => {
+                warn!(
+                    "application refresh disabled: failed to watch XDG application directories; use `owlry refresh app` — {error}"
+                );
+                None
+            }
+        };
+
         // Spawn the hot-reload watcher when an owlry.lua was actually loaded.
         // Disabled silently for TOML/defaults — no Lua → nothing to watch.
         #[cfg(feature = "lua")]
@@ -191,6 +207,7 @@ impl Server {
             provider_manager,
             frecency: Arc::new(RwLock::new(frecency)),
             config,
+            _application_watcher,
             #[cfg(feature = "lua")]
             _lua_ctx: lua_ctx,
             #[cfg(feature = "lua")]
@@ -526,8 +543,18 @@ impl Server {
                         };
                     }
                 };
-                pm_guard.refresh_provider(provider);
-                Response::Ack
+                match provider {
+                    Some(provider) => match pm_guard.refresh_provider(provider) {
+                        Some(_) => Response::Ack,
+                        None => Response::Error {
+                            message: format!("unknown refreshable provider '{provider}'"),
+                        },
+                    },
+                    None => {
+                        pm_guard.refresh_all();
+                        Response::Ack
+                    }
+                }
             }
 
             Request::Toggle => {

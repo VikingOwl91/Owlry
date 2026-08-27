@@ -1,5 +1,6 @@
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
+use std::process::{Command, Output};
 use std::thread;
 
 use owlry::ipc::{Request, Response};
@@ -16,6 +17,22 @@ fn roundtrip(stream: &mut UnixStream, request: &Request) -> Response {
     let mut buf = String::new();
     reader.read_line(&mut buf).unwrap();
     serde_json::from_str(buf.trim()).unwrap()
+}
+
+fn run_refresh_cli(provider: &str) -> Output {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("owlry-test.sock");
+    let server = Server::bind(&sock).unwrap();
+    let handle = thread::spawn(move || server.handle_one_for_testing().unwrap());
+
+    let output = Command::new(env!("CARGO_BIN_EXE_owlry"))
+        .env("OWLRY_SOCKET", &sock)
+        .args(["refresh", provider])
+        .output()
+        .unwrap();
+
+    handle.join().unwrap();
+    output
 }
 
 #[test]
@@ -145,7 +162,7 @@ fn test_server_handles_refresh_request() {
 
     let mut stream = UnixStream::connect(&sock).unwrap();
     let req = Request::Refresh {
-        provider: "app".into(),
+        provider: Some("app".into()),
     };
     let resp = roundtrip(&mut stream, &req);
 
@@ -153,6 +170,53 @@ fn test_server_handles_refresh_request() {
 
     drop(stream);
     handle.join().unwrap();
+}
+
+#[test]
+fn test_refresh_cli_accepts_application_aliases() {
+    for provider in ["app", "application", "applications"] {
+        let output = run_refresh_cli(provider);
+
+        assert!(
+            output.status.success(),
+            "refresh {provider} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout).trim(),
+            format!("Refreshed provider '{provider}'.")
+        );
+    }
+}
+
+#[cfg(feature = "systemd")]
+#[test]
+fn test_refresh_cli_accepts_systemd_aliases() {
+    for provider in ["uuctl", "systemd"] {
+        let output = run_refresh_cli(provider);
+
+        assert!(
+            output.status.success(),
+            "refresh {provider} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout).trim(),
+            format!("Refreshed provider '{provider}'.")
+        );
+    }
+}
+
+#[test]
+fn test_refresh_cli_rejects_unknown_provider() {
+    let output = run_refresh_cli("no-such-provider");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr).trim(),
+        "Refresh failed: unknown refreshable provider 'no-such-provider'"
+    );
 }
 
 #[test]
