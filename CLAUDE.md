@@ -10,7 +10,7 @@ Owlry is a single-binary Wayland launcher. Workspace has exactly one member:
 
 ```
 crates/owlry/                  -- everything
-├── Cargo.toml                 -- one binary + one library, features per provider
+├── Cargo.toml                 -- one binary + one library, features per optional provider
 ├── src/
 │   ├── main.rs                -- subcommand router
 │   ├── cli.rs                 -- clap definitions
@@ -20,6 +20,16 @@ crates/owlry/                  -- everything
 │   ├── backend.rs             -- SearchBackend abstraction
 │   ├── app.rs                 -- GTK4 setup
 │   ├── ui/                    -- GTK widgets
+│   │   ├── main_window.rs     -- MainWindow struct + construction
+│   │   ├── main_window/       -- behavior split out of main_window.rs (2.5)
+│   │   │   ├── launch.rs      -- activation / launching / submenu entry
+│   │   │   ├── navigation.rs  -- key handling, tab + selection movement
+│   │   │   ├── results.rs     -- result list paging
+│   │   │   └── signals.rs     -- widget signal wiring
+│   │   ├── actions.rs         -- contextual actions per result (Right Arrow)
+│   │   ├── provider_meta.rs   -- per-provider icons / labels
+│   │   ├── result_row.rs      -- one row widget
+│   │   └── submenu.rs         -- submenu decode (incl. legacy SUBMENU: path)
 │   ├── config/                -- TOML + Lua config loader; defines LoadedConfig
 │   ├── lua/                   -- Lua config layer (feature: lua)
 │   │   ├── api.rs             -- owlry.set / providers / tabs / provider / theme / profiles
@@ -38,26 +48,28 @@ crates/owlry/                  -- everything
 │   ├── commands.rs            -- subcommand dispatchers (doctor / providers / config / …)
 │   └── providers/             -- ALL providers
 │       ├── mod.rs             -- Provider/DynamicProvider traits, ProviderManager
-│       ├── application.rs     (feature: app)
-│       ├── command.rs         (feature: cmd)
-│       ├── calculator.rs      (feature: calc)
-│       ├── converter/         (feature: conv)
-│       ├── power.rs           (feature: power — pre-v2 name: sys/system)
-│       ├── dmenu.rs           (feature: dmenu)
+│       ├── application.rs     (core, always compiled)
+│       ├── command.rs         (core)
+│       ├── calculator.rs      (core)
+│       ├── converter/         (core)
+│       ├── power.rs           (core — pre-v2 name: sys/system)
+│       ├── dmenu.rs           (core)
 │       ├── clipboard.rs       (feature: clipboard)
 │       ├── emoji.rs           (feature: emoji)
+│       ├── rofimoji.rs        (feature: rofimoji — see docs/rofimoji.md)
 │       ├── ssh.rs             (feature: ssh)
 │       ├── systemd.rs         (feature: systemd — type_id "uuctl")
 │       ├── websearch.rs       (feature: websearch)
 │       └── filesearch.rs      (feature: filesearch)
 ```
 
-There is no `crates/owlry-core`, `owlry-plugin-api`, `owlry-lua`, or `owlry-rune`. They were deleted in the v2 demolition. There is no `~/.config/owlry/plugins/` discovery directory and no `/usr/lib/owlry/plugins/*.so` loading — every "plugin" is a feature-gated module compiled into `owlry`.
+There is no `crates/owlry-core`, `owlry-plugin-api`, `owlry-lua`, or `owlry-rune`. They were deleted in the v2 demolition. There is no `~/.config/owlry/plugins/` discovery directory and no `/usr/lib/owlry/plugins/*.so` loading — every "plugin" is a module compiled into `owlry`, core or feature-gated.
 
 ## Build & development
 
 ```bash
-# Default features (minimal — app, cmd, calc, conv, power, dmenu, systemd)
+# Default features (minimal). App/cmd/calc/conv/power/dmenu are CORE — always
+# compiled, not feature-gated. `default = ["systemd"]` is the only opt-in.
 cargo build
 
 # Full features (matches AUR build) — includes lua + every optional provider
@@ -67,7 +79,7 @@ cargo build --release --features full
 cargo build --features lua
 
 # Tests
-cargo test --features full           # 350+ tests including lua + watcher + migrate
+cargo test --features full           # 450+ tests including lua + watcher + migrate
 cargo test --no-default-features
 
 # Verbose dev logging
@@ -78,9 +90,16 @@ cargo fmt --all
 cargo clippy --features full
 cargo clippy --no-default-features    # must also stay silent
 
+# Full quality gate — what CI runs (.gitea/workflows/ci.yml)
+just verify                           # fmt-check + check + test + audit
+
 # Install locally (sudo)
 just install-local
 ```
+
+The toolchain is pinned in `rust-toolchain.toml` (currently 1.97.1) so
+rustfmt output stays stable across contributors. The AUR clean-chroot build
+ignores it (Arch `rust` + `RUSTUP_TOOLCHAIN=stable`).
 
 The `lua` cargo feature pulls in `mlua` (vendored Lua 5.4), `glob` (for
 `owlry.util.glob`), and `notify` (for hot reload). It's part of the `full`
@@ -111,6 +130,7 @@ owlry -p <prompt>              custom prompt text
 
 owlry daemon                   run the daemon (alias: -d)
 owlry dmenu [-p <prompt>]      dmenu mode (reads stdin, prints selection)
+owlry selector [-p <prompt>]   selector protocol mode (rofimoji et al.)
 owlry doctor                   config + socket + providers status
 owlry providers [<id>]         list providers (or show one)
 owlry config validate          parse config, report errors (1) and warnings (2)
@@ -148,7 +168,7 @@ Implementation notes worth keeping straight:
 
 Two traits in `src/providers/mod.rs`:
 
-- **`Provider`** — static providers (apps, commands, power, bookmarks, clipboard, emoji, ssh, systemd). Populate `self.items` in `refresh()`, return `&self.items` from `items()`. Optional: `prefix()`, `icon()`, `tab_label()`, `search_noun()`, `position()`, `priority()`, `submenu_actions(data)`, `execute_action(command)`.
+- **`Provider`** — static providers (apps, commands, power, clipboard, emoji, rofimoji, ssh, systemd). Populate `self.items` in `refresh()`, return `&self.items` from `items()`. Optional: `prefix()`, `icon()`, `tab_label()`, `search_noun()`, `position()`, `priority()`, `submenu_actions(data)`, `execute_action(command)`.
 - **`DynamicProvider`** — per-keystroke providers (calculator, converter, filesearch, websearch). Generate items in `query(text)`. No `refresh`/`items` cache.
 
 Static provider caches are kept fresh by the application-directory watcher
@@ -156,13 +176,21 @@ Static provider caches are kept fresh by the application-directory watcher
 state when a submenu opens rather than at discovery time. See
 [`docs/provider-freshness.md`](docs/provider-freshness.md).
 
-`ProviderManager::new_with_config` is the canonical registration site. Each provider is gated by both a cargo feature (compile-time) and a config flag in `[providers]` (runtime).
+`ProviderManager::new_with_config` is the canonical registration site. Core providers (app, cmd, calc, conv, power, dmenu) are always compiled and gated only by their `[providers]` config flag; optional ones (clipboard, emoji, rofimoji, filesearch, ssh, systemd, websearch) are gated by both a cargo feature (compile-time) and the config flag (runtime).
 
-## Submenu protocol
+## Result activation (typed since 2.5)
 
-A provider returns items whose `command` field looks like `SUBMENU:<type_id>:<data>`. When the user selects one, the UI parses out `(plugin_id, data)`, sends a `Request::Submenu { plugin_id, data }`, and the daemon routes that to `Provider::submenu_actions(data)` on the matching provider. The systemd provider uses this for service start/stop/restart/enable/disable/status/journal actions.
+`LaunchItem::activation` is an `ItemActivation` enum — `Launch`,
+`Submenu { provider_id, data }`, or `PluginAction { command }` — carried
+typed across provider → IPC (`Request::Submenu` / `Request::PluginAction`)
+→ backend → UI. The old `SUBMENU:<type_id>:<data>` string encoding survives
+only as a decode path in `ui/submenu.rs` and `providers/mod.rs` for older
+peers and script providers; the systemd provider still emits it.
 
-For now the protocol is string-encoded; a typed redesign is on the roadmap.
+`ui/actions.rs` builds the contextual action list opened with Right Arrow on
+a launchable result (open-with, run-in-terminal, file/ssh actions). Plain
+Enter keeps the item's primary activation. Actions are gated on
+`ItemSource::Core` — script (Lua) providers get the primary action only.
 
 ## v2 naming rules
 

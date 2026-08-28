@@ -152,6 +152,7 @@ owlry --profile <name>         launch UI with a named profile
 
 owlry -d                       run the daemon (alias: `owlry daemon`)
 owlry dmenu [-p <prompt>]      dmenu mode (reads stdin, prints selection)
+owlry selector [-p <prompt>]   selector protocol mode (rofimoji and similar integrations)
 owlry doctor                   diagnostics: config + socket + providers (static/dynamic) + stale files
 owlry providers [<id>]         list providers (or show details for one)
 owlry refresh [<id>]           refresh all static providers (or one by id)
@@ -407,6 +408,7 @@ owlry  (single binary)
 ├── default invocation         GTK4 UI client (connects to daemon over socket)
 ├── owlry -d / owlry daemon    IPC daemon (loads providers, listens on the socket)
 ├── owlry dmenu                stdin → selection (no daemon)
+├── owlry selector            selector protocol (rofimoji et al.)
 └── owlry doctor / providers / config   diagnostics & config tools
 
 Daemon:
