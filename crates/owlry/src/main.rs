@@ -58,6 +58,7 @@ fn main() {
         }
         Some(Command::Doctor) => commands::run_doctor(),
         Some(Command::Providers { id }) => commands::run_providers(id),
+        Some(Command::Refresh { id }) => commands::run_refresh(id),
         Some(Command::Config { action }) => commands::run_config(action),
         Some(Command::MigrateConfig { force }) => commands::run_migrate_config(force),
         Some(Command::Dmenu { prompt }) => {

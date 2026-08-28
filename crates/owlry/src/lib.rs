@@ -5,6 +5,7 @@
 //! launch (default) and daemon mode (`-d` / `--daemon`).
 
 pub mod app;
+pub mod application_watcher;
 pub mod backend;
 pub mod cli;
 pub mod client;

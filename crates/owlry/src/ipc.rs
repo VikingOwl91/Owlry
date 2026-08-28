@@ -25,7 +25,8 @@ pub enum Request {
     },
     Providers,
     Refresh {
-        provider: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        provider: Option<String>,
     },
     Toggle,
     Submenu {
@@ -175,7 +176,7 @@ mod tests {
     fn submenu_activation_roundtrips_as_typed_data() {
         let activation = ItemActivation::Submenu {
             provider_id: "uuctl".into(),
-            data: "demo.service:true".into(),
+            data: "demo.service".into(),
         };
         let json = serde_json::to_string(&activation).unwrap();
         assert!(json.contains(r#""kind":"submenu""#));

@@ -237,6 +237,17 @@ pub trait Provider: Send + Sync {
     fn refresh(&mut self);
     fn items(&self) -> &[LaunchItem];
 
+    /// Install a pre-built item list, returning whether the provider took it.
+    ///
+    /// Lets a caller run an expensive scan *outside* the provider lock and
+    /// install the result under a short write lock, the same build-then-swap
+    /// discipline `lua::watcher::apply_loaded_config` uses. Providers that
+    /// cannot build their items independently keep the default and are
+    /// refreshed in place via `refresh()`.
+    fn set_items(&mut self, _items: Vec<LaunchItem>) -> bool {
+        false
+    }
+
     /// Short label for UI tab button (e.g., "Shutdown"). None = use default.
     fn tab_label(&self) -> Option<&str> {
         None
@@ -888,22 +899,42 @@ impl ProviderManager {
         descs
     }
 
-    /// Refresh a specific provider by its type_id.
-    pub fn refresh_provider(&mut self, provider_id: &str) {
+    /// Refresh a specific provider by its type_id or a known [`ProviderType`] alias.
+    ///
+    /// Returns the provider's display name when it exists, so callers can
+    /// report an unknown id instead of treating it as a successful no-op.
+    pub fn refresh_provider(&mut self, provider_id: &str) -> bool {
+        // `ProviderType::from_str` is infallible — an unknown id becomes
+        // `Plugin(id)`, so the loop below is what actually rejects it.
+        let Ok(requested) = provider_id.parse::<ProviderType>() else {
+            return false;
+        };
         for provider in &mut self.providers {
-            let matches = match provider.provider_type() {
-                ProviderType::Application => provider_id == "app",
-                ProviderType::Command => provider_id == "cmd",
-                ProviderType::Dmenu => provider_id == "dmenu",
-                ProviderType::Plugin(ref id) => provider_id == id,
-            };
-            if matches {
+            if provider.provider_type() == requested {
                 provider.refresh();
                 info!("Refreshed provider '{}'", provider.name());
-                return;
+                return true;
             }
         }
         info!("Provider '{}' not found for refresh", provider_id);
+        false
+    }
+
+    /// Install a pre-built item list into one provider, chosen by id or alias.
+    ///
+    /// Returns false when no provider matches or the provider does not accept
+    /// pre-built items. Used by the application watcher so the desktop-entry
+    /// scan runs before the write lock is taken.
+    pub fn install_items(&mut self, provider_id: &str, items: Vec<LaunchItem>) -> bool {
+        let Ok(requested) = provider_id.parse::<ProviderType>() else {
+            return false;
+        };
+        for provider in &mut self.providers {
+            if provider.provider_type() == requested {
+                return provider.set_items(items);
+            }
+        }
+        false
     }
 
     /// Query a provider for submenu actions.
@@ -1069,12 +1100,25 @@ mod tests {
     fn test_refresh_provider_core() {
         let app = MockProvider::new("Applications", ProviderType::Application);
         let cmd = MockProvider::new("Commands", ProviderType::Command);
-        let providers: Vec<Box<dyn Provider>> = vec![Box::new(app), Box::new(cmd)];
+        let systemd = MockProvider::new("User Units", ProviderType::Plugin("uuctl".into()));
+        let custom = MockProvider::new("Todo", ProviderType::Plugin("todo".into()));
+        let providers: Vec<Box<dyn Provider>> = vec![
+            Box::new(app),
+            Box::new(cmd),
+            Box::new(systemd),
+            Box::new(custom),
+        ];
         let mut pm = ProviderManager::new(providers, Vec::new());
 
-        pm.refresh_provider("app");
-        pm.refresh_provider("cmd");
-        // Just verifying it doesn't panic.
+        assert!(pm.refresh_provider("app"));
+        assert!(pm.refresh_provider("application"));
+        assert!(pm.refresh_provider("applications"));
+        assert!(pm.refresh_provider("cmd"));
+        assert!(pm.refresh_provider("command"));
+        assert!(pm.refresh_provider("commands"));
+        assert!(pm.refresh_provider("uuctl"));
+        assert!(pm.refresh_provider("systemd"));
+        assert!(pm.refresh_provider("todo"));
     }
 
     #[test]
@@ -1084,7 +1128,7 @@ mod tests {
             ProviderType::Application,
         ))];
         let mut pm = ProviderManager::new(providers, Vec::new());
-        pm.refresh_provider("nonexistent");
+        assert!(!pm.refresh_provider("nonexistent"));
     }
 
     #[test]
@@ -1406,7 +1450,7 @@ mod tests {
         };
         let pm = ProviderManager::new(vec![Box::new(prov)], Vec::new());
 
-        let result = pm.query_submenu_actions("uuctl", "foo.service:true", "foo");
+        let result = pm.query_submenu_actions("uuctl", "foo.service", "foo");
         assert!(
             result.is_some(),
             "expected Some when provider matches and returns actions"

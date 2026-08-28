@@ -106,6 +106,42 @@ pub fn frecency_file() -> Option<PathBuf> {
 // System directories
 // =============================================================================
 
+/// The XDG-derived application directories only.
+///
+/// `$XDG_DATA_HOME/applications`, each `$XDG_DATA_DIRS` entry, and the two
+/// spec defaults.
+///
+/// A subset of [`system_data_dirs`], excluding the Flatpak/Snap/Nix paths that
+/// are appended unconditionally. Those are only real once their package manager
+/// is installed, and their parents (`/var/lib/...`, `~/.nix-profile/share`,
+/// `/run/current-system/sw/share`) are usually absent too — so they are watched
+/// only when they already exist, never bootstrapped, which would mean watching
+/// `/var/lib`, `$HOME` or `/run`.
+pub fn xdg_application_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut add_dir = |path: PathBuf| {
+        if seen.insert(path.clone()) {
+            dirs.push(path);
+        }
+    };
+
+    if let Some(data) = data_home() {
+        add_dir(data.join("applications"));
+    }
+    let xdg_data_dirs = std::env::var("XDG_DATA_DIRS")
+        .unwrap_or_else(|_| "/usr/local/share:/usr/share".to_string());
+    for dir in xdg_data_dirs.split(':') {
+        if !dir.is_empty() {
+            add_dir(PathBuf::from(dir).join("applications"));
+        }
+    }
+    add_dir(PathBuf::from("/usr/share/applications"));
+    add_dir(PathBuf::from("/usr/local/share/applications"));
+
+    dirs
+}
+
 /// System data directories for applications (XDG_DATA_DIRS)
 ///
 /// Follows the XDG Base Directory Specification:

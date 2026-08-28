@@ -460,6 +460,30 @@ pub fn run_providers(id: Option<String>) -> ! {
     std::process::exit(0);
 }
 
+/// `owlry refresh [<id>]`: refresh every static provider or one provider.
+pub fn run_refresh(id: Option<String>) -> ! {
+    let sock = paths::socket_path();
+    let mut client = match CoreClient::connect(&sock) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Failed to reach daemon socket {}: {}", sock.display(), e);
+            eprintln!("Hint: start the daemon with `owlry -d`.");
+            std::process::exit(1);
+        }
+    };
+
+    if let Err(e) = client.refresh(id.as_deref()) {
+        eprintln!("Refresh failed: {e}");
+        std::process::exit(1);
+    }
+
+    match id {
+        Some(id) => println!("Refreshed provider '{id}'."),
+        None => println!("Refreshed all static providers."),
+    }
+    std::process::exit(0);
+}
+
 fn print_provider_list(out: &mut impl Write, list: &[ProviderDesc]) {
     for p in list {
         let prefix = p.prefix.as_deref().unwrap_or("-");

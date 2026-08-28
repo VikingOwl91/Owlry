@@ -5,7 +5,15 @@
 //! and config back-compat.
 
 use super::{ItemActivation, ItemSource, LaunchItem, Provider, ProviderType};
-use std::process::Command;
+use log::warn;
+use std::io::{self, Read};
+use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
+
+/// Upper bound on the `systemctl --user is-active` call made while building a
+/// submenu. It runs on the daemon's request path, so a wedged D-Bus must not
+/// block it indefinitely.
+const STATE_QUERY_TIMEOUT: Duration = Duration::from_secs(2);
 
 const TYPE_ID: &str = "uuctl";
 
@@ -68,7 +76,7 @@ impl SystemdProvider {
                 format!("{} {} ({})", status_icon, description, sub_state)
             };
 
-            let submenu_data = format!("{}:{}", unit_name, is_active);
+            let submenu_data = unit_name.to_string();
 
             let icon = if is_active {
                 "emblem-ok-symbolic"
@@ -97,6 +105,76 @@ impl SystemdProvider {
 
         items
     }
+
+    /// Run `systemctl --user is-active` with a deadline.
+    ///
+    /// `std::process` has no timeout, and this runs on the request path, so
+    /// poll `try_wait` and kill the child if it overruns.
+    fn is_active_output(unit_name: &str) -> io::Result<Output> {
+        let mut child = Command::new("systemctl")
+            .args(["--user", "is-active", unit_name])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+
+        let deadline = Instant::now() + STATE_QUERY_TIMEOUT;
+        loop {
+            if let Some(status) = child.try_wait()? {
+                let mut stdout = Vec::new();
+                let mut stderr = Vec::new();
+                if let Some(mut pipe) = child.stdout.take() {
+                    pipe.read_to_end(&mut stdout)?;
+                }
+                if let Some(mut pipe) = child.stderr.take() {
+                    pipe.read_to_end(&mut stderr)?;
+                }
+                return Ok(Output {
+                    status,
+                    stdout,
+                    stderr,
+                });
+            }
+            if Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    format!("`systemctl --user is-active {unit_name}` timed out"),
+                ));
+            }
+            // ponytail: 20ms poll. is-active answers in single-digit ms; a
+            // condvar would buy nothing at this call rate.
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    fn service_is_active(unit_name: &str) -> Option<bool> {
+        match Self::is_active_output(unit_name) {
+            Ok(output) => {
+                if let Some(is_active) = classify_active_state(
+                    output.status.success(),
+                    &String::from_utf8_lossy(&output.stdout),
+                ) {
+                    return Some(is_active);
+                }
+                warn!(
+                    "systemd provider: failed to resolve runtime state for user unit '{}': status {}, stdout '{}', stderr '{}'",
+                    unit_name,
+                    output.status,
+                    String::from_utf8_lossy(&output.stdout).trim(),
+                    String::from_utf8_lossy(&output.stderr).trim()
+                );
+                None
+            }
+            Err(error) => {
+                warn!(
+                    "systemd provider: failed to resolve runtime state for user unit '{}': {}",
+                    unit_name, error
+                );
+                None
+            }
+        }
+    }
 }
 
 impl Provider for SystemdProvider {
@@ -112,6 +190,9 @@ impl Provider for SystemdProvider {
         self.items.clear();
 
         if !Self::systemctl_available() {
+            warn!(
+                "systemd provider: `systemctl --user` is unavailable; user units will remain empty until `owlry refresh uuctl` succeeds"
+            );
             return;
         }
 
@@ -127,7 +208,18 @@ impl Provider for SystemdProvider {
             .output()
         {
             Ok(o) if o.status.success() => o,
-            _ => return,
+            Ok(o) => {
+                warn!(
+                    "systemd provider: `systemctl --user list-units` failed with status {}: {}",
+                    o.status,
+                    String::from_utf8_lossy(&o.stderr).trim()
+                );
+                return;
+            }
+            Err(error) => {
+                warn!("systemd provider: failed to run `systemctl --user list-units`: {error}");
+                return;
+            }
         };
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -155,16 +247,29 @@ impl Provider for SystemdProvider {
         Some("systemd units")
     }
 
-    /// Submenu data is `<unit_name>:<is_active>` (encoded by `refresh()`).
+    /// Submenu data is the unit name. Its runtime state is queried now instead
+    /// of using the state captured when the discovery cache was refreshed.
     fn submenu_actions(&self, data: &str) -> Vec<LaunchItem> {
-        let parts: Vec<&str> = data.splitn(2, ':').collect();
-        let (unit_name, is_active) = match parts.as_slice() {
-            [unit, active] if !unit.is_empty() => (*unit, *active == "true"),
-            [unit] if !unit.is_empty() => (*unit, false),
-            _ => return Vec::new(),
-        };
+        let unit_name = data.trim();
+        if unit_name.is_empty() || !unit_name.ends_with(".service") {
+            return Vec::new();
+        }
+        // A `None` here means the state is genuinely unknown (transitional
+        // unit, or systemctl unreachable). Show the state-independent actions
+        // rather than an empty menu.
+        let is_active = Self::service_is_active(unit_name);
         let display = clean_display_name(unit_name);
         actions_for_service(unit_name, &display, is_active)
+    }
+}
+
+fn classify_active_state(status_success: bool, stdout: &str) -> Option<bool> {
+    // systemctl exits successfully for some transitional states. Only exact,
+    // stable states are safe inputs for choosing Start or Stop actions.
+    match (status_success, stdout.trim()) {
+        (true, "active") => Some(true),
+        (false, "inactive" | "failed") => Some(false),
+        _ => None,
     }
 }
 
@@ -191,10 +296,17 @@ fn make_action(id: &str, name: &str, command: String, desc: String, icon: &str) 
     }
 }
 
-fn actions_for_service(unit: &str, display: &str, is_active: bool) -> Vec<LaunchItem> {
+/// Build the action list for a unit.
+///
+/// `is_active` is `None` when the runtime state could not be resolved — a
+/// transitional unit (activating/deactivating/reloading) or an unreachable user
+/// bus. Lifecycle actions are selected only from a stable state, so `None`
+/// offers just the state-independent set (Status/Journal/Enable/Disable) built
+/// below; Start, Stop, Restart, Reload and Kill all stay behind a known state.
+fn actions_for_service(unit: &str, display: &str, is_active: Option<bool>) -> Vec<LaunchItem> {
     let mut actions = Vec::new();
 
-    if is_active {
+    if is_active == Some(true) {
         actions.push(make_action(
             &format!("systemd:restart:{}", unit),
             "↻ Restart",
@@ -223,7 +335,7 @@ fn actions_for_service(unit: &str, display: &str, is_active: bool) -> Vec<Launch
             format!("Force kill {}", display),
             "edit-delete",
         ));
-    } else {
+    } else if is_active == Some(false) {
         actions.push(make_action(
             &format!("systemd:start:{}", unit),
             "▶ Start",
@@ -277,7 +389,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_systemctl_output_extracts_services_with_typed_submenu() {
+    fn parse_systemctl_output_extracts_services_with_unit_submenu_data() {
         let output = "
 foo.service                          loaded active running Foo Service
 bar.service                          loaded inactive dead Bar Service
@@ -286,23 +398,22 @@ baz@autostart.service               loaded active running Baz App
         let items = SystemdProvider::parse_systemctl_output(output);
         assert_eq!(items.len(), 3);
 
-        // Active service: typed submenu target with is_active=true.
+        // Cached discovery results pass only the unit; actions resolve state later.
         assert_eq!(items[0].name, "foo");
         assert_eq!(
             items[0].activation,
             ItemActivation::Submenu {
                 provider_id: "uuctl".into(),
-                data: "foo.service:true".into(),
+                data: "foo.service".into(),
             }
         );
 
-        // Inactive service: typed submenu target with is_active=false.
         assert_eq!(items[1].name, "bar");
         assert_eq!(
             items[1].activation,
             ItemActivation::Submenu {
                 provider_id: "uuctl".into(),
-                data: "bar.service:false".into(),
+                data: "bar.service".into(),
             }
         );
 
@@ -332,9 +443,8 @@ baz.service       loaded inactive dead Baz
     }
 
     #[test]
-    fn submenu_actions_for_active_service_includes_restart_stop_not_start() {
-        let p = SystemdProvider::new();
-        let actions = p.submenu_actions("nginx.service:true");
+    fn actions_for_active_service_includes_restart_stop_not_start() {
+        let actions = actions_for_service("nginx.service", "nginx", Some(true));
         let ids: Vec<&str> = actions.iter().map(|a| a.id.as_str()).collect();
         assert!(ids.contains(&"systemd:restart:nginx.service"));
         assert!(ids.contains(&"systemd:stop:nginx.service"));
@@ -343,13 +453,66 @@ baz.service       loaded inactive dead Baz
     }
 
     #[test]
-    fn submenu_actions_for_inactive_service_includes_start_not_stop() {
-        let p = SystemdProvider::new();
-        let actions = p.submenu_actions("nginx.service:false");
+    fn actions_for_inactive_service_includes_start_not_stop() {
+        let actions = actions_for_service("nginx.service", "nginx", Some(false));
         let ids: Vec<&str> = actions.iter().map(|a| a.id.as_str()).collect();
         assert!(ids.contains(&"systemd:start:nginx.service"));
         assert!(ids.contains(&"systemd:status:nginx.service"));
         assert!(!ids.contains(&"systemd:stop:nginx.service"));
+    }
+
+    #[test]
+    fn active_state_classifier_accepts_only_stable_states() {
+        assert_eq!(classify_active_state(true, "active\n"), Some(true));
+        assert_eq!(classify_active_state(false, "inactive\n"), Some(false));
+        assert_eq!(classify_active_state(false, "failed\n"), Some(false));
+
+        for state in [
+            "activating",
+            "deactivating",
+            "reloading",
+            "refreshing",
+            "maintenance",
+            "unknown",
+            "",
+            "Failed to connect to bus",
+        ] {
+            assert_eq!(
+                classify_active_state(false, state),
+                None,
+                "state {state:?} must not select an action set"
+            );
+            assert_eq!(
+                classify_active_state(true, state),
+                None,
+                "successful state {state:?} must not select an action set"
+            );
+        }
+
+        assert_eq!(classify_active_state(false, "active"), None);
+        assert_eq!(classify_active_state(true, "inactive"), None);
+        assert_eq!(classify_active_state(true, "failed"), None);
+    }
+
+    #[test]
+    fn actions_for_unknown_state_offer_no_lifecycle_actions() {
+        let actions = actions_for_service("nginx.service", "nginx", None);
+        let ids: Vec<&str> = actions.iter().map(|a| a.id.as_str()).collect();
+        // State-independent: safe to offer without knowing what the unit is doing.
+        assert!(ids.contains(&"systemd:status:nginx.service"));
+        assert!(ids.contains(&"systemd:journal:nginx.service"));
+        assert!(ids.contains(&"systemd:enable:nginx.service"));
+        assert!(ids.contains(&"systemd:disable:nginx.service"));
+        // Every lifecycle action requires a stable state to be correct.
+        for denied in [
+            "systemd:start:nginx.service",
+            "systemd:stop:nginx.service",
+            "systemd:restart:nginx.service",
+            "systemd:reload:nginx.service",
+            "systemd:kill:nginx.service",
+        ] {
+            assert!(!ids.contains(&denied), "{denied} must not be offered");
+        }
     }
 
     #[test]
@@ -360,9 +523,7 @@ baz.service       loaded inactive dead Baz
 
     #[test]
     fn submenu_actions_terminal_flag_set_on_status_and_journal() {
-        let p = SystemdProvider::new();
-        let actions = p.submenu_actions("test.service:true");
-        for action in &actions {
+        for action in &actions_for_service("test.service", "test", Some(true)) {
             if action.id.contains(":status:") || action.id.contains(":journal:") {
                 assert!(action.terminal, "{} must have terminal=true", action.id);
             }
