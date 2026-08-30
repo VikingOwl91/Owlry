@@ -9,6 +9,13 @@ use crate::providers::ProviderType;
 /// Tracks which providers are enabled and handles prefix-based filtering
 #[derive(Debug, Clone)]
 pub struct ProviderFilter {
+    /// Every provider this launch knows about, in the order the user gave it
+    /// (`general.tabs`, a profile list, or `--providers`). Fixed at
+    /// construction apart from `enable()` appending an unknown provider, so
+    /// tab order can't drift as tabs are toggled at runtime.
+    order: Vec<ProviderType>,
+    /// Which of `order` are currently on. Membership only — `order` owns the
+    /// ordering.
     enabled: HashSet<ProviderType>,
     active_prefix: Option<ProviderType>,
     /// When true, `is_active`/`is_enabled` accept any provider type
@@ -23,6 +30,17 @@ pub struct ParsedQuery {
     pub prefix: Option<ProviderType>,
     pub tag_filter: Option<String>,
     pub query: String,
+}
+
+/// Drop repeats from a user-supplied provider list, keeping the first
+/// occurrence so the given order survives. A duplicate in `general.tabs` or a
+/// profile would otherwise render the same tab twice.
+fn dedup(providers: Vec<ProviderType>) -> Vec<ProviderType> {
+    let mut seen = HashSet::new();
+    providers
+        .into_iter()
+        .filter(|p| seen.insert(p.clone()))
+        .collect()
 }
 
 impl ProviderFilter {
@@ -40,36 +58,38 @@ impl ProviderFilter {
     ) -> Self {
         let accept_all = cli_mode.is_none() && cli_providers.is_none();
 
-        let enabled = if let Some(mode) = cli_mode {
+        let order = if let Some(mode) = cli_mode {
             // --mode overrides everything: single provider
-            HashSet::from([mode])
+            vec![mode]
         } else if let Some(providers) = cli_providers {
-            // --providers overrides config
-            providers.into_iter().collect()
+            // --providers overrides config, in the order given
+            dedup(providers)
         } else {
             // No CLI restriction: accept_all=true, so is_active() returns true for
-            // everything. Build the enabled set only for UI tab display, driven by
-            // general.tabs. Falls back to Application + Command if tabs is empty.
-            let mut set: HashSet<ProviderType> = tabs
-                .iter()
-                .map(|s| Self::mode_string_to_provider_type(s))
-                .collect();
+            // everything. Build the ordered set only for UI tab display, driven
+            // by general.tabs. Falls back to Application + Command if empty.
+            let mut set = dedup(
+                tabs.iter()
+                    .map(|s| Self::mode_string_to_provider_type(s))
+                    .collect(),
+            );
             if set.is_empty() {
                 if config_providers.applications {
-                    set.insert(ProviderType::Application);
+                    set.push(ProviderType::Application);
                 }
                 if config_providers.commands {
-                    set.insert(ProviderType::Command);
+                    set.push(ProviderType::Command);
                 }
                 if set.is_empty() {
-                    set.insert(ProviderType::Application);
+                    set.push(ProviderType::Application);
                 }
             }
             set
         };
 
         let filter = Self {
-            enabled,
+            enabled: order.iter().cloned().collect(),
+            order,
             active_prefix: None,
             accept_all,
         };
@@ -87,6 +107,7 @@ impl ProviderFilter {
     #[allow(dead_code)]
     pub fn apps_only() -> Self {
         Self {
+            order: vec![ProviderType::Application],
             enabled: HashSet::from([ProviderType::Application]),
             active_prefix: None,
             accept_all: false,
@@ -100,7 +121,7 @@ impl ProviderFilter {
             self.enabled.remove(&provider);
             // Ensure at least one provider is always enabled
             if self.enabled.is_empty() {
-                self.enabled.insert(ProviderType::Application);
+                self.enable(ProviderType::Application);
             }
             #[cfg(feature = "dev-logging")]
             debug!(
@@ -110,7 +131,7 @@ impl ProviderFilter {
         } else {
             #[cfg(feature = "dev-logging")]
             let provider_debug = format!("{:?}", provider);
-            self.enabled.insert(provider);
+            self.enable(provider);
             #[cfg(feature = "dev-logging")]
             debug!(
                 "[Filter] Toggled ON {}, enabled: {:?}",
@@ -120,8 +141,12 @@ impl ProviderFilter {
         self.accept_all = false;
     }
 
-    /// Enable a specific provider
+    /// Enable a specific provider. A provider already known keeps its place in
+    /// `order`, so toggling a tab off and back on can't move it.
     pub fn enable(&mut self, provider: ProviderType) {
+        if !self.order.contains(&provider) {
+            self.order.push(provider.clone());
+        }
         self.enabled.insert(provider);
     }
 
@@ -129,14 +154,14 @@ impl ProviderFilter {
     pub fn disable(&mut self, provider: ProviderType) {
         self.enabled.remove(&provider);
         if self.enabled.is_empty() {
-            self.enabled.insert(ProviderType::Application);
+            self.enable(ProviderType::Application);
         }
     }
 
     /// Set to single provider mode
     pub fn set_single_mode(&mut self, provider: ProviderType) {
         self.enabled.clear();
-        self.enabled.insert(provider);
+        self.enable(provider);
         self.accept_all = false;
     }
 
@@ -377,16 +402,18 @@ impl ProviderFilter {
         result
     }
 
-    /// Get enabled providers for UI display (sorted)
+    /// Get enabled providers for UI display, in configured order.
+    ///
+    /// The order is whatever the user wrote in `general.tabs`, a profile list,
+    /// or `--providers` — core and plugin providers alike. Nothing re-sorts it:
+    /// the previous core-first sort collapsed every plugin onto one sort key,
+    /// so their relative order came out of hash iteration and changed per run.
     pub fn enabled_providers(&self) -> Vec<ProviderType> {
-        let mut providers: Vec<_> = self.enabled.iter().cloned().collect();
-        providers.sort_by_key(|p| match p {
-            ProviderType::Application => 0,
-            ProviderType::Command => 1,
-            ProviderType::Dmenu => 2,
-            ProviderType::Plugin(_) => 100, // Plugin providers sort after core
-        });
-        providers
+        self.order
+            .iter()
+            .filter(|p| self.enabled.contains(p))
+            .cloned()
+            .collect()
     }
 
     /// Create a filter from a list of mode name strings.
@@ -398,12 +425,15 @@ impl ProviderFilter {
         if modes.is_empty() {
             return Self::all();
         }
-        let enabled: HashSet<ProviderType> = modes
-            .iter()
-            .map(|s| Self::mode_string_to_provider_type(s))
-            .collect();
+        let order = dedup(
+            modes
+                .iter()
+                .map(|s| Self::mode_string_to_provider_type(s))
+                .collect(),
+        );
         Self {
-            enabled,
+            enabled: order.iter().cloned().collect(),
+            order,
             active_prefix: None,
             accept_all: false,
         }
@@ -418,12 +448,14 @@ impl ProviderFilter {
     ///
     /// The daemon uses this as the default when no modes are specified.
     pub fn all() -> Self {
-        let mut enabled = HashSet::new();
-        enabled.insert(ProviderType::Application);
-        enabled.insert(ProviderType::Command);
-        enabled.insert(ProviderType::Dmenu);
+        let order = vec![
+            ProviderType::Application,
+            ProviderType::Command,
+            ProviderType::Dmenu,
+        ];
         Self {
-            enabled,
+            enabled: order.iter().cloned().collect(),
+            order,
             active_prefix: None,
             accept_all: true,
         }
@@ -554,6 +586,56 @@ mod tests {
         assert_eq!(wire, "smoke");
         let parsed = ProviderType::from_str(&wire).unwrap();
         assert_eq!(parsed, plugin_smoke);
+    }
+
+    #[test]
+    fn tab_order_follows_the_configured_list() {
+        // Plugins used to collapse onto one sort key inside a HashSet, so their
+        // relative order was hash iteration order and varied per process.
+        let tabs: Vec<String> = ["clipboard", "emoji", "app", "rofimoji", "cmd"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+
+        for _ in 0..8 {
+            let filter = ProviderFilter::new(None, None, &ProvidersConfig::default(), &tabs);
+            let order: Vec<String> = filter
+                .enabled_providers()
+                .iter()
+                .map(|p| p.to_string())
+                .collect();
+            assert_eq!(order, tabs, "tab order must match the configured list");
+        }
+    }
+
+    #[test]
+    fn tab_order_survives_a_toggle_round_trip() {
+        let tabs: Vec<String> = ["clipboard", "emoji", "app"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let mut filter = ProviderFilter::new(None, None, &ProvidersConfig::default(), &tabs);
+        let before = filter.enabled_providers();
+
+        let emoji = ProviderType::Plugin("emoji".to_string());
+        filter.toggle(emoji.clone()); // off
+        filter.toggle(emoji); // back on
+
+        assert_eq!(
+            filter.enabled_providers(),
+            before,
+            "toggling a tab off and on must not move it"
+        );
+    }
+
+    #[test]
+    fn duplicate_tabs_render_once() {
+        let tabs: Vec<String> = ["emoji", "app", "emoji"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let filter = ProviderFilter::new(None, None, &ProvidersConfig::default(), &tabs);
+        assert_eq!(filter.enabled_providers().len(), 2);
     }
 
     #[test]
