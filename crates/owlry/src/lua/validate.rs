@@ -141,7 +141,7 @@ pub fn validate(cfg: &LuaConfig) -> ValidationReport {
         let mut profile_names: Vec<&String> = profiles.keys().collect();
         profile_names.sort();
         for name in profile_names {
-            for id in &profiles[name] {
+            for id in &profiles[name].modes {
                 let known = canonical_provider_id(id).is_some() || user_ids.contains(&id.as_str());
                 if !known {
                     report.warnings.push(format!(
@@ -198,7 +198,7 @@ fn is_compiled_in(canonical: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::ThemeColors;
+    use crate::config::{ProfileConfig, ThemeColors};
     use std::collections::HashMap;
 
     fn empty_cfg() -> LuaConfig {
@@ -325,8 +325,14 @@ mod tests {
     #[test]
     fn profile_with_unknown_id_warns_per_id() {
         let mut cfg = empty_cfg();
-        let mut p: HashMap<String, Vec<String>> = HashMap::new();
-        p.insert("dev".into(), vec!["app".into(), "phantom".into()]);
+        let mut p: HashMap<String, ProfileConfig> = HashMap::new();
+        p.insert(
+            "dev".into(),
+            ProfileConfig {
+                modes: vec!["app".into(), "phantom".into()],
+                ..Default::default()
+            },
+        );
         cfg.profiles = Some(p);
         let report = validate(&cfg);
         assert!(

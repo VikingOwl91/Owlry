@@ -89,6 +89,11 @@ mod tests {
         ctx.snapshot()
     }
 
+    fn eval_err(src: &str) -> String {
+        let ctx = LuaContext::new().expect("lua context must build");
+        ctx.eval_str(src).expect_err("script must fail").to_string()
+    }
+
     #[test]
     fn new_context_starts_empty() {
         let ctx = LuaContext::new().expect("must build");
@@ -471,14 +476,53 @@ mod tests {
         let map = s.profiles.expect("profiles must be Some");
         assert_eq!(map.len(), 3);
         assert_eq!(
-            map.get("dev"),
-            Some(&vec![
-                "app".to_string(),
-                "cmd".to_string(),
-                "ssh".to_string()
-            ])
+            map.get("dev").map(|p| p.modes.as_slice()),
+            Some(["app".to_string(), "cmd".to_string(), "ssh".to_string()].as_slice())
         );
-        assert_eq!(map.get("minimal"), Some(&vec!["app".to_string()]));
+        assert_eq!(
+            map.get("minimal").map(|p| p.modes.as_slice()),
+            Some(["app".to_string()].as_slice())
+        );
+    }
+
+    #[test]
+    fn profile_table_form_carries_show_all_tab() {
+        let s = snapshot_after(
+            r#"
+            owlry.profiles {
+              dev    = { "app", "cmd" },
+              picker = { providers = { "clipboard", "emoji" }, show_all_tab = false },
+            }
+            "#,
+        );
+        let map = s.profiles.expect("profiles must be Some");
+
+        let picker = map.get("picker").expect("picker profile");
+        assert_eq!(
+            picker.modes.as_slice(),
+            ["clipboard".to_string(), "emoji".to_string()].as_slice()
+        );
+        assert!(!picker.show_all_tab);
+
+        // The bare-list form must keep working, and default to showing All.
+        let dev = map.get("dev").expect("dev profile");
+        assert_eq!(
+            dev.modes.as_slice(),
+            ["app".to_string(), "cmd".to_string()].as_slice()
+        );
+        assert!(dev.show_all_tab);
+    }
+
+    #[test]
+    fn non_boolean_show_all_tab_is_rejected() {
+        // Lua truthiness would read "false" as true, so the string form has to
+        // be an error rather than silently meaning the opposite.
+        let err =
+            eval_err(r#"owlry.profiles { p = { providers = { "app" }, show_all_tab = "false" } }"#);
+        assert!(
+            err.contains("show_all_tab must be true or false"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
@@ -569,8 +613,8 @@ mod tests {
         let s = snapshot_after(r#"owlry.profiles { dev = { "app", 42 } }"#);
         let map = s.profiles.expect("profiles must be Some");
         assert_eq!(
-            map.get("dev"),
-            Some(&vec!["app".to_string(), "42".to_string()])
+            map.get("dev").map(|p| p.modes.as_slice()),
+            Some(["app".to_string(), "42".to_string()].as_slice())
         );
     }
 }
