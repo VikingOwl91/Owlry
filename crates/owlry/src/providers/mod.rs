@@ -36,7 +36,9 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "dev-logging")]
 use log::debug;
 
-use std::sync::{Arc, RwLock};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::{Duration, Instant};
 
 use crate::config::Config;
 use crate::data::FrecencyStore;
@@ -87,6 +89,13 @@ pub struct ProviderDescriptor {
     pub tab_label: Option<String>,
     pub search_noun: Option<String>,
     pub kind: ProviderKind,
+    /// Cached item count for a static provider; `None` for dynamic ones,
+    /// which have no cache to count. A registered static provider sitting at
+    /// zero is otherwise indistinguishable from a working one.
+    pub item_count: Option<usize>,
+    /// External program the provider needs, and whether it is on `PATH`.
+    /// `None` when the provider does not depend on one.
+    pub backing_program: Option<(String, bool)>,
 }
 
 /// Trust level of a [`LaunchItem`]'s command, used to gate `sh -c` execution.
@@ -286,6 +295,42 @@ pub trait Provider: Send + Sync {
     fn execute_action(&self, _command: &str) -> bool {
         false
     }
+
+    /// Name of the external program this provider needs on `PATH`, if any.
+    ///
+    /// A provider that gates its items on an installed program returns it here
+    /// so the daemon can notice the program appearing or disappearing and
+    /// rebuild the cache. Installing such a program is invisible to the
+    /// application-directory watcher — rofimoji ships no `.desktop` file — and
+    /// the provider would otherwise stay empty until the next
+    /// `owlry refresh <id>` or daemon restart.
+    ///
+    /// Default: `None`, meaning the provider does not depend on one.
+    fn backing_program(&self) -> Option<&str> {
+        None
+    }
+}
+
+/// Whether `program` resolves to an executable file on `PATH`.
+///
+/// A stat per `PATH` entry, short-circuiting on the first hit: about 1µs when
+/// the program is installed and 6µs for a full miss on a 22-entry `PATH`,
+/// against ~170µs to spawn `which`. Cheap enough to call on the query path.
+pub fn on_path(program: &str) -> bool {
+    let Some(path) = std::env::var_os("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&path).any(|dir| {
+        let candidate = dir.join(program);
+        candidate.is_file()
+            && candidate
+                .metadata()
+                .map(|metadata| {
+                    use std::os::unix::fs::PermissionsExt;
+                    metadata.permissions().mode() & 0o111 != 0
+                })
+                .unwrap_or(false)
+    })
 }
 
 /// Trait for built-in providers that produce results per-keystroke.
@@ -341,6 +386,47 @@ pub struct ProviderManager {
     builtin_dynamic: Vec<Box<dyn DynamicProvider>>,
     /// Fuzzy matcher for search.
     matcher: SkimMatcherV2,
+    /// Last known `PATH` presence of each gated provider's backing program,
+    /// keyed by provider id. Only providers returning `Some` from
+    /// [`Provider::backing_program`] appear here.
+    gates: HashMap<String, Mutex<GateState>>,
+}
+
+/// How long a backing-program check is trusted before it is worth another
+/// `PATH` stat. Queries arrive per keystroke, so without this a fast typist
+/// pays the scan on every character for no new information.
+const GATE_RECHECK: Duration = Duration::from_secs(2);
+
+/// Cached answer to "is this provider's backing program installed?".
+#[derive(Debug)]
+struct GateState {
+    program: String,
+    /// Whether the program was on `PATH` as of `checked_at`.
+    available: bool,
+    checked_at: Instant,
+}
+
+/// Seed gate state for every provider that declares a backing program.
+///
+/// The initial check runs here rather than being left unknown, so the first
+/// query after boot only reports a change if one actually happened since.
+fn build_gates(providers: &[Box<dyn Provider>]) -> HashMap<String, Mutex<GateState>> {
+    let now = Instant::now();
+    providers
+        .iter()
+        .filter_map(|p| {
+            let program = p.backing_program()?.to_string();
+            let available = on_path(&program);
+            Some((
+                p.provider_type().to_string(),
+                Mutex::new(GateState {
+                    program,
+                    available,
+                    checked_at: now,
+                }),
+            ))
+        })
+        .collect()
 }
 
 impl ProviderManager {
@@ -353,6 +439,7 @@ impl ProviderManager {
         dynamic: Vec<Box<dyn DynamicProvider>>,
     ) -> Self {
         let mut manager = Self {
+            gates: build_gates(&core_providers),
             providers: core_providers,
             builtin_dynamic: dynamic,
             matcher: SkimMatcherV2::default(),
@@ -471,6 +558,64 @@ impl ProviderManager {
             .any(|p| p.provider_type() == ProviderType::Dmenu)
     }
 
+    /// Provider ids whose backing program has appeared or disappeared since
+    /// the last check.
+    ///
+    /// Takes `&self` so the query path can call it under the read lock it
+    /// already holds; the per-gate `Mutex` is what allows the check timestamp
+    /// to be recorded without a write lock. Each gate is re-checked at most
+    /// once per [`GATE_RECHECK`], and `available` is deliberately *not*
+    /// updated here — [`Self::refresh_gated`] owns that, so a change that is
+    /// detected but never acted on is found again on the next check instead of
+    /// being lost.
+    pub fn stale_gated_providers(&self) -> Vec<String> {
+        let now = Instant::now();
+        let mut stale = Vec::new();
+
+        for (id, gate) in &self.gates {
+            let Ok(mut state) = gate.lock() else {
+                continue;
+            };
+            if now.duration_since(state.checked_at) < GATE_RECHECK {
+                continue;
+            }
+            state.checked_at = now;
+            if on_path(&state.program) != state.available {
+                stale.push(id.clone());
+            }
+        }
+
+        stale
+    }
+
+    /// Rebuild the given providers after their backing program appeared or
+    /// disappeared, and record the new answer.
+    pub fn refresh_gated(&mut self, ids: &[String]) {
+        for id in ids {
+            if !self.refresh_provider(id) {
+                continue;
+            }
+            let Some(gate) = self.gates.get(id) else {
+                continue;
+            };
+            let Ok(mut state) = gate.lock() else {
+                continue;
+            };
+            state.available = on_path(&state.program);
+            state.checked_at = Instant::now();
+            info!(
+                "Provider '{}': backing program '{}' {}; cache rebuilt",
+                id,
+                state.program,
+                if state.available {
+                    "appeared"
+                } else {
+                    "disappeared"
+                }
+            );
+        }
+    }
+
     pub fn refresh_all(&mut self) {
         for provider in &mut self.providers {
             provider.refresh();
@@ -491,6 +636,17 @@ impl ProviderManager {
     pub fn add_provider(&mut self, mut provider: Box<dyn Provider>) {
         provider.refresh();
         info!("Registered provider: {}", provider.name());
+        if let Some(program) = provider.backing_program() {
+            let program = program.to_string();
+            self.gates.insert(
+                provider.provider_type().to_string(),
+                Mutex::new(GateState {
+                    available: on_path(&program),
+                    program,
+                    checked_at: Instant::now(),
+                }),
+            );
+        }
         self.providers.push(provider);
     }
 
@@ -871,6 +1027,10 @@ impl ProviderManager {
                 tab_label: provider.tab_label().map(String::from),
                 search_noun: provider.search_noun().map(String::from),
                 kind: ProviderKind::Static,
+                item_count: Some(provider.items().len()),
+                backing_program: provider
+                    .backing_program()
+                    .map(|program| (program.to_string(), on_path(program))),
             });
         }
 
@@ -893,6 +1053,10 @@ impl ProviderManager {
                 tab_label: provider.tab_label().map(String::from),
                 search_noun: provider.search_noun().map(String::from),
                 kind: ProviderKind::Dynamic,
+                // Dynamic providers build results per query, so there is no
+                // cache to count and no gate to report.
+                item_count: None,
+                backing_program: None,
             });
         }
 
@@ -982,6 +1146,7 @@ mod tests {
         provider_type: ProviderType,
         items: Vec<LaunchItem>,
         refresh_count: usize,
+        backing_program: Option<String>,
     }
 
     impl MockProvider {
@@ -991,7 +1156,13 @@ mod tests {
                 provider_type,
                 items: Vec::new(),
                 refresh_count: 0,
+                backing_program: None,
             }
+        }
+
+        fn gated_on(mut self, program: &str) -> Self {
+            self.backing_program = Some(program.to_string());
+            self
         }
 
         fn with_items(mut self, items: Vec<LaunchItem>) -> Self {
@@ -1015,6 +1186,10 @@ mod tests {
 
         fn items(&self) -> &[LaunchItem] {
             &self.items
+        }
+
+        fn backing_program(&self) -> Option<&str> {
+            self.backing_program.as_deref()
         }
     }
 
@@ -1694,5 +1869,121 @@ mod tests {
         assert_eq!(pm.available_providers().len(), 0);
         assert!(!pm.execute_plugin_action("ANYTHING:foo"));
         assert!(pm.query_submenu_actions("anything", "data", "n").is_none());
+    }
+
+    /// A program name that cannot plausibly exist on PATH, so "absent" is a
+    /// fact rather than an assumption about the test machine.
+    const ABSENT: &str = "owlry-definitely-not-installed-test-binary";
+
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn ungated_providers_are_never_reported_stale() {
+        let pm = ProviderManager::new(
+            vec![Box::new(MockProvider::new(
+                "Plain",
+                ProviderType::Plugin("plain".into()),
+            ))],
+            vec![],
+        );
+        // No backing_program means no gate, so no PATH work and nothing to
+        // report — even once the debounce window has passed.
+        std::thread::sleep(GATE_RECHECK + Duration::from_millis(50));
+        assert!(pm.stale_gated_providers().is_empty());
+    }
+
+    #[test]
+    fn a_gate_agreeing_with_its_cache_is_not_stale() {
+        let pm = ProviderManager::new(
+            vec![Box::new(
+                MockProvider::new("Gated", ProviderType::Plugin("gated".into())).gated_on(ABSENT),
+            )],
+            vec![],
+        );
+        std::thread::sleep(GATE_RECHECK + Duration::from_millis(50));
+        // The program was absent at construction and is absent now.
+        assert!(pm.stale_gated_providers().is_empty());
+    }
+
+    #[test]
+    fn a_gate_is_rechecked_only_once_per_window() {
+        let pm = ProviderManager::new(
+            vec![Box::new(
+                MockProvider::new("Gated", ProviderType::Plugin("gated".into())).gated_on(ABSENT),
+            )],
+            vec![],
+        );
+        // Freshly checked during construction, so an immediate call must not
+        // re-stat PATH. Nothing observable changed either way, but a stale
+        // report here would mean the debounce is not being honoured.
+        assert!(pm.stale_gated_providers().is_empty());
+    }
+
+    /// The only test that mutates `PATH`. Both transitions and the
+    /// not-acted-on case live here rather than in separate tests, because
+    /// `PATH` is process-global and the harness runs tests in parallel — two
+    /// tests swapping it would race and one would lose its directory.
+    #[test]
+    fn a_program_appearing_or_vanishing_drives_the_gate() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let program = "owlry-gate-test-program";
+
+        // Prepend a directory we control, so creating a file in it is the same
+        // event as the user installing the program.
+        let original = std::env::var_os("PATH").unwrap_or_default();
+        let mut entries = vec![dir.path().to_path_buf()];
+        entries.extend(std::env::split_paths(&original));
+        let patched = std::env::join_paths(entries).expect("join PATH");
+        // SAFETY: PATH is only ever extended with a private temp directory
+        // holding one uniquely named file, and restored before returning.
+        unsafe { std::env::set_var("PATH", &patched) };
+
+        let mut pm = ProviderManager::new(
+            vec![Box::new(
+                MockProvider::new("Gated", ProviderType::Plugin("gated".into())).gated_on(program),
+            )],
+            vec![],
+        );
+        assert!(!on_path(program), "program must start absent");
+
+        // ── install ───────────────────────────────────────────────────────
+        let exe = dir.path().join(program);
+        std::fs::write(&exe, b"#!/bin/sh\n").expect("write");
+        let mut perms = std::fs::metadata(&exe).expect("metadata").permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&exe, perms).expect("chmod");
+        assert!(on_path(program), "program must now be on PATH");
+
+        std::thread::sleep(GATE_RECHECK + Duration::from_millis(50));
+        let stale = pm.stale_gated_providers();
+        assert_eq!(stale, vec!["gated".to_string()], "appearance must be seen");
+
+        // Not acted on yet: `available` is refresh_gated's to update, so the
+        // change must still be pending rather than lost.
+        std::thread::sleep(GATE_RECHECK + Duration::from_millis(50));
+        assert_eq!(
+            pm.stale_gated_providers(),
+            vec!["gated".to_string()],
+            "an unacted change must still be pending"
+        );
+
+        pm.refresh_gated(&stale);
+        std::thread::sleep(GATE_RECHECK + Duration::from_millis(50));
+        assert!(
+            pm.stale_gated_providers().is_empty(),
+            "gate must agree again once acted on"
+        );
+
+        // ── remove ────────────────────────────────────────────────────────
+        std::fs::remove_file(&exe).expect("remove");
+        assert!(!on_path(program));
+
+        std::thread::sleep(GATE_RECHECK + Duration::from_millis(50));
+        let stale = pm.stale_gated_providers();
+        assert_eq!(stale, vec!["gated".to_string()], "removal must be seen too");
+        pm.refresh_gated(&stale);
+
+        // SAFETY: restoring what this test replaced.
+        unsafe { std::env::set_var("PATH", original) };
     }
 }

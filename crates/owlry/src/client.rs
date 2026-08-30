@@ -443,6 +443,8 @@ mod tests {
                 tab_label: None,
                 search_noun: None,
                 kind: "static".into(),
+                item_count: None,
+                backing_program: None,
             }],
         };
 

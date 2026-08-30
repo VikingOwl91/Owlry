@@ -90,6 +90,13 @@ pub struct ProviderDesc {
     /// Defaults to "static" when absent (backwards-compatible with old daemons).
     #[serde(default = "default_kind")]
     pub kind: String,
+    /// Cached item count for a static provider. `None` from a dynamic
+    /// provider, and from any daemon older than this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_count: Option<usize>,
+    /// External program the provider needs, and whether it is on `PATH`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backing_program: Option<(String, bool)>,
 }
 
 fn default_kind() -> String {

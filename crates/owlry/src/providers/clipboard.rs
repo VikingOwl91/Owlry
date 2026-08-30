@@ -12,6 +12,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const TYPE_ID: &str = "clipboard";
+/// External program this provider's items come from. Declared to the manager
+/// via `backing_program` so installing or removing it is noticed at query
+/// time; cliphist ships no `.desktop` file, so no watcher sees it.
+const CLIPHIST: &str = "cliphist";
 const PROVIDER_ICON: &str = "edit-paste";
 /// Fallback icon for image entries when the thumbnail can't be decoded.
 const IMAGE_FALLBACK_ICON: &str = "image-x-generic";
@@ -39,11 +43,7 @@ impl ClipboardProvider {
     }
 
     fn has_cliphist() -> bool {
-        Command::new("which")
-            .arg("cliphist")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
+        super::on_path(CLIPHIST)
     }
 
     /// Detect cliphist's binary-image preview and return a clean display name.
@@ -279,6 +279,10 @@ impl Provider for ClipboardProvider {
 
     fn items(&self) -> &[LaunchItem] {
         &self.items
+    }
+
+    fn backing_program(&self) -> Option<&str> {
+        Some(CLIPHIST)
     }
 
     fn prefix(&self) -> Option<&str> {
