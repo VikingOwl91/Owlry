@@ -393,6 +393,8 @@ owlry --profile dev    # uses { app, cmd, ssh } instead of owlry.providers's ful
 
 Profiles override `owlry.providers` for the launch but inherit `owlry.set` / `owlry.theme` / `owlry.tabs`.
 
+The list order is the tab order for that launch, same rule as `owlry.tabs` — `media` above renders `[emoji] [clipboard]`, in that order, every time.
+
 ---
 
 ## 7. Hot reload

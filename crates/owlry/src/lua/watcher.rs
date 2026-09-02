@@ -156,12 +156,24 @@ fn reload(
     }
 
     info!("hot-reload: applied {}", lua_path.display());
-    let _ = notify_rust::Notification::new()
-        .summary("owlry: config reloaded")
-        .body(&format!("Applied changes from {}", lua_path.display()))
-        .icon("emblem-default")
-        .timeout(notify_rust::Timeout::Milliseconds(3_000))
-        .show();
+    show(
+        notify_rust::Notification::new()
+            .summary("owlry: config reloaded")
+            .body(&format!("Applied changes from {}", lua_path.display()))
+            .icon("emblem-default")
+            .timeout(notify_rust::Timeout::Milliseconds(3_000)),
+    );
+}
+
+/// Push a notification to the user's desktop. Compiled out under `cfg(test)`:
+/// the unit tests below drive both reload paths against temp directories, and
+/// an unguarded `show()` puts a "config reload failed" error notification in
+/// front of whoever happens to be logged in while `cargo test` runs.
+fn show(notification: &mut notify_rust::Notification) {
+    #[cfg(not(test))]
+    let _ = notification.show();
+    #[cfg(test)]
+    let _ = notification;
 }
 
 /// Prepare and atomically install a fully resolved daemon configuration.
@@ -211,13 +223,14 @@ fn report_reload_failure(lua_path: &Path, err: &dyn std::error::Error) {
         lua_path.display(),
         chain
     );
-    let _ = notify_rust::Notification::new()
-        .summary("owlry: config reload failed")
-        .body(&format!("{}\n\n{}", lua_path.display(), chain))
-        .icon("dialog-error")
-        .urgency(notify_rust::Urgency::Normal)
-        .timeout(notify_rust::Timeout::Milliseconds(8_000))
-        .show();
+    show(
+        notify_rust::Notification::new()
+            .summary("owlry: config reload failed")
+            .body(&format!("{}\n\n{}", lua_path.display(), chain))
+            .icon("dialog-error")
+            .urgency(notify_rust::Urgency::Normal)
+            .timeout(notify_rust::Timeout::Milliseconds(8_000)),
+    );
 }
 
 /// Render the full error chain (`err: <cause>: <cause>: …`) so mlua's
