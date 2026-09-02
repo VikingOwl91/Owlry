@@ -83,9 +83,16 @@ glob = "0.3"
 # inotify backend is unconditional, so default features are fine.
 notify = "6"
 
+# Experimental Slint frontend (feature: slint-ui). Opt-in only; NOT part of
+# `full`. Default features give the winit backend + FemtoVG renderer, which
+# is the configuration the 2026-08 bake-off measured.
+slint = { version = "1.17", optional = true }
+
 [build-dependencies]
 # GResource compilation for bundled icons
 glib-build-tools = "0.20"
+# Slint .slint compiler (feature: slint-ui)
+slint-build = { version = "1.17", optional = true }
 
 [dev-dependencies]
 tempfile = "3"
@@ -111,6 +118,10 @@ websearch = []
 # (mlua / glob / notify) are unconditionally pulled in to dodge the chroot
 # feature-propagation footgun documented on the mlua line above.
 lua = []
+
+# Experimental Slint UI frontend. Select at runtime with OWLRY_UI=slint;
+# both frontends coexist and GTK stays the default.
+slint-ui = ["dep:slint", "dep:slint-build"]
 
 # Bookmarks deferred for 2.0 alongside the widget providers (D20+).
 # Returns in a later 2.x release with a pure-Rust path that doesn't pull

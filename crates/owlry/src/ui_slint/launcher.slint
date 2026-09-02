@@ -1,0 +1,240 @@
+// Owlry Slint frontend prototype (experimental, feature: slint-ui).
+//
+// Mirrors the GTK MainWindow layout: mode label + tab row, search entry,
+// result list, hint bar. Theme tokens are set from Rust (sourced from the
+// real AppearanceConfig/ThemeColors), so no second config format exists.
+
+import { ListView, LineEdit } from "std-widgets.slint";
+
+export struct RowData {
+    title: string,
+    description: string,
+    badge: string,
+    badge-color: color,
+}
+
+export struct TabData {
+    label: string,
+    active: bool,
+}
+
+export component LauncherWindow inherits Window {
+    // Theme tokens (bound from AppearanceConfig/ThemeColors by the Rust glue)
+    in property <color> window-bg: #1e2028;
+    in property <color> panel-bg: #262933;
+    in property <color> border-color: #3a3f4b;
+    in property <color> text-color: #e6e6e6;
+    in property <color> text-secondary: #9aa0aa;
+    in property <color> accent: #e0a458;
+    in property <color> accent-bright: #f0c080;
+    in property <length> font-size: 14px;
+    in property <length> corner-radius: 12px;
+    in property <length> window-width: 850px;
+    in property <length> window-height: 650px;
+
+    // Window geometry from AppearanceConfig
+    width: root.window-width;
+    height: root.window-height;
+    no-frame: true;
+    background: transparent;
+
+    // UI state
+    in property <string> mode-label: "All";
+    in property <string> placeholder: "Search";
+    in property <[RowData]> rows;
+    in property <int> selected-index: 0;
+    in property <[TabData]> tabs;
+    in property <string> hint-text;
+    in-out property <string> query-text;
+
+    // Events handled by the Rust glue (real backend path)
+    callback query-changed(string);
+    callback activate-at(int);
+    callback open-actions(int);
+    callback select-row(int);
+    callback move-selection(int);
+    callback cycle-tab(int);
+    callback tab-clicked(int);
+    callback dismiss();
+
+    forward-focus: search;
+
+    panel := Rectangle {
+        background: root.window-bg;
+        border-width: 1px;
+        border-color: root.border-color;
+        border-radius: root.corner-radius;
+        clip: true;
+
+        keys := FocusScope {
+            // Capture phase: the focused LineEdit would otherwise consume
+            // Up/Down/Right before they bubble to this FocusScope.
+            capture-key-pressed(event) => {
+                if (event.text == Key.UpArrow) {
+                    root.move-selection(-1);
+                    accept
+                } else if (event.text == Key.DownArrow) {
+                    root.move-selection(1);
+                    accept
+                } else if (event.text == Key.Escape) {
+                    root.dismiss();
+                    accept
+                } else if (event.text == Key.Tab && !event.modifiers.control) {
+                    root.cycle-tab(event.modifiers.shift ? -1 : 1);
+                    accept
+                } else if (event.text == Key.RightArrow && !event.modifiers.control) {
+                    root.open-actions(root.selected-index);
+                    accept
+                } else if (event.modifiers.control && (event.text == "1" || event.text == "2"
+                        || event.text == "3" || event.text == "4" || event.text == "5"
+                        || event.text == "6" || event.text == "7" || event.text == "8"
+                        || event.text == "9")) {
+                    root.tab-clicked(event.text.to-float() - 1);
+                    accept
+                }
+                reject
+            }
+
+            VerticalLayout {
+                padding: 12px;
+                padding-top: 10px;
+                spacing: 8px;
+
+                // Header: mode label + tab buttons
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+
+                    mode := Text {
+                        text: root.mode-label;
+                        color: root.accent;
+                        font-size: root.font-size + 2px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+
+                    Rectangle {}
+
+                    HorizontalLayout {
+                        spacing: 4px;
+                        for tab[i] in root.tabs: Rectangle {
+                            border-width: 1px;
+                            border-radius: 6px;
+                            border-color: tab.active ? root.accent : root.border-color;
+                            background: tab.active ? root.accent.with-alpha(0.25) : transparent;
+                            height: 26px;
+
+                            ta := TouchArea {
+                                clicked => {
+                                    if (!tab.active) {
+                                        root.tab-clicked(i);
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: tab.label;
+                                color: tab.active ? root.accent-bright : root.text-secondary;
+                                font-size: root.font-size - 1px;
+                                vertical-alignment: center;
+                                horizontal-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                search := LineEdit {
+                    placeholder-text: root.placeholder;
+                    text <=> root.query-text;
+                    edited(text) => {
+                        root.query-changed(text);
+                    }
+                    accepted(text) => {
+                        root.activate-at(root.selected-index);
+                    }
+                }
+
+                lv := ListView {
+                    vertical-stretch: 1;
+                    animate viewport-y { duration: 50ms; }
+
+                    for row[i] in root.rows: Rectangle {
+                        height: 54px;
+                        background: i == root.selected-index
+                            ? root.accent.with-alpha(0.18)
+                            : (row-ta.has-hover ? root.panel-bg : transparent);
+
+                        row-ta := TouchArea {
+                            clicked => {
+                                root.select-row(i);
+                            }
+                        }
+
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            spacing: 10px;
+
+                            Rectangle {
+                                width: 26px;
+                                height: 26px;
+                                border-radius: 6px;
+                                background: row.badge-color.with-alpha(0.22);
+                                vertical-stretch: 0;
+                                y: 14px;
+
+                                Text {
+                                    width: parent.width;
+                                    height: parent.height;
+                                    text: row.badge;
+                                    color: row.badge-color;
+                                    font-size: root.font-size - 1px;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                    horizontal-alignment: center;
+                                }
+                            }
+
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 1px;
+
+                                Text {
+                                    text: row.title;
+                                    color: root.text-color;
+                                    font-size: root.font-size;
+                                    overflow: elide;
+                                }
+
+                                Text {
+                                    text: row.description;
+                                    color: root.text-secondary;
+                                    font-size: root.font-size - 2px;
+                                    overflow: elide;
+                                    visible: row.description != "";
+                                }
+                            }
+                        }
+                    }
+                }
+
+                hints := Text {
+                    text: root.hint-text;
+                    color: root.text-secondary;
+                    font-size: root.font-size - 2px;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+    }
+
+    // Keep the selected row inside the viewport (row height 54px).
+    changed selected-index => {
+        if (root.selected-index * 54px < -lv.viewport-y) {
+            lv.viewport-y = -root.selected-index * 54px;
+        }
+        if (root.selected-index * 54px + 54px > -lv.viewport-y + lv.height) {
+            lv.viewport-y = -(root.selected-index * 54px + 54px - lv.height);
+        }
+    }
+}

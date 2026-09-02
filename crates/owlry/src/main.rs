@@ -119,6 +119,13 @@ fn main() {
         warn!("Critical environment variables missing! Items may not load correctly.");
     }
 
+    // Experimental Slint frontend (feature: slint-ui). Selected at runtime via
+    // OWLRY_UI=slint so both frontends coexist; GTK stays the default.
+    #[cfg(feature = "slint-ui")]
+    if std::env::var("OWLRY_UI").as_deref() == Ok("slint") {
+        owlry::ui_slint::run(args);
+    }
+
     let app = OwlryApp::new(args);
     std::process::exit(app.run());
 }

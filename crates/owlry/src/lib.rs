@@ -22,3 +22,5 @@ pub mod providers;
 pub mod server;
 pub mod theme;
 pub mod ui;
+#[cfg(feature = "slint-ui")]
+pub mod ui_slint;

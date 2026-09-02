@@ -200,7 +200,7 @@ impl OwlryApp {
     /// Only built-in providers run locally — dmenu mode is the typical use case.
     /// All other providers belong to the daemon (Phase 1 keeps the daemon as the
     /// primary path).
-    fn create_local_backend(config: &Config) -> SearchBackend {
+    pub(crate) fn create_local_backend(config: &Config) -> SearchBackend {
         use crate::providers::{ApplicationProvider, CommandProvider};
 
         let core_providers: Vec<Box<dyn Provider>> = vec![
@@ -314,7 +314,7 @@ impl OwlryApp {
 /// Returns `None` when no explicit mode selection was made. Only a profile can
 /// drop the All view; `--mode` is single-provider anyway and a bare
 /// `--providers` keeps the default behaviour.
-fn resolve_modes(args: &CliArgs, config: &Config) -> Option<(Vec<String>, bool)> {
+pub(crate) fn resolve_modes(args: &CliArgs, config: &Config) -> Option<(Vec<String>, bool)> {
     if let Some(ref mode) = args.mode {
         return Some((vec![mode.to_string()], true));
     }
