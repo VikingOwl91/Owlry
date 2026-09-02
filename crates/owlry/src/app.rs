@@ -106,7 +106,8 @@ impl OwlryApp {
 
         // Create filter from CLI args, profile, and config
         let resolved_modes = resolve_modes(args, &config.borrow());
-        let filter = if let Some(modes) = resolved_modes {
+        let show_all_tab = resolved_modes.as_ref().map(|(_, s)| *s).unwrap_or(true);
+        let filter = if let Some((modes, _)) = resolved_modes {
             // CLI --mode or --profile specified explicit modes
             let provider_types: Vec<ProviderType> = modes
                 .iter()
@@ -127,6 +128,16 @@ impl OwlryApp {
             let tabs = config.borrow().general.tabs.clone();
             ProviderFilter::new(None, None, &config.borrow().providers, &tabs)
         };
+
+        // A picker profile opens on its first tab rather than the mixed view
+        // it was configured to drop.
+        let mut filter = filter;
+        if !show_all_tab {
+            filter.hide_all_tab();
+            if let Some(first) = filter.enabled_providers().first().cloned() {
+                filter.set_single_mode(first);
+            }
+        }
         let filter = Rc::new(RefCell::new(filter));
         debug!("startup: filter built +{:.1?}", t0.elapsed());
 
@@ -296,17 +307,20 @@ impl OwlryApp {
     }
 }
 
-/// Resolve which modes to enable based on CLI args and config profiles.
+/// Resolve which modes to enable based on CLI args and config profiles,
+/// along with whether the launch keeps the mixed "All" view in its tab cycle.
 ///
 /// Priority: `--mode` > `--profile` > default (all providers from config).
-/// Returns `None` when no explicit mode selection was made.
-fn resolve_modes(args: &CliArgs, config: &Config) -> Option<Vec<String>> {
+/// Returns `None` when no explicit mode selection was made. Only a profile can
+/// drop the All view; `--mode` is single-provider anyway and a bare
+/// `--providers` keeps the default behaviour.
+fn resolve_modes(args: &CliArgs, config: &Config) -> Option<(Vec<String>, bool)> {
     if let Some(ref mode) = args.mode {
-        return Some(vec![mode.to_string()]);
+        return Some((vec![mode.to_string()], true));
     }
     if let Some(ref profile_name) = args.profile {
         if let Some(profile) = config.profiles.get(profile_name) {
-            return Some(profile.modes.clone());
+            return Some((profile.modes.clone(), profile.show_all_tab));
         }
         eprintln!("Unknown profile: {}", profile_name);
         std::process::exit(1);

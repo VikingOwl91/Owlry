@@ -27,6 +27,7 @@ use super::config::{
     KNOWN_SET_KEYS, KNOWN_THEME_KEYS, LuaConfig, LuaProviderSpec, is_valid_provider_id,
 };
 use super::error::LuaConfigError;
+use crate::config::ProfileConfig;
 
 /// Build the `owlry` table, register all functions on it, install it as a
 /// global, and make `require("owlry")` return the same table.
@@ -366,26 +367,69 @@ fn apply_theme_table(cfg: &mut LuaConfig, t: Table) -> mlua::Result<()> {
 /// `owlry.profiles { dev = { "app", "cmd" }, ... }` — captures named
 /// provider-id sets used by `--profile <name>`. Replaces the entire map
 /// on each call (consistent with providers/tabs replace-on-call semantics).
+///
+/// A profile is either a bare list of provider ids, or a table carrying that
+/// list under `providers` plus per-profile options:
+///
+/// ```lua
+/// owlry.profiles {
+///   dev    = { "app", "cmd", "ssh" },
+///   picker = { providers = { "clipboard", "emoji" }, show_all_tab = false },
+/// }
+/// ```
 fn apply_profiles(cfg: &mut LuaConfig, t: Table) -> mlua::Result<()> {
-    let mut profiles: HashMap<String, Vec<String>> = HashMap::new();
+    let mut profiles: HashMap<String, ProfileConfig> = HashMap::new();
     for pair in t.pairs::<String, Table>() {
-        let (name, modes_tbl) = pair.map_err(|e| {
+        let (name, profile_tbl) = pair.map_err(|e| {
             mlua::Error::RuntimeError(format!(
-                "owlry.profiles: every value must be a list of provider ids — {}",
+                "owlry.profiles: every value must be a list of provider ids or a \
+                 table with a `providers` list — {}",
                 e
             ))
         })?;
-        let modes: Vec<String> = modes_tbl
-            .sequence_values::<String>()
-            .collect::<mlua::Result<Vec<_>>>()
-            .map_err(|e| {
-                mlua::Error::RuntimeError(format!(
-                    "owlry.profiles.{}: list entries must be strings — {}",
-                    name, e
-                ))
-            })?;
-        profiles.insert(name, modes);
+        profiles.insert(name.clone(), parse_profile(&name, profile_tbl)?);
     }
     cfg.profiles = Some(profiles);
     Ok(())
+}
+
+/// Decode one profile value: a bare id list, or a table with `providers` and
+/// options. The bare form stays the common case, so it is tried first and an
+/// explicit `providers` key is what switches to the table form.
+fn parse_profile(name: &str, t: Table) -> mlua::Result<ProfileConfig> {
+    let (modes_tbl, show_all_tab) = match t.get::<Option<Table>>("providers")? {
+        Some(list) => {
+            // Matched as a Value rather than read as a bool: mlua would happily
+            // coerce `show_all_tab = "false"` to true by Lua truthiness, which
+            // is the opposite of what the line says.
+            let show_all_tab = match t.get::<Value>("show_all_tab")? {
+                Value::Nil => true,
+                Value::Boolean(b) => b,
+                other => {
+                    return Err(mlua::Error::RuntimeError(format!(
+                        "owlry.profiles.{}: show_all_tab must be true or false, got {}",
+                        name,
+                        other.type_name()
+                    )));
+                }
+            };
+            (list, show_all_tab)
+        }
+        None => (t, true),
+    };
+
+    let modes: Vec<String> = modes_tbl
+        .sequence_values::<String>()
+        .collect::<mlua::Result<Vec<_>>>()
+        .map_err(|e| {
+            mlua::Error::RuntimeError(format!(
+                "owlry.profiles.{}: list entries must be strings — {}",
+                name, e
+            ))
+        })?;
+
+    Ok(ProfileConfig {
+        modes,
+        show_all_tab,
+    })
 }

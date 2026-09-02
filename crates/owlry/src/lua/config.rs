@@ -77,7 +77,7 @@ pub struct LuaConfig {
     /// is passed. `None` = profiles were never set in Lua → keep TOML or
     /// defaults. `Some(map)` replaces the base profiles (consistent with
     /// `providers`/`tabs` replace-on-call semantics).
-    pub profiles: Option<HashMap<String, Vec<String>>>,
+    pub profiles: Option<HashMap<String, ProfileConfig>>,
 }
 
 /// Captured spec from a single `owlry.provider { ... }` call.
@@ -250,17 +250,9 @@ impl LuaConfig {
 
         // ── owlry.profiles { ... } ─────────────────────────────────────
         // Replace base profiles entirely (consistent with providers/tabs
-        // replace-on-call). Profile values become `ProfileConfig { modes }`.
+        // replace-on-call).
         if let Some(profiles) = &self.profiles {
-            cfg.profiles.clear();
-            for (name, modes) in profiles {
-                cfg.profiles.insert(
-                    name.clone(),
-                    ProfileConfig {
-                        modes: modes.clone(),
-                    },
-                );
-            }
+            cfg.profiles.clone_from(profiles);
         }
     }
 }
@@ -619,12 +611,25 @@ mod tests {
             "legacy".into(),
             ProfileConfig {
                 modes: vec!["app".into()],
+                ..Default::default()
             },
         );
 
-        let mut profiles: HashMap<String, Vec<String>> = HashMap::new();
-        profiles.insert("dev".into(), vec!["app".into(), "cmd".into(), "ssh".into()]);
-        profiles.insert("media".into(), vec!["emoji".into(), "clipboard".into()]);
+        let mut profiles: HashMap<String, ProfileConfig> = HashMap::new();
+        profiles.insert(
+            "dev".into(),
+            ProfileConfig {
+                modes: vec!["app".into(), "cmd".into(), "ssh".into()],
+                ..Default::default()
+            },
+        );
+        profiles.insert(
+            "media".into(),
+            ProfileConfig {
+                modes: vec!["emoji".into(), "clipboard".into()],
+                ..Default::default()
+            },
+        );
         let lc = LuaConfig {
             profiles: Some(profiles),
             ..Default::default()
@@ -653,6 +658,7 @@ mod tests {
             "legacy".into(),
             ProfileConfig {
                 modes: vec!["app".into()],
+                ..Default::default()
             },
         );
         let lc = LuaConfig {
@@ -670,6 +676,7 @@ mod tests {
             "legacy".into(),
             ProfileConfig {
                 modes: vec!["app".into()],
+                ..Default::default()
             },
         );
         let lc = LuaConfig::default(); // profiles: None
