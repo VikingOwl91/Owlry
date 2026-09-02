@@ -393,6 +393,8 @@ impl SearchBackend {
                     tab_label: d.tab_label,
                     search_noun: d.search_noun,
                     kind: d.kind.as_str().to_string(),
+                    item_count: d.item_count,
+                    backing_program: d.backing_program,
                 })
                 .collect(),
         }

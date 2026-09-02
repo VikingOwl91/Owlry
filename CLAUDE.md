@@ -173,8 +173,10 @@ Two traits in `src/providers/mod.rs`:
 
 Static provider caches are kept fresh by the application-directory watcher
 (`application_watcher.rs`) and `owlry refresh [<id>]`; uuctl resolves unit
-state when a submenu opens rather than at discovery time. See
-[`docs/provider-freshness.md`](docs/provider-freshness.md).
+state when a submenu opens rather than at discovery time. Providers gated on an
+external program declare it via `Provider::backing_program` (rofimoji,
+clipboard) and are rebuilt when it appears or disappears, checked per query and
+debounced. See [`docs/provider-freshness.md`](docs/provider-freshness.md).
 
 `ProviderManager::new_with_config` is the canonical registration site. Core providers (app, cmd, calc, conv, power, dmenu) are always compiled and gated only by their `[providers]` config flag; optional ones (clipboard, emoji, rofimoji, filesearch, ssh, systemd, websearch) are gated by both a cargo feature (compile-time) and the config flag (runtime).
 

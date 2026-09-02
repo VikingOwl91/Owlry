@@ -438,6 +438,27 @@ impl Server {
 
     /// Dispatch a single request to the appropriate subsystem and return
     /// the response.
+    ///
+    /// Rebuild any provider whose backing program has appeared or disappeared.
+    ///
+    /// The detection pass runs under a read lock and is a `PATH` stat per gated
+    /// provider, rate-limited inside the manager — about a microsecond, and
+    /// nothing at all most calls. The write lock is taken only when something
+    /// actually changed, which is once per install or removal rather than once
+    /// per keystroke.
+    fn refresh_stale_gates(pm: &Arc<RwLock<ProviderManager>>) {
+        let stale = match pm.read() {
+            Ok(guard) => guard.stale_gated_providers(),
+            Err(_) => return,
+        };
+        if stale.is_empty() {
+            return;
+        }
+        if let Ok(mut guard) = pm.write() {
+            guard.refresh_gated(&stale);
+        }
+    }
+
     fn handle_request(
         request: &Request,
         pm: &Arc<RwLock<ProviderManager>>,
@@ -478,6 +499,12 @@ impl Server {
                     };
                     (cfg.general.max_results, cfg.providers.frecency_weight)
                 };
+
+                // Providers gated on an external program get their PATH check
+                // re-run here, debounced. Nothing else notices such a program
+                // being installed or removed: it need not ship a `.desktop`
+                // file, so the application-directory watcher never fires.
+                Self::refresh_stale_gates(pm);
 
                 let pm_guard = match pm.read() {
                     Ok(g) => g,
@@ -658,6 +685,8 @@ fn descriptor_to_desc(desc: crate::providers::ProviderDescriptor) -> ProviderDes
         tab_label: desc.tab_label,
         search_noun: desc.search_noun,
         kind: desc.kind.as_str().to_string(),
+        item_count: desc.item_count,
+        backing_program: desc.backing_program,
     }
 }
 

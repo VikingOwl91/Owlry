@@ -70,6 +70,8 @@ fn test_providers_response() {
             tab_label: None,
             search_noun: None,
             kind: "static".into(),
+            item_count: None,
+            backing_program: None,
         }],
     };
     let json = serde_json::to_string(&resp).unwrap();

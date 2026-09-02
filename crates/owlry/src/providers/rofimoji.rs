@@ -5,11 +5,14 @@
 //! character sets and for the selector/typer backends installed on the host.
 
 use super::{ItemSource, LaunchItem, Provider, ProviderType};
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 const TYPE_ID: &str = "rofimoji";
+/// External program every item here shells out to. Declared to the manager via
+/// `backing_program`: rofimoji ships no `.desktop` file, so installing it is
+/// invisible to the application-directory watcher.
+const ROFIMOJI: &str = "rofimoji";
 
 /// Selector names accepted by the installed rofimoji CLI (6.7).
 const SELECTORS: &[(&str, &str)] = &[
@@ -50,19 +53,7 @@ impl RofimojiProvider {
     }
 
     fn executable_exists(name: &str) -> bool {
-        std::env::var_os("PATH")
-            .unwrap_or_default()
-            .to_string_lossy()
-            .split(':')
-            .map(Path::new)
-            .map(|dir| dir.join(name))
-            .any(|candidate| {
-                candidate.is_file()
-                    && candidate
-                        .metadata()
-                        .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
-                        .unwrap_or(false)
-            })
+        super::on_path(name)
     }
 
     fn command(
@@ -190,7 +181,7 @@ impl RofimojiProvider {
     }
 
     fn build_items() -> Vec<LaunchItem> {
-        if !Self::executable_exists("rofimoji") {
+        if !Self::executable_exists(ROFIMOJI) {
             return Vec::new();
         }
 
@@ -270,6 +261,10 @@ impl Provider for RofimojiProvider {
 
     fn items(&self) -> &[LaunchItem] {
         &self.items
+    }
+
+    fn backing_program(&self) -> Option<&str> {
+        Some(ROFIMOJI)
     }
 
     fn prefix(&self) -> Option<&str> {

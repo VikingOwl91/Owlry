@@ -490,9 +490,25 @@ fn print_provider_list(out: &mut impl Write, list: &[ProviderDesc]) {
         let kind = format!("[{}]", p.kind);
         let _ = writeln!(
             out,
-            "  {:<12}  {:<22}  {:<9}  prefix={}",
-            p.id, p.name, kind, prefix
+            "  {:<12}  {:<22}  {:<9}  prefix={:<12}  {}",
+            p.id,
+            p.name,
+            kind,
+            prefix,
+            provider_health(p)
         );
+    }
+}
+
+/// One-column health note per provider, so a registered-but-empty provider is
+/// self-diagnosing. Registration alone says nothing: adding `rofimoji` to the
+/// allowlist bumps the count whether or not the program behind it exists.
+fn provider_health(p: &ProviderDesc) -> String {
+    match (&p.backing_program, p.item_count) {
+        (Some((program, false)), _) => format!("MISSING: `{program}` not on PATH"),
+        (_, Some(0)) => "0 items".to_string(),
+        (_, Some(n)) => format!("{n} items"),
+        (_, None) => String::new(),
     }
 }
 
