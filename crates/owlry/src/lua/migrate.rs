@@ -553,14 +553,24 @@ fn emit_profiles_section(out: &mut String, cfg: &Config) {
         let profile = &cfg.profiles[name];
         out.push_str("  ");
         emit_table_key(out, name);
-        out.push_str(" = { ");
+        // Bare list unless the profile carries a non-default option, which
+        // needs the `providers = { … }` table form to hang the option off.
+        out.push_str(if profile.show_all_tab {
+            " = { "
+        } else {
+            " = { providers = { "
+        });
         for (i, m) in profile.modes.iter().enumerate() {
             if i > 0 {
                 out.push_str(", ");
             }
             out.push_str(&lua_string(m));
         }
-        out.push_str(" },\n");
+        out.push_str(if profile.show_all_tab {
+            " },\n"
+        } else {
+            " }, show_all_tab = false },\n"
+        });
     }
     out.push_str("}\n\n");
 }
@@ -769,12 +779,14 @@ mod tests {
             "minimal".into(),
             ProfileConfig {
                 modes: vec!["app".into()],
+                ..Default::default()
             },
         );
         cfg.profiles.insert(
             "dev".into(),
             ProfileConfig {
                 modes: vec!["app".into(), "cmd".into(), "ssh".into()],
+                ..Default::default()
             },
         );
         let lua = generate_lua(&cfg, "", Path::new("/dev/null"));
@@ -795,6 +807,7 @@ mod tests {
             "dev".into(),
             ProfileConfig {
                 modes: vec!["app".into(), "cmd".into()],
+                ..Default::default()
             },
         );
         let a = generate_lua(&cfg, "", Path::new("/x"));
@@ -902,12 +915,14 @@ badge_sys = "#ff8800"
             "my-dev".into(),
             ProfileConfig {
                 modes: vec!["app".into()],
+                ..Default::default()
             },
         );
         cfg.profiles.insert(
             "media center".into(),
             ProfileConfig {
                 modes: vec!["emoji".into()],
+                ..Default::default()
             },
         );
         let lua = generate_lua(&cfg, "", Path::new("/x"));
@@ -930,6 +945,7 @@ badge_sys = "#ff8800"
             "end".into(),
             ProfileConfig {
                 modes: vec!["app".into()],
+                ..Default::default()
             },
         );
         let lua = generate_lua(&cfg, "", Path::new("/x"));
@@ -951,6 +967,7 @@ badge_sys = "#ff8800"
             "dev".into(),
             ProfileConfig {
                 modes: vec!["app".into(), "cmd".into()],
+                ..Default::default()
             },
         );
 

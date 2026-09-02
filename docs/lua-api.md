@@ -184,7 +184,7 @@ owlry.tabs { "app", "cmd", "uuctl" }
 
 - Each entry must be in `owlry.providers` (or be a `owlry.provider {}` user provider). Listing an unknown ID produces a `owlry config validate` warning and is silently dropped at runtime.
 - Order is preserved — `Ctrl+1` targets the first entry, `Ctrl+2` the second, etc.
-- The implicit "All" tab is always present at position 0 (`Ctrl+0`).
+- The implicit "All" view sits at the end of the Tab cycle. A profile can drop it with `show_all_tab = false` (see 6.5); a plain launch always has it.
 - **Default if omitted:** all enabled providers get tabs in the order they were registered.
 - **`owlry.tabs {}` (empty)** is valid: hides all tab buttons. The "All" tab is still there.
 
@@ -394,6 +394,25 @@ owlry --profile dev    # uses { app, cmd, ssh } instead of owlry.providers's ful
 Profiles override `owlry.providers` for the launch but inherit `owlry.set` / `owlry.theme` / `owlry.tabs`.
 
 The list order is the tab order for that launch, same rule as `owlry.tabs` — `media` above renders `[emoji] [clipboard]`, in that order, every time.
+
+**Per-profile options.** A profile can also be a table, with the provider list under `providers`:
+
+```lua
+owlry.profiles {
+  dev    = { "app", "cmd", "ssh" },   -- bare list, still fine
+  picker = {
+    providers    = { "clipboard", "emoji", "rofimoji" },
+    show_all_tab = false,
+  },
+}
+```
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `providers` | `list[string]` | — | Required in the table form. Same as the bare list. |
+| `show_all_tab` | `boolean` | `true` | `false` drops the mixed "All" view from the tab cycle. |
+
+`show_all_tab = false` suits a picker bound to a global key: the launch opens on the first tab rather than the mixed view, and Tab past the last tab wraps back to the first instead of passing through All. Only profiles take this option — a plain `owlry` launch always keeps All.
 
 ---
 

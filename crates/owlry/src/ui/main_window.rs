@@ -133,11 +133,12 @@ impl MainWindow {
             .build();
         filter_tabs.add_css_class("owlry-filter-tabs");
 
-        // Get enabled providers from filter (which respects CLI --mode/--providers or config)
-        // This makes tabs dynamic based on what's actually enabled
-        let enabled = filter.borrow().enabled_providers();
-        let tab_strings: Vec<String> = enabled.iter().map(|p| p.to_string()).collect();
-        let tab_order = Rc::new(enabled);
+        // Tab bar comes from the filter's configured order (CLI --mode/--providers,
+        // a profile, or general.tabs), not from what happens to be enabled right
+        // now: a picker profile opens on a single tab but still shows all of them.
+        let order = filter.borrow().tab_order();
+        let tab_strings: Vec<String> = order.iter().map(|p| p.to_string()).collect();
+        let tab_order = Rc::new(order);
 
         // Fetch provider display metadata from daemon/local backend
         let provider_descs: HashMap<String, ProviderDesc> = backend

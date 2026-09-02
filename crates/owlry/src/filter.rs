@@ -22,6 +22,10 @@ pub struct ProviderFilter {
     /// (unless a prefix narrows the scope). Used by `all()` so that
     /// dynamically loaded plugins are accepted without being listed.
     accept_all: bool,
+    /// Whether Tab-cycling past the last tab passes through the mixed "All"
+    /// view. False for picker-style profiles, where cycling wraps straight
+    /// back to the first tab. Set from `ProfileConfig::show_all_tab`.
+    show_all_tab: bool,
 }
 
 /// Result of parsing a query for prefix syntax
@@ -92,6 +96,7 @@ impl ProviderFilter {
             order,
             active_prefix: None,
             accept_all,
+            show_all_tab: true,
         };
 
         #[cfg(feature = "dev-logging")]
@@ -111,6 +116,7 @@ impl ProviderFilter {
             enabled: HashSet::from([ProviderType::Application]),
             active_prefix: None,
             accept_all: false,
+            show_all_tab: true,
         }
     }
 
@@ -196,6 +202,26 @@ impl ProviderFilter {
     /// Check if provider is in enabled set (ignoring prefix)
     pub fn is_enabled(&self, provider: ProviderType) -> bool {
         self.accept_all || self.enabled.contains(&provider)
+    }
+
+    /// The full tab bar for this launch, in configured order, regardless of
+    /// which tabs are currently on. `enabled_providers()` is the subset that
+    /// is active right now — the tab bar itself must not shrink when a picker
+    /// opens on a single tab.
+    pub fn tab_order(&self) -> Vec<ProviderType> {
+        self.order.clone()
+    }
+
+    /// Whether Tab-cycling should pass through the mixed "All" view.
+    pub fn show_all_tab(&self) -> bool {
+        self.show_all_tab
+    }
+
+    /// Drop the "All" view from the tab cycle. Used by picker-style profiles;
+    /// callers pair this with `set_single_mode` on the first tab so the launch
+    /// opens on a real provider instead of the mixed view.
+    pub fn hide_all_tab(&mut self) {
+        self.show_all_tab = false;
     }
 
     /// Whether this filter accepts all provider types
@@ -436,6 +462,7 @@ impl ProviderFilter {
             order,
             active_prefix: None,
             accept_all: false,
+            show_all_tab: true,
         }
     }
 
@@ -458,6 +485,7 @@ impl ProviderFilter {
             order,
             active_prefix: None,
             accept_all: true,
+            show_all_tab: true,
         }
     }
 
@@ -626,6 +654,29 @@ mod tests {
             before,
             "toggling a tab off and on must not move it"
         );
+    }
+
+    #[test]
+    fn hiding_the_all_tab_keeps_the_full_tab_bar() {
+        // A picker opens on one tab, but the bar still shows every tab it was
+        // configured with — tab_order, not the enabled subset, drives the UI.
+        let providers = vec![
+            ProviderType::Plugin("clipboard".to_string()),
+            ProviderType::Plugin("emoji".to_string()),
+            ProviderType::Plugin("rofimoji".to_string()),
+        ];
+        let mut filter = ProviderFilter::new(
+            None,
+            Some(providers.clone()),
+            &ProvidersConfig::default(),
+            &[],
+        );
+        filter.hide_all_tab();
+        filter.set_single_mode(providers[0].clone());
+
+        assert!(!filter.show_all_tab());
+        assert_eq!(filter.tab_order(), providers);
+        assert_eq!(filter.enabled_providers(), vec![providers[0].clone()]);
     }
 
     #[test]

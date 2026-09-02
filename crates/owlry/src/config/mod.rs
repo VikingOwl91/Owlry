@@ -16,10 +16,25 @@ use crate::paths;
 ///
 /// [profiles.media]
 /// modes = ["media", "emoji"]
+/// show_all_tab = false
 /// ```
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProfileConfig {
     pub modes: Vec<String>,
+    /// Whether Tab-cycling past the last tab lands on the mixed "All" view.
+    /// Picker-style profiles (clipboard / emoji / rofimoji) set this false:
+    /// the launch opens on the first tab and cycling wraps to it directly.
+    #[serde(default = "default_true")]
+    pub show_all_tab: bool,
+}
+
+impl Default for ProfileConfig {
+    fn default() -> Self {
+        Self {
+            modes: Vec::new(),
+            show_all_tab: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

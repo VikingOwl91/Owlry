@@ -409,7 +409,11 @@ impl MainWindow {
         }
 
         let current = filter.borrow().enabled_providers();
-        let all_enabled = current.len() == tab_order.len();
+        let show_all = filter.borrow().show_all_tab();
+        // With the All view hidden the cycle is the tabs alone, so a launch
+        // that is somehow showing several at once still has to collapse to a
+        // single tab rather than being read as "currently All".
+        let all_enabled = show_all && current.len() == tab_order.len();
 
         // Cycle: All -> Provider1 -> Provider2 -> ... -> ProviderN -> All
         // In "All" mode (all providers enabled), we go to first provider (forward) or last (backward)
@@ -436,7 +440,21 @@ impl MainWindow {
                 idx == 0
             };
 
-            if at_boundary {
+            if at_boundary && !show_all {
+                // No All view to fall back to: wrap straight around.
+                let next = if forward {
+                    tab_order[0].clone()
+                } else {
+                    tab_order[tab_order.len() - 1].clone()
+                };
+                {
+                    let mut f = filter.borrow_mut();
+                    f.set_single_mode(next.clone());
+                }
+                for (ptype, button) in buttons.borrow().iter() {
+                    button.set_active(ptype == &next);
+                }
+            } else if at_boundary {
                 // At boundary, go back to "All" mode
                 {
                     let mut f = filter.borrow_mut();
