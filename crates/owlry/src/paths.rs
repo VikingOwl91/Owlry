@@ -334,8 +334,11 @@ pub fn ensure_parent_dir(path: &std::path::Path) -> std::io::Result<()> {
 
 /// Identity of the socket inode we created.
 ///
-/// Cleanup compares this against the path before unlinking, so a shutdown can
-/// never remove a socket that another process has since bound in its place.
+/// Cleanup compares the device and inode before unlinking. This is a
+/// best-effort guard, not an atomic ownership proof: the path can be replaced
+/// between the check and the unlink, and a new file can reuse the same inode
+/// number. The per-socket lock and the private directory are the primary
+/// controls against replacement; same-UID processes are outside the boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SocketIdentity {
     dev: u64,
@@ -354,6 +357,10 @@ impl SocketIdentity {
 
 /// Remove `path` only when it still refers to the inode described by
 /// `identity`. Returns whether a file was removed.
+///
+/// This is not atomic. Callers rely on the per-socket lock and directory
+/// permissions; the check cannot distinguish a replacement that reused the
+/// same inode number.
 pub fn remove_socket_if_owned(path: &Path, identity: SocketIdentity) -> io::Result<bool> {
     let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
