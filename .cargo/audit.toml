@@ -1,0 +1,24 @@
+# RustSec exceptions for the security-hardening branch.
+#
+# Keep this list scoped to exact advisory IDs. Do not replace it with a
+# crate-level ignore, and do not add new IDs without an upstream chain note.
+#
+# Current chain:
+#   owlry -> notify-rust 4.18.0 -> zbus 5.19.0
+#     -> zbus_names 4.3.4
+#     -> zvariant 5.14.0
+#     -> zvariant_derive 5.14.0
+#
+# zbus_names, zvariant and zvariant_derive were folded into zbus 6.0.0.
+# notify-rust 4.18.0 still uses zbus 5.x, so there is no compatible migration
+# without replacing notify-rust. Remove these exceptions when notify-rust
+# moves to zbus 6 or the notification layer is replaced.
+#
+# RUSTSEC-2026-0386 (tokio) is fixed by the lockfile update to tokio 1.53.3
+# and must not be listed here.
+[advisories]
+ignore = [
+    "RUSTSEC-2026-0370", # zvariant: merged into zbus 6.0.0
+    "RUSTSEC-2026-0371", # zbus_names: merged into zbus 6.0.0
+    "RUSTSEC-2026-0372", # zvariant_derive: merged into zbus 6.0.0
+]
