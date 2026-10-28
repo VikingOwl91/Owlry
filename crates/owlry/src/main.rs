@@ -25,9 +25,10 @@ fn try_acquire_lock() -> std::io::Result<Option<std::fs::File>> {
         .mode(0o600)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(&lock_path)?;
-    // The lock file has no content; only the flock matters. Do not truncate or
-    // chmod an existing path, and refuse anything that is not our own regular
-    // file (for example a hardlink planted in a shared runtime directory).
+    // The lock file has no content; only the flock matters. Do not truncate an
+    // existing path, and refuse anything that is not our own regular file (for
+    // example a hardlink planted in a shared runtime directory). Once the
+    // descriptor is validated, tighten the mode through that descriptor.
     let metadata = file.metadata()?;
     if !metadata.is_file() || metadata.uid() != unsafe { libc::geteuid() } || metadata.nlink() != 1
     {

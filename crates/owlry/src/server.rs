@@ -653,7 +653,7 @@ impl Server {
                             | io::ErrorKind::NotConnected
                             | io::ErrorKind::BrokenPipe
                     ) {
-                        break;
+                        return Err(e);
                     }
                     // EMFILE/ENFILE and friends are transient. Avoid a tight
                     // loop that burns a core while the condition persists.

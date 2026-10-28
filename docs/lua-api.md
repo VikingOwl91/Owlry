@@ -259,6 +259,10 @@ whitespace. `command = "xdg-open https://example.com"` still works for simple
 cases, but the string never reaches `sh -c`. For a clipboard item, use
 `program = "wl-copy", stdin = text` instead of `printf ... | wl-copy`.
 
+`stdin` is capped at 64 KiB. It is written without blocking the UI, so a
+program that does not read stdin promptly may receive only part of the payload.
+Use `program` + `args` for larger data or write it to a file first.
+
 **Multiple `owlry.provider` calls accumulate** — each call registers an additional provider. Calling twice with the same `id` overrides the previous registration (warning emitted).
 
 **Lifecycle:** the provider's `items` function is called by the daemon. It runs in the Lua state with the full host API available (see §5). It must return within a reasonable time — slow `items` functions block the UI. If you need to do work that takes >100ms, cache it externally; dynamic per-query Lua providers are not supported yet.
