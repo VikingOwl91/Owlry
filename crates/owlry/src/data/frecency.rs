@@ -166,9 +166,12 @@ impl FrecencyStore {
     fn load_from_path(path: &Path) -> Option<FrecencyData> {
         match std::fs::symlink_metadata(path) {
             Ok(metadata) => {
-                if !metadata.file_type().is_file() || metadata.uid() != unsafe { libc::geteuid() } {
+                if !metadata.file_type().is_file()
+                    || metadata.uid() != unsafe { libc::geteuid() }
+                    || metadata.nlink() != 1
+                {
                     warn!(
-                        "Ignoring frecency file with unsafe type or owner: {:?}",
+                        "Ignoring frecency file with unsafe type, owner, or link count: {:?}",
                         path
                     );
                     return None;
@@ -225,7 +228,10 @@ impl FrecencyStore {
 
         match std::fs::symlink_metadata(&self.path) {
             Ok(metadata) => {
-                if !metadata.file_type().is_file() || metadata.uid() != unsafe { libc::geteuid() } {
+                if !metadata.file_type().is_file()
+                    || metadata.uid() != unsafe { libc::geteuid() }
+                    || metadata.nlink() != 1
+                {
                     return Err(format!(
                         "refusing to write frecency data to unsafe path '{}'",
                         self.path.display()
@@ -488,6 +494,27 @@ mod tests {
         let before = std::fs::read_to_string(&target).unwrap();
         assert!(FrecencyStore::load_from_path(&link).is_none());
         assert_eq!(std::fs::read_to_string(&target).unwrap(), before);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_ignores_a_hardlink() {
+        let dir = std::env::temp_dir().join(format!(
+            "owlry-frecency-hardlink-{}-{}",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("target.json");
+        std::fs::write(
+            &target,
+            r#"{"version":1,"entries":{"secret":{"launch_count":1,"last_launch":"2026-01-01T00:00:00Z"}}}"#,
+        )
+        .unwrap();
+        let link = dir.join("frecency.json");
+        std::fs::hard_link(&target, &link).unwrap();
+
+        assert!(FrecencyStore::load_from_path(&link).is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

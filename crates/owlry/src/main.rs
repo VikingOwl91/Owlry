@@ -14,7 +14,7 @@ use log::debug;
 /// or `None` if another instance already holds the lock.
 /// The returned `File` must be kept alive for the duration of the process.
 fn try_acquire_lock() -> std::io::Result<Option<std::fs::File>> {
-    use std::os::unix::fs::OpenOptionsExt;
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 
     let socket_path = paths::socket_path()?;
     let lock_path = socket_path.with_file_name("owlry-ui.lock");
@@ -22,10 +22,20 @@ fn try_acquire_lock() -> std::io::Result<Option<std::fs::File>> {
     let file = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
-        .truncate(true)
         .mode(0o600)
         .custom_flags(libc::O_NOFOLLOW)
         .open(&lock_path)?;
+    // The lock file has no content; only the flock matters. Do not truncate or
+    // chmod an existing path, and refuse anything that is not our own regular
+    // file (for example a hardlink planted in a shared runtime directory).
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.uid() != unsafe { libc::geteuid() } || metadata.nlink() != 1
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("unsafe UI lock file '{}'", lock_path.display()),
+        ));
+    }
     let fd = file.as_raw_fd();
     let ret = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
     if ret == 0 {

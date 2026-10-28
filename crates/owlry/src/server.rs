@@ -168,6 +168,14 @@ fn acquire_socket_lock(socket_path: &Path) -> io::Result<File> {
                 format!("failed to open socket lock '{}': {e}", lock_path.display()),
             )
         })?;
+    let metadata = lock.metadata()?;
+    if !metadata.is_file() || metadata.uid() != unsafe { libc::geteuid() } || metadata.nlink() != 1
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("unsafe socket lock file '{}'", lock_path.display()),
+        ));
+    }
     lock.try_lock_exclusive().map_err(|e| {
         io::Error::new(
             io::ErrorKind::AlreadyExists,
@@ -199,6 +207,15 @@ fn inherited_listener() -> Option<UnixListener> {
         return None;
     }
     set_cloexec(fd);
+    // Children must not inherit a stale activation environment. The listening
+    // fd itself is CLOEXEC, so this closes the remaining footgun.
+    // SAFETY: this runs during single-threaded daemon startup, before the
+    // accept loop or any helper threads exist.
+    unsafe {
+        std::env::remove_var("LISTEN_FDS");
+        std::env::remove_var("LISTEN_PID");
+        std::env::remove_var("LISTEN_FDNAMES");
+    }
     // SAFETY: systemd passed this file descriptor to this process and the
     // listener takes ownership of it exactly once.
     Some(unsafe { UnixListener::from_raw_fd(fd) })
@@ -620,6 +637,17 @@ impl Server {
                 }
                 Err(e) => {
                     error!("Failed to accept connection: {}", e);
+                    if matches!(
+                        e.kind(),
+                        io::ErrorKind::InvalidInput
+                            | io::ErrorKind::NotConnected
+                            | io::ErrorKind::BrokenPipe
+                    ) {
+                        break;
+                    }
+                    // EMFILE/ENFILE and friends are transient. Avoid a tight
+                    // loop that burns a core while the condition persists.
+                    thread::sleep(Duration::from_millis(50));
                 }
             }
         }
@@ -1097,6 +1125,21 @@ mod tests {
         drop(new_lock);
         drop(new_listener);
         crate::paths::remove_socket_if_owned(&path, new_identity).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bind_socket_refuses_a_hardlinked_lock_file() {
+        let dir = test_dir("hardlink-lock");
+        let path = dir.join("owlry.sock");
+        let lock = dir.join("owlry.sock.lock");
+        let target = dir.join("target");
+        std::fs::write(&target, b"not a lock").unwrap();
+        std::fs::hard_link(&target, &lock).unwrap();
+
+        let err = bind_socket(&path).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(std::fs::read(&target).unwrap(), b"not a lock");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -482,6 +482,33 @@ mod tests {
     }
 
     #[test]
+    fn socket_parent_symlink_is_rejected() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let base = std::env::temp_dir().join(format!(
+            "owlry-symlink-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let real = base.join("real");
+        let link = base.join("link");
+        std::fs::create_dir_all(&real).unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        let prev = std::env::var_os("OWLRY_SOCKET");
+        unsafe { std::env::set_var("OWLRY_SOCKET", link.join("foo.sock")) };
+        let err = socket_path().unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+        match prev {
+            Some(v) => unsafe { std::env::set_var("OWLRY_SOCKET", v) },
+            None => unsafe { std::env::remove_var("OWLRY_SOCKET") },
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
     fn socket_parent_that_is_writable_without_sticky_is_rejected() {
         let _guard = ENV_LOCK.lock().unwrap();
         use std::os::unix::fs::PermissionsExt;
