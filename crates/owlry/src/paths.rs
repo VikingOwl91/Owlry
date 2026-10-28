@@ -287,11 +287,12 @@ pub fn validate_socket_parent(parent: &Path, tighten: bool) -> io::Result<()> {
     }
     let sticky = mode & 0o1000 != 0;
 
-    // A sticky, shared directory such as /tmp is acceptable for an explicit
-    // OWLRY_SOCKET path: other users cannot unlink our socket there, and the
-    // peer-uid check covers the pre-bind case. The default runtime directory
-    // must belong to us.
-    if metadata.uid() != ours && !(!tighten && sticky) {
+    // A root-owned sticky directory such as /tmp is acceptable for an
+    // explicit OWLRY_SOCKET path. Its owner (root) is the only other user who
+    // could unlink our socket, and the peer-uid check covers the pre-bind
+    // case. An ordinary user's sticky directory is not accepted: that user
+    // could remove or squat on our socket.
+    if metadata.uid() != ours && !(!tighten && sticky && metadata.uid() == 0) {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             format!(

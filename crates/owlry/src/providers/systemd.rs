@@ -34,12 +34,7 @@ impl Default for SystemdProvider {
 /// escaped as `\xHH`. Shell metacharacters, whitespace, leading dashes and
 /// path separators are rejected before any command string is built.
 fn is_valid_unit_name(unit: &str) -> bool {
-    if unit.is_empty()
-        || unit.len() > 256
-        || unit.starts_with('-')
-        || unit.contains("..")
-        || !unit.ends_with(".service")
-    {
+    if unit.is_empty() || unit.len() > 256 || unit.starts_with('-') || !unit.ends_with(".service") {
         return false;
     }
 
@@ -488,6 +483,7 @@ baz@autostart.service               loaded active running Baz App
         assert!(is_valid_unit_name("nginx.service"));
         assert!(is_valid_unit_name("foo@bar.service"));
         assert!(is_valid_unit_name("app-org.gnome.Thing@autostart.service"));
+        assert!(is_valid_unit_name("foo..bar.service"));
         assert!(is_valid_unit_name(r"escaped\x2dname.service"));
 
         for bad in [

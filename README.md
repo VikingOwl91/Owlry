@@ -233,6 +233,10 @@ pacman -Ssq | owlry dmenu -p "install" | xargs sudo pacman -S
 | `:rofimoji` (`:chars`, `:kaomoji`) | Emoji + kaomoji picker | `:rofimoji` |
 | `:ssh` | SSH hosts | `:ssh server` |
 | `:uuctl` (`:systemd`) | systemd user units | `:uuctl dbus` |
+| `:web` | Web search | `:web rust docs` |
+| `:file` | Files | `:file config` |
+| `:recent` | Recently launched items (newest first) | `:recent` |
+| `:tag:X` | Filter all results by tag | `:tag:development` |
 
 Typing `program args` launches the program directly, without a shell. To run a
 shell expression (pipes, `&&`, redirects), prefix it with `:shell`:
@@ -242,10 +246,6 @@ shell expression (pipes, `&&`, redirects), prefix it with `:shell`:
 ```
 
 `:cmd` remains a PATH-command filter and does not enable shell syntax.
-| `:web` | Web search | `:web rust docs` |
-| `:file` | Files | `:file config` |
-| `:recent` | Recently launched items (newest first) | `:recent` |
-| `:tag:X` | Filter all results by tag | `:tag:development` |
 
 ### Trigger Prefixes
 

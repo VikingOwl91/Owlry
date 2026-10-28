@@ -183,7 +183,9 @@ pub fn desktop_exec_argv_with(
                 None => {}
             }
         }
-        if !expanded.is_empty() {
+        // Keep an explicitly empty argument, but drop a token made only of
+        // field codes that expanded to nothing.
+        if !expanded.is_empty() || !word.contains('%') {
             argv.push(expanded);
         }
     }
@@ -199,25 +201,115 @@ pub fn desktop_exec_argv_with(
     Ok(argv)
 }
 
-/// Whether an argv vector explicitly invokes a shell's command-string mode.
+/// Whether an argv vector invokes a shell anywhere in the command.
 ///
-/// A desktop entry such as `Exec=sh -c "prog %f"` would otherwise re-enable
-/// shell interpretation after the field code has been expanded. Callers use
-/// this to refuse that shape when the expansion included an untrusted path.
+/// A desktop entry such as `Exec=sh -c "prog %f"`, or a terminal wrapper
+/// around one, would otherwise re-enable shell interpretation after the field
+/// code has been expanded. Any shell token is enough to refuse the handler;
+/// this intentionally also rejects harmless `sh script.sh` handlers, because
+/// the file path is not safe to hand to an interpreter.
 pub fn invokes_shell(argv: &[String]) -> bool {
-    let Some(program) = argv.first() else {
+    let Some(first) = argv.first() else {
         return false;
     };
-    let name = std::path::Path::new(program)
+    let name = basename(first);
+    if is_shell_name(name) {
+        return true;
+    }
+
+    // Wrappers that execute the rest of the vector. Follow them instead of
+    // scanning every argument, which would reject a file literally named
+    // `bash` passed to an editor.
+    if matches!(name, "xargs" | "parallel") {
+        return true;
+    }
+    if matches!(name, "busybox" | "toybox") {
+        return argv.len() > 1 && invokes_shell(&argv[1..]);
+    }
+    if name == "env" {
+        let mut i = 1;
+        while i < argv.len() {
+            let arg = &argv[i];
+            if arg == "-S" || arg.starts_with("--split-string") {
+                return true;
+            }
+            if arg == "-u" || arg == "--unset" {
+                i += 2;
+                continue;
+            }
+            if arg.starts_with('-') || arg.contains('=') {
+                i += 1;
+                continue;
+            }
+            return invokes_shell(&argv[i..]);
+        }
+        return false;
+    }
+    if matches!(name, "sudo" | "doas" | "pkexec") {
+        let mut i = 1;
+        while i < argv.len() {
+            let arg = &argv[i];
+            if arg == "--" {
+                return i + 1 < argv.len() && invokes_shell(&argv[i + 1..]);
+            }
+            if arg.starts_with('-') {
+                if matches!(
+                    arg.as_str(),
+                    "-u" | "-g" | "-h" | "-p" | "-C" | "-T" | "-r" | "-t" | "-U"
+                ) {
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+                continue;
+            }
+            return invokes_shell(&argv[i..]);
+        }
+        return false;
+    }
+    if is_terminal_name(name)
+        && let Some(pos) = argv
+            .iter()
+            .position(|arg| arg == "-e" || arg == "--" || arg == "-x")
+    {
+        return pos + 1 < argv.len() && invokes_shell(&argv[pos + 1..]);
+    }
+
+    false
+}
+
+fn basename(program: &str) -> &str {
+    std::path::Path::new(program)
         .file_name()
         .and_then(|name| name.to_str())
-        .unwrap_or(program);
+        .unwrap_or(program)
+}
+
+fn is_shell_name(name: &str) -> bool {
     matches!(
         name,
         "sh" | "bash" | "dash" | "zsh" | "ksh" | "fish" | "csh" | "tcsh"
-    ) && argv[1..]
-        .iter()
-        .any(|arg| arg == "-c" || arg == "--command")
+    )
+}
+
+fn is_terminal_name(name: &str) -> bool {
+    matches!(
+        name,
+        "xterm"
+            | "kitty"
+            | "foot"
+            | "alacritty"
+            | "wezterm"
+            | "konsole"
+            | "gnome-terminal"
+            | "kgx"
+            | "terminator"
+            | "tilix"
+            | "urxvt"
+            | "st"
+            | "sakura"
+            | "terminology"
+    )
 }
 
 #[cfg(test)]
@@ -308,6 +400,13 @@ mod tests {
     }
 
     #[test]
+    fn desktop_exec_preserves_an_explicit_empty_argument() {
+        let argv =
+            desktop_exec_argv_with(r#"app "" %f"#, Some("/tmp/x"), None, None, None).unwrap();
+        assert_eq!(argv, vec!["app", "", "/tmp/x"]);
+    }
+
+    #[test]
     fn desktop_exec_without_a_path_does_not_append_one() {
         let argv = desktop_exec_argv_with(
             "app %c",
@@ -329,19 +428,34 @@ mod tests {
     }
 
     #[test]
-    fn detects_explicit_shell_command_mode() {
-        assert!(invokes_shell(&[
-            "sh".into(),
-            "-c".into(),
-            "prog /tmp/x".into()
-        ]));
-        assert!(invokes_shell(&[
-            "/bin/bash".into(),
-            "-c".into(),
-            "prog".into()
-        ]));
-        assert!(!invokes_shell(&["sh".into(), "script.sh".into()]));
+    fn detects_shells_even_behind_wrappers_or_combined_flags() {
+        for argv in [
+            vec!["sh", "-c", "prog /tmp/x"],
+            vec!["/bin/bash", "-lc", "prog /tmp/x"],
+            vec!["env", "sh", "-c", "prog /tmp/x"],
+            vec!["env", "-S", "sh -c 'prog /tmp/x'"],
+            vec!["xterm", "-e", "sh", "-c", "prog /tmp/x"],
+            vec!["xterm", "-e", "env", "sh", "-c", "prog /tmp/x"],
+            vec!["sudo", "sh", "-c", "prog /tmp/x"],
+            vec!["sudo", "-u", "root", "sh", "-c", "prog /tmp/x"],
+            vec!["busybox", "sh", "-c", "prog /tmp/x"],
+            vec!["sh", "script.sh"],
+        ] {
+            let argv: Vec<String> = argv.into_iter().map(str::to_string).collect();
+            assert!(invokes_shell(&argv), "missed shell in {argv:?}");
+        }
         assert!(!invokes_shell(&["nvim".into(), "-c".into(), "cmd".into()]));
+        assert!(!invokes_shell(&["app".into(), "/tmp/x".into()]));
+        assert!(
+            !invokes_shell(&["nvim".into(), "/home/user/bash".into()]),
+            "a file named bash is not a shell wrapper"
+        );
+        assert!(!invokes_shell(&[
+            "xterm".into(),
+            "-e".into(),
+            "nvim".into(),
+            "/home/user/bash".into()
+        ]));
     }
 
     #[test]

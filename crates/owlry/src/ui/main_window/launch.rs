@@ -7,6 +7,11 @@ use log::debug;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+/// Structured stdin payloads must fit in the kernel pipe buffer. This keeps
+/// the synchronous write from blocking the GTK thread and avoids a detached
+/// writer that the UI could kill on exit.
+const MAX_STDIN_BYTES: usize = 64 * 1024;
+
 impl MainWindow {
     /// Handle item activation - returns true if window should close
     pub(super) fn handle_item_action(
@@ -234,17 +239,25 @@ impl MainWindow {
         input: &str,
         _config: &Config,
     ) -> std::io::Result<std::process::Child> {
+        if input.len() > MAX_STDIN_BYTES {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "stdin payload is {} bytes; the limit is {MAX_STDIN_BYTES}",
+                    input.len()
+                ),
+            ));
+        }
+
         let mut child = Command::new(program)
             .args(args)
             .stdin(Stdio::piped())
             .spawn()?;
         if let Some(mut stdin) = child.stdin.take() {
-            // Never block the GTK thread on a child that reads slowly or not
-            // at all. The writer thread exits when the pipe closes.
-            let input = input.to_string();
-            std::thread::spawn(move || {
-                let _ = stdin.write_all(input.as_bytes());
-            });
+            // The payload fits in a pipe buffer, so this does not stall the
+            // GTK thread. Writing on a detached thread would let the UI exit
+            // kill the writer before the child received the data.
+            stdin.write_all(input.as_bytes())?;
         }
         Ok(child)
     }
@@ -996,15 +1009,31 @@ mod tests {
     }
 
     #[test]
+    fn stdin_payload_is_capped_before_spawn() {
+        let input = "x".repeat(MAX_STDIN_BYTES + 1);
+        let err = MainWindow::launch_stdin("true", &[], &input, &Config::default()).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
     fn desktop_exec_activation_refuses_shell_command_mode() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("shell.desktop");
-        std::fs::write(
-            &path,
-            "[Desktop Entry]\nName=Shell\nExec=sh -c \"prog %f\"\nTerminal=false\n",
-        )
-        .unwrap();
-        assert!(MainWindow::desktop_exec_activation(path.to_str().unwrap()).is_none());
+        for (name, exec) in [
+            ("shell.desktop", "sh -c \"prog %f\""),
+            ("wrapped.desktop", "env sh -c \"prog %f\""),
+            ("terminal.desktop", "xterm -e bash -lc \"prog %f\""),
+        ] {
+            let path = dir.path().join(name);
+            std::fs::write(
+                &path,
+                format!("[Desktop Entry]\nName=Shell\nExec={exec}\nTerminal=false\n"),
+            )
+            .unwrap();
+            assert!(
+                MainWindow::desktop_exec_activation(path.to_str().unwrap()).is_none(),
+                "accepted shell handler {exec:?}"
+            );
+        }
     }
 
     #[test]

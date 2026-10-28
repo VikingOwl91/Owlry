@@ -98,7 +98,11 @@ pub struct ProviderDescriptor {
     pub backing_program: Option<(String, bool)>,
 }
 
-/// Trust level of a [`LaunchItem`]'s command, used to gate `sh -c` execution.
+/// Provenance of a [`LaunchItem`].
+///
+/// Legacy shell payloads are refused regardless of this value; the source is
+/// used to decide whether contextual actions are safe to offer and to label
+/// results. It is not an execution permission.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ItemSource {
     /// Built-in provider compiled into the binary (trusted).
@@ -241,7 +245,8 @@ pub struct LaunchItem {
     pub activation: ItemActivation,
     /// Tags/categories for filtering (e.g., from .desktop Categories)
     pub tags: Vec<String>,
-    /// Trust level — gates `sh -c` execution for script plugin items.
+    /// Item provenance, used for contextual actions and diagnostics. It does
+    /// not grant shell execution.
     pub source: ItemSource,
 }
 

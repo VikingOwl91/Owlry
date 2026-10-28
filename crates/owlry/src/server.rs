@@ -198,26 +198,49 @@ fn inherited_listener() -> Option<UnixListener> {
     if !fd_is_unix_socket(fd) {
         return None;
     }
+    set_cloexec(fd);
     // SAFETY: systemd passed this file descriptor to this process and the
     // listener takes ownership of it exactly once.
     Some(unsafe { UnixListener::from_raw_fd(fd) })
 }
 
+fn set_cloexec(fd: RawFd) {
+    // SAFETY: `fd` is an open descriptor owned by this process.
+    unsafe {
+        libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC);
+    }
+}
+
+fn listener_matches_path(listener: &UnixListener, socket_path: &Path) -> bool {
+    listener
+        .local_addr()
+        .ok()
+        .and_then(|addr| addr.as_pathname().map(|path| path == socket_path))
+        .unwrap_or(false)
+}
+
 #[cfg(target_os = "linux")]
-fn fd_is_unix_socket(fd: RawFd) -> bool {
-    let mut domain: libc::c_int = 0;
+fn getsockopt_int(fd: RawFd, option: libc::c_int) -> Option<libc::c_int> {
+    let mut value: libc::c_int = 0;
     let mut len = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
-    // SAFETY: `domain` and `len` are valid for writes.
+    // SAFETY: `value` and `len` are valid for writes.
     let ret = unsafe {
         libc::getsockopt(
             fd,
             libc::SOL_SOCKET,
-            libc::SO_DOMAIN,
-            &mut domain as *mut _ as *mut libc::c_void,
+            option,
+            &mut value as *mut _ as *mut libc::c_void,
             &mut len,
         )
     };
-    ret == 0 && domain == libc::AF_UNIX
+    (ret == 0).then_some(value)
+}
+
+#[cfg(target_os = "linux")]
+fn fd_is_unix_socket(fd: RawFd) -> bool {
+    getsockopt_int(fd, libc::SO_DOMAIN) == Some(libc::AF_UNIX)
+        && getsockopt_int(fd, libc::SO_TYPE) == Some(libc::SOCK_STREAM)
+        && getsockopt_int(fd, libc::SO_ACCEPTCONN) == Some(1)
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -232,6 +255,16 @@ fn bind_inherited(
 ) -> io::Result<(File, UnixListener, crate::paths::SocketIdentity)> {
     validate_socket_path(socket_path)?;
     let lock = acquire_socket_lock(socket_path)?;
+
+    if !listener_matches_path(&listener, socket_path) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "systemd passed a listener that is not bound to '{}'",
+                socket_path.display()
+            ),
+        ));
+    }
 
     let metadata = std::fs::symlink_metadata(socket_path)?;
     let ours = unsafe { libc::geteuid() };
@@ -976,11 +1009,35 @@ mod tests {
     }
 
     #[test]
-    fn fd_domain_check_distinguishes_unix_and_tcp() {
-        let (unix, _peer) = UnixStream::pair().unwrap();
-        assert!(fd_is_unix_socket(unix.as_raw_fd()));
+    fn fd_domain_check_accepts_only_listening_unix_streams() {
+        let dir = test_dir("fd-domain");
+        let listener = UnixListener::bind(dir.join("owlry.sock")).unwrap();
+        assert!(fd_is_unix_socket(listener.as_raw_fd()));
+
+        let (connected, _peer) = UnixStream::pair().unwrap();
+        assert!(!fd_is_unix_socket(connected.as_raw_fd()));
+
         let tcp = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         assert!(!fd_is_unix_socket(tcp.as_raw_fd()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn inherited_listener_must_match_the_configured_path() {
+        let dir = test_dir("listener-path");
+        let path = dir.join("owlry.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        assert!(listener_matches_path(&listener, &path));
+        assert!(!listener_matches_path(&listener, &dir.join("other.sock")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn inherited_listener_gets_cloexec() {
+        let (stream, _peer) = UnixStream::pair().unwrap();
+        set_cloexec(stream.as_raw_fd());
+        let flags = unsafe { libc::fcntl(stream.as_raw_fd(), libc::F_GETFD) };
+        assert_ne!(flags & libc::FD_CLOEXEC, 0);
     }
 
     #[test]

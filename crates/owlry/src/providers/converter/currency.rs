@@ -246,11 +246,18 @@ fn parse_ecb_xml(xml: &str) -> Option<CurrencyRates> {
             }
         }
 
-        // Extract rate: <Cube currency='USD' rate='1.0832'/>
+        // Extract rate: <Cube currency='USD' rate='1.0832'/>. A single
+        // malformed line should not discard every rate in the document.
         if trimmed.contains("currency=") && trimmed.contains("rate=") {
-            let currency = extract_attr(trimmed, "currency")?;
-            let rate_str = extract_attr(trimmed, "rate")?;
-            let rate: f64 = rate_str.parse().ok()?;
+            let (Some(currency), Some(rate_str)) = (
+                extract_attr(trimmed, "currency"),
+                extract_attr(trimmed, "rate"),
+            ) else {
+                continue;
+            };
+            let Ok(rate) = rate_str.parse::<f64>() else {
+                continue;
+            };
             rates.insert(currency, rate);
         }
     }
@@ -325,6 +332,19 @@ mod tests {
         assert!((rates.rates["USD"] - 1.0832).abs() < 0.001);
         assert!((rates.rates["GBP"] - 0.8345).abs() < 0.001);
         assert!((rates.rates["JPY"] - 161.94).abs() < 0.01);
+    }
+
+    #[test]
+    fn malformed_rate_line_does_not_discard_the_document() {
+        let xml = "<Cube time='2026-10-27'>\n\
+                   <Cube currency='USD' rate='1.1'/>\n\
+                   <Cube currency='BROKEN' rate='not-a-number'/>\n\
+                   <Cube currency='GBP' rate='0.8'/>\n\
+                   </Cube>";
+        let rates = parse_ecb_xml(xml).unwrap();
+        assert_eq!(rates.rates["USD"], 1.1);
+        assert_eq!(rates.rates["GBP"], 0.8);
+        assert!(!rates.rates.contains_key("BROKEN"));
     }
 
     #[test]
