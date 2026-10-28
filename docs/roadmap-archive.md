@@ -20,8 +20,11 @@ under the user's data directory.
 - IPC clients and the daemon check the peer's effective UID with
   `SO_PEERCRED`. The socket must live in a user-owned, private directory.
 - The silent `/tmp` socket fallback was removed. The runtime directory is
-  0700, the socket is 0600, stale sockets are replaced only when owned by the
-  current user and provably dead, and shutdown removes only the created inode.
+  0700 and the socket is 0600. A stale socket is removed only after the socket
+  type and ownership checks pass and a connection attempt fails. Shutdown
+  performs a best-effort device/inode check before removing the socket path;
+  it is not an atomic guarantee against inode reuse or the check-to-unlink
+  race.
 - Frecency files are created and tightened to 0600 and reject symlinks,
   hardlinks, FIFOs, and foreign owners.
 - `fd` and `locate` receive `--` before the user pattern.

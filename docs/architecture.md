@@ -46,8 +46,11 @@ given, the client and daemon report an error.
 
 Both the client and the server check the peer's effective UID with
 `SO_PEERCRED` and refuse a different user. The daemon also takes a per-socket
-lock so two daemons cannot race the stale-socket check, and it removes only
-the socket inode it created.
+lock so two daemons cannot race the stale-socket check. During shutdown, Owlry
+performs best-effort socket cleanup by comparing the path's current device and
+inode against the identity recorded when the socket was created. A mismatch
+prevents removal, but inode reuse and the check-to-unlink race mean this is not
+an atomic guarantee that a replacement socket can never be removed.
 
 The UI and daemon must run the same version. The activation schema changed in
 2.8.0; restart the daemon after upgrading. See [Upgrading](upgrading.md).
