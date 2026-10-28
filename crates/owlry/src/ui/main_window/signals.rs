@@ -531,9 +531,6 @@ impl MainWindow {
             return None;
         }
 
-        if !CommandProvider::is_direct_command(command) {
-            return None;
-        }
         let argv = crate::command_line::split_words_strict(command).ok()?;
         if !CommandProvider::is_direct_argv(&argv) {
             return None;
@@ -552,6 +549,14 @@ mod tests {
             Some(DirectCommand::Argv(argv)) => {
                 assert_eq!(argv, vec!["printf", "hello"]);
             }
+            other => panic!("expected argv, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn direct_command_text_accepts_a_quoted_executable_path() {
+        match MainWindow::direct_command_text(r#""/bin/echo" hello"#) {
+            Some(DirectCommand::Argv(argv)) => assert_eq!(argv, vec!["/bin/echo", "hello"]),
             other => panic!("expected argv, got {other:?}"),
         }
     }

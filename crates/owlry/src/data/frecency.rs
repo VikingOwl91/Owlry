@@ -161,41 +161,42 @@ impl FrecencyStore {
 
     /// Load frecency data from a regular file owned by the current user.
     ///
-    /// Symlinks and files owned by other users are ignored. An existing file
-    /// with group/other permissions is tightened before its contents are read.
+    /// The file is opened first and validated with fstat, so a path swapped
+    /// between the check and the read cannot redirect the operation. Symlinks,
+    /// hardlinks, FIFOs and foreign-owned files are ignored.
     fn load_from_path(path: &Path) -> Option<FrecencyData> {
-        match std::fs::symlink_metadata(path) {
-            Ok(metadata) => {
-                if !metadata.file_type().is_file()
-                    || metadata.uid() != unsafe { libc::geteuid() }
-                    || metadata.nlink() != 1
-                {
-                    warn!(
-                        "Ignoring frecency file with unsafe type, owner, or link count: {:?}",
-                        path
-                    );
-                    return None;
-                }
-                if let Err(e) = Self::set_private_mode(path) {
-                    warn!("Failed to tighten frecency permissions: {}", e);
-                    return None;
-                }
-            }
+        let mut file = match std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(path)
+        {
+            Ok(file) => file,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 debug!("Frecency file not found at {:?}", path);
                 return None;
             }
             Err(e) => {
-                warn!("Failed to inspect frecency file {:?}: {}", path, e);
+                warn!("Failed to open frecency file {:?}: {}", path, e);
                 return None;
             }
+        };
+
+        let metadata = file.metadata().ok()?;
+        if !metadata.is_file()
+            || metadata.uid() != unsafe { libc::geteuid() }
+            || metadata.nlink() != 1
+        {
+            warn!(
+                "Ignoring frecency file with unsafe type, owner, or link count: {:?}",
+                path
+            );
+            return None;
+        }
+        if let Err(e) = file.set_permissions(std::fs::Permissions::from_mode(0o600)) {
+            warn!("Failed to tighten frecency permissions: {}", e);
+            return None;
         }
 
-        let mut file = std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(path)
-            .ok()?;
         let mut content = String::new();
         file.read_to_string(&mut content).ok()?;
         match serde_json::from_str(&content) {
@@ -207,18 +208,11 @@ impl FrecencyStore {
         }
     }
 
-    fn set_private_mode(path: &Path) -> std::io::Result<()> {
-        let metadata = std::fs::symlink_metadata(path)?;
-        if metadata.permissions().mode() & 0o077 != 0 {
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
-        }
-        Ok(())
-    }
-
     /// Save frecency data to disk.
     ///
-    /// The file is created 0600 and an existing file is tightened in place.
-    /// Symlinks are refused so a permissive path cannot redirect the write.
+    /// The file is created 0600, then validated by fstat and tightened through
+    /// the same descriptor. Symlinks, hardlinks and non-regular files are
+    /// refused before any contents are written.
     pub fn save(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if !self.dirty {
             return Ok(());
@@ -226,30 +220,24 @@ impl FrecencyStore {
 
         paths::ensure_parent_dir(&self.path)?;
 
-        match std::fs::symlink_metadata(&self.path) {
-            Ok(metadata) => {
-                if !metadata.file_type().is_file()
-                    || metadata.uid() != unsafe { libc::geteuid() }
-                    || metadata.nlink() != 1
-                {
-                    return Err(format!(
-                        "refusing to write frecency data to unsafe path '{}'",
-                        self.path.display()
-                    )
-                    .into());
-                }
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e.into()),
-        }
-
         let content = serde_json::to_string_pretty(&self.data)?;
         let mut file = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
             .mode(0o600)
-            .custom_flags(libc::O_NOFOLLOW)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
             .open(&self.path)?;
+        let metadata = file.metadata()?;
+        if !metadata.is_file()
+            || metadata.uid() != unsafe { libc::geteuid() }
+            || metadata.nlink() != 1
+        {
+            return Err(format!(
+                "refusing to write frecency data to unsafe path '{}'",
+                self.path.display()
+            )
+            .into());
+        }
         file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
         file.set_len(0)?;
         file.write_all(content.as_bytes())?;
@@ -494,6 +482,28 @@ mod tests {
         let before = std::fs::read_to_string(&target).unwrap();
         assert!(FrecencyStore::load_from_path(&link).is_none());
         assert_eq!(std::fs::read_to_string(&target).unwrap(), before);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_ignores_a_fifo_without_blocking() {
+        use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt;
+
+        let dir = std::env::temp_dir().join(format!(
+            "owlry-frecency-fifo-{}-{}",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("frecency.json");
+        let c_path = CString::new(path.as_os_str().as_bytes()).unwrap();
+        let rc = unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) };
+        assert_eq!(rc, 0, "mkfifo failed: {}", std::io::Error::last_os_error());
+
+        let started = std::time::Instant::now();
+        assert!(FrecencyStore::load_from_path(&path).is_none());
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

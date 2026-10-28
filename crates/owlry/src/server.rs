@@ -160,7 +160,7 @@ fn acquire_socket_lock(socket_path: &Path) -> io::Result<File> {
         .write(true)
         .create(true)
         .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(&lock_path)
         .map_err(|e| {
             io::Error::new(
@@ -176,6 +176,7 @@ fn acquire_socket_lock(socket_path: &Path) -> io::Result<File> {
             format!("unsafe socket lock file '{}'", lock_path.display()),
         ));
     }
+    lock.set_permissions(std::fs::Permissions::from_mode(0o600))?;
     lock.try_lock_exclusive().map_err(|e| {
         io::Error::new(
             io::ErrorKind::AlreadyExists,
@@ -207,6 +208,15 @@ fn inherited_listener() -> Option<UnixListener> {
         return None;
     }
     set_cloexec(fd);
+
+    // The packaged unit passes one listener. Close any extra descriptors so
+    // custom multi-socket units cannot leak inherited listeners into helpers.
+    for extra_fd in 4..=(2 + fds.min(1024) as RawFd) {
+        // SAFETY: systemd passed these descriptors to this process.
+        unsafe {
+            libc::close(extra_fd);
+        }
+    }
     // Children must not inherit a stale activation environment. The listening
     // fd itself is CLOEXEC, so this closes the remaining footgun.
     // SAFETY: this runs during single-threaded daemon startup, before the

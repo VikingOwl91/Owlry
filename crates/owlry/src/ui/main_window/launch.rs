@@ -254,10 +254,22 @@ impl MainWindow {
             .stdin(Stdio::piped())
             .spawn()?;
         if let Some(mut stdin) = child.stdin.take() {
-            // The payload fits in a pipe buffer, so this does not stall the
-            // GTK thread. Writing on a detached thread would let the UI exit
-            // kill the writer before the child received the data.
-            stdin.write_all(input.as_bytes())?;
+            // A healthy reader drains this immediately. A child that never
+            // reads must not freeze the GTK thread, so wait only briefly for
+            // delivery. If the write is still blocked after that, the child
+            // is not consuming stdin; the writer exits with the process.
+            let input = input.to_string();
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let result = stdin.write_all(input.as_bytes());
+                let _ = tx.send(result);
+            });
+            match rx.recv_timeout(std::time::Duration::from_millis(250)) {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => return Err(e),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {}
+            }
         }
         Ok(child)
     }
@@ -320,12 +332,13 @@ impl MainWindow {
                 .terminal_command
                 .as_deref()
                 .unwrap_or("xterm");
-            let mut wrapped = crate::command_line::split_words(terminal_cmd).map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    format!("invalid terminal_command {terminal_cmd:?}: {e}"),
-                )
-            })?;
+            let mut wrapped =
+                crate::command_line::split_words_strict(terminal_cmd).map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("invalid terminal_command {terminal_cmd:?}: {e}"),
+                    )
+                })?;
             if !wrapped.iter().any(|arg| arg == "-e") {
                 wrapped.push("-e".to_string());
             }
@@ -1009,10 +1022,34 @@ mod tests {
     }
 
     #[test]
+    fn terminal_command_rejects_shell_metacharacters() {
+        let mut config = Config::default();
+        config.general.terminal_command = Some("xterm; touch /tmp/pwned".into());
+        let err = MainWindow::build_argv("true", &[], true, &config).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
     fn stdin_payload_is_capped_before_spawn() {
         let input = "x".repeat(MAX_STDIN_BYTES + 1);
         let err = MainWindow::launch_stdin("true", &[], &input, &Config::default()).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn a_child_that_does_not_read_stdin_does_not_block_activation() {
+        let input = "x".repeat(MAX_STDIN_BYTES);
+        let started = std::time::Instant::now();
+        let mut child =
+            MainWindow::launch_stdin("sleep", &["5".to_string()], &input, &Config::default())
+                .unwrap();
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "stdin write blocked the caller for {:?}",
+            started.elapsed()
+        );
+        let _ = child.kill();
+        let _ = child.wait();
     }
 
     #[test]

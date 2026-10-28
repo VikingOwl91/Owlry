@@ -262,7 +262,13 @@ pub fn invokes_shell(argv: &[String]) -> bool {
             if arg == "-S" || arg.starts_with("--split-string") {
                 return true;
             }
-            if arg == "-u" || arg == "--unset" {
+            if arg == "--" {
+                return i + 1 < argv.len() && invokes_shell(&argv[i + 1..]);
+            }
+            if matches!(
+                arg.as_str(),
+                "-u" | "--unset" | "-C" | "--chdir" | "-P" | "--path"
+            ) {
                 i += 2;
                 continue;
             }
@@ -474,6 +480,8 @@ mod tests {
             vec!["/bin/bash", "-lc", "prog /tmp/x"],
             vec!["env", "sh", "-c", "prog /tmp/x"],
             vec!["env", "-S", "sh -c 'prog /tmp/x'"],
+            vec!["env", "-C", "/work", "sh", "-c", "prog /tmp/x"],
+            vec!["env", "--chdir", "/work", "sh", "-c", "prog /tmp/x"],
             vec!["xterm", "-e", "sh", "-c", "prog /tmp/x"],
             vec!["xterm", "-e", "env", "sh", "-c", "prog /tmp/x"],
             vec!["sudo", "sh", "-c", "prog /tmp/x"],
@@ -490,6 +498,13 @@ mod tests {
             !invokes_shell(&["nvim".into(), "/home/user/bash".into()]),
             "a file named bash is not a shell wrapper"
         );
+        assert!(!invokes_shell(&[
+            "env".into(),
+            "-C".into(),
+            "/work".into(),
+            "nvim".into(),
+            "/home/user/bash".into()
+        ]));
         assert!(!invokes_shell(&[
             "xterm".into(),
             "-e".into(),
