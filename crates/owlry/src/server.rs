@@ -309,9 +309,9 @@ fn bind_inherited(
     Ok((lock, listener, identity))
 }
 
-/// Bind the IPC socket without ever deleting a file that is not our own stale
-/// socket. The returned lock file must be kept alive for the daemon's
-/// lifetime.
+/// Bind the IPC socket without deleting a non-socket, a foreign-owned path, or
+/// a live listener. Stale-socket removal is best-effort under the per-socket
+/// lock. The returned lock file must be kept alive for the daemon's lifetime.
 fn bind_socket(
     socket_path: &Path,
 ) -> io::Result<(File, UnixListener, crate::paths::SocketIdentity)> {
@@ -1091,7 +1091,8 @@ mod tests {
         );
         drop(lock);
         drop(listener);
-        crate::paths::remove_socket_if_owned(&path, identity).unwrap();
+        assert!(crate::paths::remove_socket_if_owned(&path, identity).unwrap());
+        assert!(!path.exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1108,13 +1109,32 @@ mod tests {
     }
 
     #[test]
-    fn bind_socket_refuses_a_second_live_listener() {
+    fn bind_socket_refuses_a_live_listener() {
         let dir = test_dir("live");
         let path = dir.join("owlry.sock");
-        let (_lock, _listener, _identity) = bind_socket(&path).unwrap();
+        let listener = UnixListener::bind(&path).unwrap();
 
         let err = bind_socket(&path).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
+        assert!(UnixStream::connect(&path).is_ok());
+
+        drop(listener);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bind_socket_lock_blocks_a_concurrent_start() {
+        let dir = test_dir("concurrent");
+        let path = dir.join("owlry.sock");
+        let (lock, listener, _identity) = bind_socket(&path).unwrap();
+
+        let err = bind_socket(&path).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
+        assert!(err.to_string().contains("another owlry daemon owns"));
+
+        drop(listener);
+        drop(lock);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1127,6 +1147,12 @@ mod tests {
         // The path is left behind, as it would be after a crash.
         assert!(path.exists());
 
+        // Pin the stale inode. Some filesystems reuse an inode number
+        // immediately after unlink, which would make the identity assertion
+        // depend on allocator behavior instead of the cleanup contract.
+        let pinned = dir.join("stale.sock.pin");
+        std::fs::hard_link(&path, &pinned).unwrap();
+
         // The lock is still held, so a second daemon must wait for the first
         // process to exit. Releasing it models a restart.
         drop(lock);
@@ -1135,6 +1161,7 @@ mod tests {
         drop(new_lock);
         drop(new_listener);
         crate::paths::remove_socket_if_owned(&path, new_identity).unwrap();
+        std::fs::remove_file(&pinned).unwrap();
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1172,11 +1199,63 @@ mod tests {
         let (lock, listener, identity) = bind_socket(&path).unwrap();
         drop(lock);
         drop(listener);
+
+        // Keep the original inode allocated. Without this, the replacement
+        // file can reuse the same inode number and the identity check cannot
+        // tell the two objects apart.
+        let pinned = dir.join("original.sock");
+        std::fs::hard_link(&path, &pinned).unwrap();
         std::fs::remove_file(&path).unwrap();
         std::fs::write(&path, b"replacement").unwrap();
 
         assert!(!crate::paths::remove_socket_if_owned(&path, identity).unwrap());
         assert_eq!(std::fs::read(&path).unwrap(), b"replacement");
+        std::fs::remove_file(&pinned).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn remove_socket_if_owned_skips_a_replacement_socket() {
+        let dir = test_dir("replacement-socket");
+        let path = dir.join("owlry.sock");
+        let (lock, listener, identity) = bind_socket(&path).unwrap();
+        drop(lock);
+        drop(listener);
+
+        let pinned = dir.join("original.sock");
+        std::fs::hard_link(&path, &pinned).unwrap();
+        std::fs::remove_file(&path).unwrap();
+
+        let replacement = UnixListener::bind(&path).unwrap();
+        assert!(!crate::paths::remove_socket_if_owned(&path, identity).unwrap());
+        assert!(UnixStream::connect(&path).is_ok());
+
+        drop(replacement);
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_file(&pinned).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bind_socket_refuses_a_symlink_at_the_socket_path() {
+        let dir = test_dir("socket-symlink");
+        let real = dir.join("real.sock");
+        let link = dir.join("owlry.sock");
+        let listener = UnixListener::bind(&real).unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        let err = bind_socket(&link).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
+        assert!(
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+
+        drop(listener);
+        std::fs::remove_file(&link).unwrap();
+        std::fs::remove_file(&real).unwrap();
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
