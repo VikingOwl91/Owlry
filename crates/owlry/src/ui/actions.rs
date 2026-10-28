@@ -7,6 +7,7 @@
 use std::path::Path;
 
 use crate::providers::{ItemActivation, ItemSource, LaunchItem, ProviderType};
+use crate::ui::MainWindow;
 
 pub fn for_item(item: &LaunchItem) -> Vec<LaunchItem> {
     if !item.activation.is_launch() || matches!(item.provider, ProviderType::Dmenu) {
@@ -25,6 +26,7 @@ pub fn for_item(item: &LaunchItem) -> Vec<LaunchItem> {
             "terminal",
             "Run in Terminal",
             item.command.clone(),
+            item.activation.clone(),
             true,
             "utilities-terminal",
         )),
@@ -60,21 +62,32 @@ fn primary_action(item: &LaunchItem) -> LaunchItem {
 }
 
 fn application_actions(item: &LaunchItem, actions: &mut Vec<LaunchItem>) {
+    let terminal_activation =
+        MainWindow::desktop_exec_activation(&item.id).unwrap_or_else(|| ItemActivation::Argv {
+            program: "gio".into(),
+            args: vec!["launch".into(), item.id.clone()],
+        });
     actions.push(command_action(
         item,
         "terminal",
         "Open in Terminal",
         item.command.clone(),
+        terminal_activation,
         true,
         "utilities-terminal",
     ));
 
     if let Some(parent) = Path::new(&item.id).parent() {
+        let parent = parent.to_string_lossy().to_string();
         actions.push(command_action(
             item,
             "desktop-location",
             "Show Desktop File Location",
-            format!("xdg-open {}", shell_quote(&parent.to_string_lossy())),
+            format!("xdg-open {}", shell_quote(&parent)),
+            ItemActivation::Argv {
+                program: "xdg-open".into(),
+                args: vec![parent],
+            },
             false,
             "folder",
         ));
@@ -92,11 +105,16 @@ fn file_actions(item: &LaunchItem, actions: &mut Vec<LaunchItem>) {
         path_obj.parent().unwrap_or(path_obj)
     };
 
+    let folder = folder.to_string_lossy().to_string();
     actions.push(command_action(
         item,
         "folder",
         "Open Containing Folder",
-        format!("xdg-open {}", shell_quote(&folder.to_string_lossy())),
+        format!("xdg-open {}", shell_quote(&folder)),
+        ItemActivation::Argv {
+            program: "xdg-open".into(),
+            args: vec![folder],
+        },
         false,
         "folder",
     ));
@@ -105,6 +123,11 @@ fn file_actions(item: &LaunchItem, actions: &mut Vec<LaunchItem>) {
         "copy-path",
         "Copy Path",
         format!("printf '%s' {} | wl-copy", shell_quote(path)),
+        ItemActivation::Stdin {
+            program: "wl-copy".into(),
+            args: Vec::new(),
+            input: path.to_string(),
+        },
         false,
         "edit-copy",
     ));
@@ -113,6 +136,10 @@ fn file_actions(item: &LaunchItem, actions: &mut Vec<LaunchItem>) {
         "trash",
         "Move to Trash",
         format!("gio trash {}", shell_quote(path)),
+        ItemActivation::Argv {
+            program: "gio".into(),
+            args: vec!["trash".into(), path.to_string()],
+        },
         false,
         "user-trash",
     ));
@@ -125,17 +152,27 @@ fn ssh_actions(item: &LaunchItem, actions: &mut Vec<LaunchItem>) {
             "copy-host",
             "Copy Host Alias",
             format!("printf '%s' {} | wl-copy", shell_quote(host)),
+            ItemActivation::Stdin {
+                program: "wl-copy".into(),
+                args: Vec::new(),
+                input: host.to_string(),
+            },
             false,
             "edit-copy",
         ));
     }
 
     if let Some(config_path) = dirs::home_dir().map(|home| home.join(".ssh/config")) {
+        let config_path = config_path.to_string_lossy().to_string();
         actions.push(command_action(
             item,
             "edit-config",
             "Edit SSH Config",
-            format!("xdg-open {}", shell_quote(&config_path.to_string_lossy())),
+            format!("xdg-open {}", shell_quote(&config_path)),
+            ItemActivation::Argv {
+                program: "xdg-open".into(),
+                args: vec![config_path],
+            },
             false,
             "document-edit",
         ));
@@ -147,6 +184,7 @@ fn command_action(
     suffix: &str,
     name: &str,
     command: String,
+    activation: ItemActivation,
     terminal: bool,
     icon: &str,
 ) -> LaunchItem {
@@ -158,7 +196,7 @@ fn command_action(
         provider: ProviderType::Command,
         command,
         terminal,
-        activation: ItemActivation::Launch,
+        activation,
         tags: vec!["action".into()],
         source: ItemSource::Core,
     }

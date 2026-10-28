@@ -1,13 +1,20 @@
 use std::collections::HashMap;
 use std::fs;
+use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
 
 const ECB_URL: &str = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml";
 const CACHE_MAX_AGE_SECS: u64 = 86400; // 24 hours
+// Keep the fetch deadline below the IPC client's five-second read timeout so
+// a stalled response cannot arrive after the client has moved on and be
+// mistaken for the answer to the next query.
+const FETCH_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+const FETCH_TOTAL_TIMEOUT: Duration = Duration::from_secs(4);
+const MAX_RESPONSE_BYTES: u64 = 1_048_576;
 
 static CACHED_RATES: Mutex<Option<CurrencyRates>> = Mutex::new(None);
 
@@ -192,8 +199,33 @@ fn is_stale(_rates: &CurrencyRates) -> bool {
 }
 
 fn fetch_rates() -> Option<CurrencyRates> {
-    let response = reqwest::blocking::get(ECB_URL).ok()?;
-    let body = response.text().ok()?;
+    fetch_rates_from(ECB_URL, FETCH_TOTAL_TIMEOUT)
+}
+
+fn fetch_rates_from(url: &str, timeout: Duration) -> Option<CurrencyRates> {
+    let client = reqwest::blocking::Client::builder()
+        .connect_timeout(FETCH_CONNECT_TIMEOUT.min(timeout))
+        .timeout(timeout)
+        .build()
+        .ok()?;
+    let response = client.get(url).send().ok()?.error_for_status().ok()?;
+
+    if response
+        .content_length()
+        .is_some_and(|len| len > MAX_RESPONSE_BYTES)
+    {
+        return None;
+    }
+
+    let mut body = String::new();
+    response
+        .take(MAX_RESPONSE_BYTES + 1)
+        .read_to_string(&mut body)
+        .ok()?;
+    if body.len() as u64 > MAX_RESPONSE_BYTES {
+        return None;
+    }
+
     parse_ecb_xml(&body)
 }
 
@@ -214,11 +246,18 @@ fn parse_ecb_xml(xml: &str) -> Option<CurrencyRates> {
             }
         }
 
-        // Extract rate: <Cube currency='USD' rate='1.0832'/>
+        // Extract rate: <Cube currency='USD' rate='1.0832'/>. A single
+        // malformed line should not discard every rate in the document.
         if trimmed.contains("currency=") && trimmed.contains("rate=") {
-            let currency = extract_attr(trimmed, "currency")?;
-            let rate_str = extract_attr(trimmed, "rate")?;
-            let rate: f64 = rate_str.parse().ok()?;
+            let (Some(currency), Some(rate_str)) = (
+                extract_attr(trimmed, "currency"),
+                extract_attr(trimmed, "rate"),
+            ) else {
+                continue;
+            };
+            let Ok(rate) = rate_str.parse::<f64>() else {
+                continue;
+            };
             rates.insert(currency, rate);
         }
     }
@@ -296,6 +335,19 @@ mod tests {
     }
 
     #[test]
+    fn malformed_rate_line_does_not_discard_the_document() {
+        let xml = "<Cube time='2026-10-27'>\n\
+                   <Cube currency='USD' rate='1.1'/>\n\
+                   <Cube currency='BROKEN' rate='not-a-number'/>\n\
+                   <Cube currency='GBP' rate='0.8'/>\n\
+                   </Cube>";
+        let rates = parse_ecb_xml(xml).unwrap();
+        assert_eq!(rates.rates["USD"], 1.1);
+        assert_eq!(rates.rates["GBP"], 0.8);
+        assert!(!rates.rates.contains_key("BROKEN"));
+    }
+
+    #[test]
     fn test_cache_roundtrip() {
         let rates = CurrencyRates {
             date: "2026-03-26".to_string(),
@@ -309,5 +361,65 @@ mod tests {
         let json = serde_json::to_string(&rates).unwrap();
         let parsed: CurrencyRates = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.rates["USD"], 1.0832);
+    }
+
+    fn serve_once(body: Vec<u8>, content_length: Option<usize>, delay: Duration) -> String {
+        use std::io::{Read as _, Write as _};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 1024];
+            let _ = stream.read(&mut request);
+            if !delay.is_zero() {
+                std::thread::sleep(delay);
+            }
+            let header = match content_length {
+                Some(len) => format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {len}\r\nContent-Type: application/xml\r\nConnection: close\r\n\r\n"
+                ),
+                None => {
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/xml\r\nConnection: close\r\n\r\n"
+                        .to_string()
+                }
+            };
+            let _ = stream.write_all(header.as_bytes());
+            let _ = stream.write_all(&body);
+        });
+        format!("http://{addr}/")
+    }
+
+    #[test]
+    fn fetch_parses_a_bounded_response() {
+        let body = br#"<Cube time='2026-10-27'><Cube currency='USD' rate='1.1'/></Cube>"#;
+        let url = serve_once(body.to_vec(), Some(body.len()), Duration::ZERO);
+        let rates = fetch_rates_from(&url, Duration::from_secs(1)).unwrap();
+        assert_eq!(rates.rates["USD"], 1.1);
+    }
+
+    #[test]
+    fn fetch_rejects_an_oversized_content_length() {
+        let url = serve_once(
+            vec![b'x'; 32],
+            Some(MAX_RESPONSE_BYTES as usize + 1),
+            Duration::ZERO,
+        );
+        assert!(fetch_rates_from(&url, Duration::from_secs(1)).is_none());
+    }
+
+    #[test]
+    fn fetch_caps_a_stream_without_content_length() {
+        let body = vec![b'x'; MAX_RESPONSE_BYTES as usize + 1024];
+        let url = serve_once(body, None, Duration::ZERO);
+        assert!(fetch_rates_from(&url, Duration::from_secs(2)).is_none());
+    }
+
+    #[test]
+    fn fetch_times_out_on_a_stalled_server() {
+        let body = br#"<Cube time='2026-10-27'><Cube currency='USD' rate='1.1'/></Cube>"#;
+        let url = serve_once(body.to_vec(), Some(body.len()), Duration::from_millis(500));
+        assert!(fetch_rates_from(&url, Duration::from_millis(50)).is_none());
     }
 }

@@ -21,7 +21,11 @@ pub fn request_for_item(item: &LaunchItem) -> Option<SubmenuRequest> {
 
     match activation {
         ItemActivation::Submenu { provider_id, data } => Some(SubmenuRequest { provider_id, data }),
-        ItemActivation::Launch | ItemActivation::PluginAction { .. } => None,
+        ItemActivation::Launch
+        | ItemActivation::Argv { .. }
+        | ItemActivation::Stdin { .. }
+        | ItemActivation::Pipe { .. }
+        | ItemActivation::PluginAction { .. } => None,
     }
 }
 

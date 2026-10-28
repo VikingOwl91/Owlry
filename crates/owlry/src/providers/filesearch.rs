@@ -11,7 +11,7 @@
 //! External dependencies:
 //! - `fd` (preferred) or `locate`
 
-use super::{DynamicProvider, ItemSource, LaunchItem, ProviderType};
+use super::{DynamicProvider, ItemActivation, ItemSource, LaunchItem, ProviderType};
 use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -109,6 +109,10 @@ impl FileSearchProvider {
             args.push("--exclude".to_string());
             args.push((*ex).to_string());
         }
+        // End option parsing before the user-controlled pattern and roots.
+        // Without this, a pattern like `--search-path=/tmp` is interpreted as
+        // an fd option that escapes the configured roots.
+        args.push("--".to_string());
         args.push(pattern.to_string());
         args.extend(roots.iter().cloned());
         args
@@ -220,16 +224,22 @@ impl FileSearchProvider {
         }
     }
 
+    fn locate_args(pattern: &str) -> Vec<String> {
+        vec![
+            "--limit".to_string(),
+            MAX_RESULTS.to_string(),
+            "--ignore-case".to_string(),
+            // End option parsing before the user-controlled pattern.
+            "--".to_string(),
+            pattern.to_string(),
+        ]
+    }
+
     fn search_with_locate(&self, pattern: &str) -> Vec<LaunchItem> {
         // `locate` queries a prebuilt index, so roots/depth don't apply; it
         // still gets the wall-clock cap.
         let mut cmd = Command::new("locate");
-        cmd.args([
-            "--limit",
-            &MAX_RESULTS.to_string(),
-            "--ignore-case",
-            pattern,
-        ]);
+        cmd.args(Self::locate_args(pattern));
 
         match Self::run_bounded(cmd, QUERY_TIMEOUT) {
             Some(out) => self.parse_file_results(&out),
@@ -267,7 +277,10 @@ impl FileSearchProvider {
                     provider: ProviderType::Plugin(TYPE_ID.into()),
                     command,
                     terminal: false,
-                    activation: super::ItemActivation::Launch,
+                    activation: ItemActivation::Argv {
+                        program: "xdg-open".into(),
+                        args: vec![full_path],
+                    },
                     tags: vec!["file".to_string()],
                     source: ItemSource::Core,
                 }
@@ -412,6 +425,21 @@ mod tests {
         let args = FileSearchProvider::fd_args("needle", &roots);
         let pat = args.iter().position(|a| a == "needle").unwrap();
         assert_eq!(&args[pat + 1..], &["/a".to_string(), "/b".to_string()]);
+    }
+
+    #[test]
+    fn fd_args_end_options_before_a_leading_dash_pattern() {
+        let args = FileSearchProvider::fd_args("--search-path=/tmp/outside", &[]);
+        let terminator = args.iter().position(|a| a == "--").expect("--");
+        assert_eq!(args[terminator + 1], "--search-path=/tmp/outside");
+        assert_eq!(terminator + 1, args.len() - 1);
+    }
+
+    #[test]
+    fn locate_args_end_options_before_a_leading_dash_pattern() {
+        let args = FileSearchProvider::locate_args("--foo");
+        let terminator = args.iter().position(|a| a == "--").expect("--");
+        assert_eq!(args[terminator + 1], "--foo");
     }
 
     #[test]

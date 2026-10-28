@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::providers::ItemActivation;
+use crate::providers::{ItemActivation, ItemSource};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -60,18 +60,18 @@ pub struct ResultItem {
     pub command: Option<String>,
     #[serde(default)]
     pub terminal: bool,
-    #[serde(default, skip_serializing_if = "ItemActivation::is_launch")]
+    #[serde(default, skip_serializing_if = "ItemActivation::is_legacy_launch")]
     pub activation: ItemActivation,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
-    /// Item trust level: "core" or "script_plugin".
-    /// Defaults to "core" when absent (backwards-compatible with old daemons).
+    /// Item trust level: "core" or "script_plugin". Unknown or absent values
+    /// are treated as script-provider output, never as trusted core output.
     #[serde(default = "default_source")]
-    pub source: String,
+    pub source: ItemSource,
 }
 
-fn default_source() -> String {
-    "core".to_string()
+fn default_source() -> ItemSource {
+    ItemSource::ScriptPlugin
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -177,6 +177,28 @@ mod tests {
         }"#;
         let result: ResultItem = serde_json::from_str(json).unwrap();
         assert_eq!(result.activation, ItemActivation::Launch);
+        assert_eq!(result.source, ItemSource::Core);
+    }
+
+    #[test]
+    fn legacy_result_without_source_is_untrusted() {
+        let json = r#"{
+            "id":"demo","title":"Demo","description":"","icon":"",
+            "provider":"cmd","score":1,"command":"demo","terminal":false
+        }"#;
+        let result: ResultItem = serde_json::from_str(json).unwrap();
+        assert_eq!(result.source, ItemSource::ScriptPlugin);
+    }
+
+    #[test]
+    fn unknown_source_value_is_untrusted() {
+        let json = r#"{
+            "id":"demo","title":"Demo","description":"","icon":"",
+            "provider":"cmd","score":1,"command":"demo","terminal":false,
+            "source":"native_plugin"
+        }"#;
+        let result: ResultItem = serde_json::from_str(json).unwrap();
+        assert_eq!(result.source, ItemSource::ScriptPlugin);
     }
 
     #[test]

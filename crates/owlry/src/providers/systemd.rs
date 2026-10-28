@@ -27,6 +27,39 @@ impl Default for SystemdProvider {
     }
 }
 
+/// Whether `unit` is a plausible systemd service name that can be passed as a
+/// single argument to systemctl/journalctl.
+///
+/// Unit names use ASCII letters, digits and `:_.@-`; arbitrary bytes are
+/// escaped as `\xHH`. Shell metacharacters, whitespace, leading dashes and
+/// path separators are rejected before any command string is built.
+fn is_valid_unit_name(unit: &str) -> bool {
+    if unit.is_empty() || unit.len() > 256 || unit.starts_with('-') || !unit.ends_with(".service") {
+        return false;
+    }
+
+    let mut chars = unit.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => {
+                if chars.next() != Some('x') {
+                    return false;
+                }
+                let high = chars.next();
+                let low = chars.next();
+                if !matches!(high, Some(h) if h.is_ascii_hexdigit())
+                    || !matches!(low, Some(l) if l.is_ascii_hexdigit())
+                {
+                    return false;
+                }
+            }
+            c if c.is_ascii_alphanumeric() || matches!(c, ':' | '_' | '.' | '@' | '-') => {}
+            _ => return false,
+        }
+    }
+    true
+}
+
 impl SystemdProvider {
     pub fn new() -> Self {
         Self { items: Vec::new() }
@@ -56,7 +89,7 @@ impl SystemdProvider {
                 None => continue,
             };
 
-            if !unit_name.ends_with(".service") {
+            if !is_valid_unit_name(unit_name) {
                 continue;
             }
 
@@ -251,7 +284,7 @@ impl Provider for SystemdProvider {
     /// of using the state captured when the discovery cache was refreshed.
     fn submenu_actions(&self, data: &str) -> Vec<LaunchItem> {
         let unit_name = data.trim();
-        if unit_name.is_empty() || !unit_name.ends_with(".service") {
+        if !is_valid_unit_name(unit_name) {
             return Vec::new();
         }
         // A `None` here means the state is genuinely unknown (transitional
@@ -281,7 +314,15 @@ fn clean_display_name(unit_name: &str) -> String {
         .replace("\\x2d", "-")
 }
 
-fn make_action(id: &str, name: &str, command: String, desc: String, icon: &str) -> LaunchItem {
+fn make_action(
+    id: &str,
+    name: &str,
+    program: &str,
+    args: &[&str],
+    desc: String,
+    icon: &str,
+) -> LaunchItem {
+    let command = format!("{} {}", program, args.join(" "));
     LaunchItem {
         id: id.to_string(),
         name: name.to_string(),
@@ -290,7 +331,10 @@ fn make_action(id: &str, name: &str, command: String, desc: String, icon: &str) 
         provider: ProviderType::Plugin(TYPE_ID.into()),
         command,
         terminal: false,
-        activation: ItemActivation::Launch,
+        activation: ItemActivation::Argv {
+            program: program.to_string(),
+            args: args.iter().map(|arg| (*arg).to_string()).collect(),
+        },
         tags: vec!["systemd".to_string(), "service".to_string()],
         source: ItemSource::Core,
     }
@@ -304,34 +348,42 @@ fn make_action(id: &str, name: &str, command: String, desc: String, icon: &str) 
 /// offers just the state-independent set (Status/Journal/Enable/Disable) built
 /// below; Start, Stop, Restart, Reload and Kill all stay behind a known state.
 fn actions_for_service(unit: &str, display: &str, is_active: Option<bool>) -> Vec<LaunchItem> {
+    if !is_valid_unit_name(unit) {
+        return Vec::new();
+    }
+
     let mut actions = Vec::new();
 
     if is_active == Some(true) {
         actions.push(make_action(
             &format!("systemd:restart:{}", unit),
             "↻ Restart",
-            format!("systemctl --user restart {}", unit),
+            "systemctl",
+            &["--user", "restart", unit],
             format!("Restart {}", display),
             "view-refresh",
         ));
         actions.push(make_action(
             &format!("systemd:stop:{}", unit),
             "■ Stop",
-            format!("systemctl --user stop {}", unit),
+            "systemctl",
+            &["--user", "stop", unit],
             format!("Stop {}", display),
             "process-stop",
         ));
         actions.push(make_action(
             &format!("systemd:reload:{}", unit),
             "⟳ Reload",
-            format!("systemctl --user reload {}", unit),
+            "systemctl",
+            &["--user", "reload", unit],
             format!("Reload {} configuration", display),
             "view-refresh",
         ));
         actions.push(make_action(
             &format!("systemd:kill:{}", unit),
             "✗ Kill",
-            format!("systemctl --user kill {}", unit),
+            "systemctl",
+            &["--user", "kill", unit],
             format!("Force kill {}", display),
             "edit-delete",
         ));
@@ -339,7 +391,8 @@ fn actions_for_service(unit: &str, display: &str, is_active: Option<bool>) -> Ve
         actions.push(make_action(
             &format!("systemd:start:{}", unit),
             "▶ Start",
-            format!("systemctl --user start {}", unit),
+            "systemctl",
+            &["--user", "start", unit],
             format!("Start {}", display),
             "media-playback-start",
         ));
@@ -349,7 +402,8 @@ fn actions_for_service(unit: &str, display: &str, is_active: Option<bool>) -> Ve
     let mut status = make_action(
         &format!("systemd:status:{}", unit),
         "ℹ Status",
-        format!("systemctl --user status {}", unit),
+        "systemctl",
+        &["--user", "status", unit],
         format!("Show {} status", display),
         "dialog-information",
     );
@@ -359,7 +413,8 @@ fn actions_for_service(unit: &str, display: &str, is_active: Option<bool>) -> Ve
     let mut journal = make_action(
         &format!("systemd:journal:{}", unit),
         "📋 Journal",
-        format!("journalctl --user -u {} -f", unit),
+        "journalctl",
+        &["--user", "-u", unit, "-f"],
         format!("Show {} logs", display),
         "utilities-system-monitor",
     );
@@ -369,14 +424,16 @@ fn actions_for_service(unit: &str, display: &str, is_active: Option<bool>) -> Ve
     actions.push(make_action(
         &format!("systemd:enable:{}", unit),
         "⊕ Enable",
-        format!("systemctl --user enable {}", unit),
+        "systemctl",
+        &["--user", "enable", unit],
         format!("Enable {} on startup", display),
         "emblem-default",
     ));
     actions.push(make_action(
         &format!("systemd:disable:{}", unit),
         "⊖ Disable",
-        format!("systemctl --user disable {}", unit),
+        "systemctl",
+        &["--user", "disable", unit],
         format!("Disable {} on startup", display),
         "emblem-unreadable",
     ));
@@ -419,6 +476,46 @@ baz@autostart.service               loaded active running Baz App
 
         // Display name cleaning strips @autostart suffix.
         assert_eq!(items[2].name, "baz");
+    }
+
+    #[test]
+    fn unit_name_validation_rejects_shell_syntax() {
+        assert!(is_valid_unit_name("nginx.service"));
+        assert!(is_valid_unit_name("foo@bar.service"));
+        assert!(is_valid_unit_name("app-org.gnome.Thing@autostart.service"));
+        assert!(is_valid_unit_name("foo..bar.service"));
+        assert!(is_valid_unit_name(r"escaped\x2dname.service"));
+
+        for bad in [
+            "foo.service; touch /tmp/pwned",
+            "foo.service && touch /tmp/pwned",
+            "foo.service\nother",
+            "-foo.service",
+            "foo/bar.service",
+            "../foo.service",
+            r"foo\xZZ.service",
+            r"foo\0.service",
+            "foo.service ",
+        ] {
+            assert!(!is_valid_unit_name(bad), "accepted unsafe unit {bad:?}");
+        }
+    }
+
+    #[test]
+    fn escaped_unit_names_survive_into_argv() {
+        let unit = r"app-foo\x2dbar.service";
+        let actions = actions_for_service(unit, "foo", Some(true));
+        assert!(actions.iter().any(|action| matches!(
+            &action.activation,
+            ItemActivation::Argv { args, .. }
+                if args.iter().any(|arg| arg == unit)
+        )));
+    }
+
+    #[test]
+    fn hostile_submenu_data_produces_no_actions() {
+        let actions = actions_for_service("foo.service; touch /tmp/pwned", "foo", Some(true));
+        assert!(actions.is_empty());
     }
 
     #[test]

@@ -101,13 +101,21 @@ pub fn lookup_unit(alias: &str) -> Option<(usize, &UnitDef)> {
 }
 
 pub fn convert_to(value: &f64, from: &str, to: &str) -> Option<ConversionResult> {
-    // Try currency first — currency aliases (dollar, euro, etc.) aren't in the UNITS table
-    if currency::is_currency_alias(from) || currency::is_currency_alias(to) {
+    let from_unit = lookup_unit(from);
+    let to_unit = lookup_unit(to);
+
+    // Currency aliases (dollar, euro, etc.) are not in the UNITS table, so
+    // only consult the rate fetch when at least one side is unknown. This
+    // avoids two network fetches for an ordinary unit conversion such as
+    // `1 bar to psi`.
+    if (from_unit.is_none() || to_unit.is_none())
+        && (currency::is_currency_alias(from) || currency::is_currency_alias(to))
+    {
         return convert_currency(*value, from, to);
     }
 
-    let (_, from_def) = lookup_unit(from)?;
-    let (_, to_def) = lookup_unit(to)?;
+    let (_, from_def) = from_unit?;
+    let (_, to_def) = to_unit?;
 
     // Currency via UNITS table (shouldn't reach here, but just in case)
     if from_def.category == Category::Currency || to_def.category == Category::Currency {

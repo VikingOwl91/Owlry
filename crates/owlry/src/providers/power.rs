@@ -1,4 +1,4 @@
-use super::{ItemSource, LaunchItem, Provider, ProviderType};
+use super::{ItemActivation, ItemSource, LaunchItem, Provider, ProviderType};
 
 /// Built-in power & session provider. Returns a fixed set of shutdown / reboot /
 /// suspend / lock / logout actions.
@@ -70,17 +70,25 @@ impl PowerProvider {
 
         let items = commands
             .iter()
-            .map(|(action_id, name, description, icon, command)| LaunchItem {
-                id: format!("power:{}", action_id),
-                name: name.to_string(),
-                description: Some(description.to_string()),
-                icon: Some(icon.to_string()),
-                provider: ProviderType::Plugin(TYPE_ID.into()),
-                command: command.to_string(),
-                terminal: false,
-                activation: super::ItemActivation::Launch,
-                tags: vec!["power".into()],
-                source: ItemSource::Core,
+            .map(|(action_id, name, description, icon, command)| {
+                let mut argv = crate::command_line::split_words(command)
+                    .unwrap_or_else(|_| vec![(*command).to_string()]);
+                let program = argv.remove(0);
+                LaunchItem {
+                    id: format!("power:{}", action_id),
+                    name: name.to_string(),
+                    description: Some(description.to_string()),
+                    icon: Some(icon.to_string()),
+                    provider: ProviderType::Plugin(TYPE_ID.into()),
+                    command: command.to_string(),
+                    terminal: false,
+                    activation: ItemActivation::Argv {
+                        program,
+                        args: argv,
+                    },
+                    tags: vec!["power".into()],
+                    source: ItemSource::Core,
+                }
             })
             .collect();
 

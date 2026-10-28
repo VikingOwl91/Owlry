@@ -1,4 +1,4 @@
-use super::{ItemSource, LaunchItem, Provider, ProviderType};
+use super::{ItemActivation, ItemSource, LaunchItem, Provider, ProviderType};
 use log::debug;
 use std::collections::HashSet;
 use std::os::unix::fs::PermissionsExt;
@@ -32,31 +32,28 @@ impl CommandProvider {
         }
     }
 
-    /// Return whether a typed command starts with an executable and includes
-    /// arguments. This is used by the launcher for commands such as
-    /// `mpv VIDEO`; the regular provider cache intentionally remains a list of
-    /// bare PATH commands.
-    pub(crate) fn is_direct_command(command: &str) -> bool {
-        let mut words = command.split_whitespace();
-        let executable = match words.next() {
-            Some(word) if !word.starts_with('-') => word,
-            _ => return false,
+    /// Validate an already-tokenized direct command. The launcher passes
+    /// `program args`; the regular provider cache intentionally remains a list
+    /// of bare PATH commands.
+    pub(crate) fn is_direct_argv(argv: &[String]) -> bool {
+        let Some(program) = argv.first() else {
+            return false;
         };
-
-        // A bare command is already handled by the normal CommandProvider
-        // result. The direct path is specifically for command + arguments.
-        if words.next().is_none() {
+        if argv.len() < 2 || program.starts_with('-') {
             return false;
         }
+        Self::is_executable_word(program)
+    }
 
-        let path = std::path::Path::new(executable);
-        if executable.contains('/') {
+    fn is_executable_word(program: &str) -> bool {
+        let path = std::path::Path::new(program);
+        if program.contains('/') {
             return Self::is_executable(path);
         }
 
         Self::get_path_dirs()
             .iter()
-            .map(|dir| dir.join(executable))
+            .map(|dir| dir.join(program))
             .any(|candidate| Self::is_executable(&candidate))
     }
 }
@@ -114,9 +111,12 @@ impl Provider for CommandProvider {
                     description: Some(format!("Run {}", path.display())),
                     icon: Some("utilities-terminal".to_string()),
                     provider: ProviderType::Command,
-                    command: name,
+                    command: name.clone(),
                     terminal: false,
-                    activation: super::ItemActivation::Launch,
+                    activation: ItemActivation::Argv {
+                        program: name,
+                        args: Vec::new(),
+                    },
                     tags: Vec::new(),
                     source: ItemSource::Core,
                 };
@@ -140,25 +140,33 @@ impl Provider for CommandProvider {
 mod tests {
     use super::CommandProvider;
 
+    fn argv(words: &[&str]) -> Vec<String> {
+        words.iter().map(|word| (*word).to_string()).collect()
+    }
+
     #[test]
     fn direct_command_requires_arguments() {
-        assert!(!CommandProvider::is_direct_command("printf"));
+        assert!(!CommandProvider::is_direct_argv(&argv(&["printf"])));
     }
 
     #[test]
     fn direct_command_accepts_executable_with_arguments() {
-        assert!(CommandProvider::is_direct_command("printf hello"));
+        assert!(CommandProvider::is_direct_argv(&argv(&["printf", "hello"])));
     }
 
     #[test]
     fn direct_command_rejects_unknown_executable() {
-        assert!(!CommandProvider::is_direct_command(
-            "owlry-command-that-does-not-exist hello"
-        ));
+        assert!(!CommandProvider::is_direct_argv(&argv(&[
+            "owlry-command-that-does-not-exist",
+            "hello"
+        ])));
     }
 
     #[test]
     fn direct_command_accepts_executable_path_with_arguments() {
-        assert!(CommandProvider::is_direct_command("/bin/printf hello"));
+        assert!(CommandProvider::is_direct_argv(&argv(&[
+            "/bin/printf",
+            "hello"
+        ])));
     }
 }

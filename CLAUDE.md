@@ -44,6 +44,8 @@ crates/owlry/                  -- everything
 │   ├── data/                  -- FrecencyStore
 │   ├── filter.rs              -- ProviderFilter + prefix parser
 │   ├── ipc.rs                 -- Request/Response types
+│   ├── ipc_auth.rs            -- SO_PEERCRED uid check for the socket
+│   ├── command_line.rs        -- argv tokenizer for commands and desktop Exec
 │   ├── paths.rs               -- XDG paths (honours $OWLRY_SOCKET)
 │   ├── commands.rs            -- subcommand dispatchers (doctor / providers / config / …)
 │   └── providers/             -- ALL providers
@@ -113,8 +115,8 @@ The daemon binary is `owlry`. There is no separate `owlryd` binary anywhere — 
 For side-by-side testing against a production daemon, set `$OWLRY_SOCKET`:
 
 ```bash
-OWLRY_SOCKET=/tmp/owlry-dev.sock target/release/owlry -d &
-OWLRY_SOCKET=/tmp/owlry-dev.sock target/release/owlry -m uuctl
+OWLRY_SOCKET="$XDG_RUNTIME_DIR/owlry-dev.sock" target/release/owlry -d &
+OWLRY_SOCKET="$XDG_RUNTIME_DIR/owlry-dev.sock" target/release/owlry -m uuctl
 pkill -f 'target/release/owlry -d'
 ```
 
@@ -212,7 +214,7 @@ Enter keeps the item's primary activation. Actions are gated on
 ## When you need to verify behavior live
 
 1. `cargo build --release --features full`
-2. `OWLRY_SOCKET=/tmp/owlry-dev.sock target/release/owlry -d &`
+2. `OWLRY_SOCKET="$XDG_RUNTIME_DIR/owlry-dev.sock" target/release/owlry -d &`
 3. Run smoke queries via socket OR the UI with `OWLRY_SOCKET` set
 4. `pkill -f 'target/release/owlry -d'`
 

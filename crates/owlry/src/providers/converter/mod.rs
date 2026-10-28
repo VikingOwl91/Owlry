@@ -2,7 +2,7 @@ mod currency;
 mod parser;
 mod units;
 
-use super::{DynamicProvider, ItemSource, LaunchItem, ProviderType};
+use super::{DynamicProvider, ItemActivation, ItemSource, LaunchItem, ProviderType};
 
 const PROVIDER_TYPE_ID: &str = "conv";
 const PROVIDER_ICON: &str = "edit-find-replace-symbolic";
@@ -84,7 +84,11 @@ impl DynamicProvider for ConverterProvider {
                     r.raw_value.replace('\'', "'\\''")
                 ),
                 terminal: false,
-                activation: super::ItemActivation::Launch,
+                activation: ItemActivation::Stdin {
+                    program: "wl-copy".into(),
+                    args: Vec::new(),
+                    input: r.raw_value.clone(),
+                },
                 tags: vec!["converter".into(), "units".into()],
                 source: ItemSource::Core,
             })

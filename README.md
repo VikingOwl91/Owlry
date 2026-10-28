@@ -238,6 +238,15 @@ pacman -Ssq | owlry dmenu -p "install" | xargs sudo pacman -S
 | `:recent` | Recently launched items (newest first) | `:recent` |
 | `:tag:X` | Filter all results by tag | `:tag:development` |
 
+Typing `program args` launches the program directly, without a shell. To run a
+shell expression (pipes, `&&`, redirects), prefix it with `:shell`:
+
+```
+:shell printf '%s\n' foo | wl-copy
+```
+
+`:cmd` remains a PATH-command filter and does not enable shell syntax.
+
 ### Trigger Prefixes
 
 | Trigger | Provider | Example |

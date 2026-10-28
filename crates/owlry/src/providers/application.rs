@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use super::{ItemSource, LaunchItem, Provider, ProviderType};
+use super::{ItemActivation, ItemSource, LaunchItem, Provider, ProviderType};
 use crate::paths;
 use freedesktop_desktop_entry::{DesktopEntry, Iter};
 use log::{debug, warn};
@@ -238,7 +238,10 @@ impl ApplicationProvider {
                 provider: ProviderType::Application,
                 command: run_cmd,
                 terminal: desktop_entry.terminal(),
-                activation: super::ItemActivation::Launch,
+                activation: ItemActivation::Argv {
+                    program: "gio".into(),
+                    args: vec!["launch".into(), path.to_string_lossy().to_string()],
+                },
                 tags,
                 source: ItemSource::Core,
             };

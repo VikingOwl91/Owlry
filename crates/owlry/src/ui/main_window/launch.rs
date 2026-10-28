@@ -4,7 +4,13 @@ use log::info;
 
 #[cfg(feature = "dev-logging")]
 use log::debug;
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
+
+/// Structured stdin payloads are capped at the default Linux pipe buffer.
+/// The write runs on a short-lived thread with a bounded wait, so a child
+/// that does not read cannot stall the GTK thread.
+const MAX_STDIN_BYTES: usize = 64 * 1024;
 
 impl MainWindow {
     /// Handle item activation - returns true if window should close
@@ -25,7 +31,10 @@ impl MainWindow {
                 return false;
             }
             ItemActivation::Submenu { .. } => return false,
-            ItemActivation::Launch => {}
+            ItemActivation::Launch
+            | ItemActivation::Argv { .. }
+            | ItemActivation::Stdin { .. }
+            | ItemActivation::Pipe { .. } => {}
         }
 
         Self::launch_item(item, config, backend);
@@ -55,28 +64,11 @@ impl MainWindow {
             item.terminal, item.provider, item.id
         );
 
-        // Reject script plugin commands that don't match the known-safe allowlist.
-        // Script plugins (Lua/Rune user plugins) are untrusted code; only allow
-        // patterns that can't escalate privileges or exfiltrate data.
-        if item.source == ItemSource::ScriptPlugin {
-            let cmd = &item.command;
-            let allowed = cmd.is_empty()
-                || cmd.starts_with("xdg-open ")
-                || cmd.starts_with("wl-copy")
-                || cmd.starts_with("wl-paste");
-            if !allowed {
-                let msg = format!(
-                    "Blocked untrusted script plugin command from '{}': {}",
-                    item.name, cmd
-                );
-                log::warn!("{}", msg);
-                crate::notify::notify("Command blocked", &msg);
-                return;
-            }
-        }
-
-        // Reject items with no command — nothing to execute.
-        if item.command.is_empty() && !matches!(item.provider, ProviderType::Application) {
+        // Reject items with no launch payload — nothing to execute.
+        if item.command.is_empty()
+            && item.activation.is_legacy_launch()
+            && !matches!(item.provider, ProviderType::Application)
+        {
             let msg = format!("Item '{}' has no command; cannot launch", item.name);
             log::warn!("{}", msg);
             crate::notify::notify("Launch failed", &msg);
@@ -91,7 +83,6 @@ impl MainWindow {
         // freedesktop Desktop Entry spec (D-Bus activation, field codes, env vars, etc.)
         // We delegate to: uwsm (if configured), gio launch, or gtk-launch as fallback.
         //
-        // Non-desktop items (commands, plugins) use sh -c for shell execution.
         // File-search results resolve their default handler first so that
         // terminal-based handlers (nvim, vim, …) open in a real terminal
         // instead of being launched windowless via xdg-open, and so that
@@ -101,7 +92,7 @@ impl MainWindow {
         } else if is_desktop_app {
             Self::launch_desktop_file(&item.id, config)
         } else {
-            Self::launch_command(&item.command, item.terminal, config)
+            Self::launch_activation(item, config)
         };
 
         if let Err(e) = result {
@@ -159,7 +150,240 @@ impl MainWindow {
         }
     }
 
-    /// Launch a shell command (for non-desktop items like PATH commands, plugins, etc.)
+    /// Dispatch a structured or legacy activation.
+    fn launch_activation(
+        item: &LaunchItem,
+        config: &Config,
+    ) -> std::io::Result<std::process::Child> {
+        if let Some(reason) = Self::script_activation_blocker(item) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                reason,
+            ));
+        }
+
+        match &item.activation {
+            ItemActivation::Argv { program, args } => {
+                Self::launch_argv(program, args, item.terminal, config)
+            }
+            ItemActivation::Stdin {
+                program,
+                args,
+                input,
+            } if !item.terminal => Self::launch_stdin(program, args, input, config),
+            ItemActivation::Pipe {
+                source_program,
+                source_args,
+                dest_program,
+                dest_args,
+            } if !item.terminal => {
+                Self::launch_pipe(source_program, source_args, dest_program, dest_args, config)
+            }
+            ItemActivation::Stdin { .. } | ItemActivation::Pipe { .. } => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "stdin and pipe activations cannot request a terminal",
+            )),
+            ItemActivation::Launch => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "Refusing legacy shell payload from '{}'; the daemon and UI must be upgraded together",
+                    item.name
+                ),
+            )),
+            ItemActivation::Submenu { .. } | ItemActivation::PluginAction { .. } => {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "activation does not launch a process",
+                ))
+            }
+        }
+    }
+
+    /// Return why a script-provider activation is not allowed, or `None` for
+    /// trusted core items and structured script operations.
+    ///
+    /// Script providers may use argv, stdin and pipes. The only payload they
+    /// may not use is the historical shell string: `owlry.util.shell` already
+    /// gives user Lua code a deliberate way to run a shell, so blocking
+    /// accidental metacharacter interpolation here is the useful control.
+    fn script_activation_blocker(item: &LaunchItem) -> Option<String> {
+        if item.source == ItemSource::ScriptPlugin && item.activation.is_legacy_launch() {
+            Some(format!(
+                "Blocked untrusted script plugin shell command from '{}'",
+                item.name
+            ))
+        } else {
+            None
+        }
+    }
+
+    /// Spawn a program with argv, never through a shell.
+    pub(super) fn launch_argv(
+        program: &str,
+        args: &[String],
+        terminal: bool,
+        config: &Config,
+    ) -> std::io::Result<std::process::Child> {
+        let argv = Self::build_argv(program, args, terminal, config)?;
+        if config.general.use_uwsm && !Self::skip_uwsm_for(&argv[0]) {
+            Command::new("uwsm").args(["app", "--"]).args(&argv).spawn()
+        } else {
+            Command::new(&argv[0]).args(&argv[1..]).spawn()
+        }
+    }
+
+    /// Spawn a program with argv and write `input` to its stdin.
+    fn launch_stdin(
+        program: &str,
+        args: &[String],
+        input: &str,
+        _config: &Config,
+    ) -> std::io::Result<std::process::Child> {
+        if input.len() > MAX_STDIN_BYTES {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "stdin payload is {} bytes; the limit is {MAX_STDIN_BYTES}",
+                    input.len()
+                ),
+            ));
+        }
+
+        let mut child = Command::new(program)
+            .args(args)
+            .stdin(Stdio::piped())
+            .spawn()?;
+        if let Some(mut stdin) = child.stdin.take() {
+            // A healthy reader drains this immediately. A child that never
+            // reads must not freeze the GTK thread, so wait only briefly for
+            // delivery. If the write is still blocked after that, the child
+            // is not consuming stdin; the writer exits with the process.
+            let input = input.to_string();
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let result = stdin.write_all(input.as_bytes());
+                let _ = tx.send(result);
+            });
+            match rx.recv_timeout(std::time::Duration::from_millis(250)) {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => return Err(e),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {}
+            }
+        }
+        Ok(child)
+    }
+
+    /// Run `source` and pipe its stdout into `dest`, without a shell in either
+    /// stage. The source process is reaped on a detached thread.
+    fn launch_pipe(
+        source_program: &str,
+        source_args: &[String],
+        dest_program: &str,
+        dest_args: &[String],
+        _config: &Config,
+    ) -> std::io::Result<std::process::Child> {
+        let mut source = Command::new(source_program)
+            .args(source_args)
+            .stdout(Stdio::piped())
+            .spawn()?;
+        let stdout = match source.stdout.take() {
+            Some(stdout) => stdout,
+            None => {
+                let _ = source.kill();
+                let _ = source.wait();
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    format!("{source_program} produced no stdout pipe"),
+                ));
+            }
+        };
+        let dest = match Command::new(dest_program)
+            .args(dest_args)
+            .stdin(Stdio::from(stdout))
+            .spawn()
+        {
+            Ok(dest) => dest,
+            Err(e) => {
+                let _ = source.kill();
+                let _ = source.wait();
+                return Err(e);
+            }
+        };
+        std::thread::spawn(move || {
+            let _ = source.wait();
+        });
+        Ok(dest)
+    }
+
+    fn build_argv(
+        program: &str,
+        args: &[String],
+        terminal: bool,
+        config: &Config,
+    ) -> std::io::Result<Vec<String>> {
+        let mut argv = Vec::with_capacity(args.len() + 1);
+        argv.push(program.to_string());
+        argv.extend(args.iter().cloned());
+
+        if terminal {
+            let terminal_cmd = config
+                .general
+                .terminal_command
+                .as_deref()
+                .unwrap_or("xterm");
+            let mut wrapped =
+                crate::command_line::split_words_strict(terminal_cmd).map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("invalid terminal_command {terminal_cmd:?}: {e}"),
+                    )
+                })?;
+            if !wrapped.iter().any(|arg| arg == "-e") {
+                wrapped.push("-e".to_string());
+            }
+            wrapped.extend(argv);
+            argv = wrapped;
+        }
+        Ok(argv)
+    }
+
+    fn skip_uwsm_for(program: &str) -> bool {
+        let name = std::path::Path::new(program)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(program);
+        matches!(
+            name,
+            "playerctl" | "dbus-send" | "systemctl" | "journalctl" | "xdg-open"
+        )
+    }
+
+    /// Build the structured activation for a `.desktop` file's `Exec` line,
+    /// for contextual actions that want to run the application directly.
+    pub(crate) fn desktop_exec_activation(desktop_path: &str) -> Option<ItemActivation> {
+        let contents = std::fs::read_to_string(desktop_path).ok()?;
+        let handler = parse_desktop_handler(&contents)?;
+        let mut argv = crate::command_line::desktop_exec_argv_with(
+            &handler.exec,
+            None,
+            handler.name.as_deref(),
+            handler.icon.as_deref(),
+            Some(desktop_path),
+        )
+        .ok()?;
+        if crate::command_line::invokes_shell(&argv) {
+            return None;
+        }
+        let program = argv.remove(0);
+        Some(ItemActivation::Argv {
+            program,
+            args: argv,
+        })
+    }
+
+    /// Launch an explicit shell command. Used only by the `:shell` opt-in in
+    /// the search field; provider results use argv.
     pub(super) fn launch_command(
         command: &str,
         terminal: bool,
@@ -217,8 +441,7 @@ impl MainWindow {
     /// whose default app is a terminal program (nvim, vim, less, …) launches
     /// windowless and appears to do nothing. When the resolved handler wants a
     /// terminal we reconstruct its `Exec` line and run it through the
-    /// configured terminal (reusing [`Self::launch_command`]'s terminal
-    /// handling, including its `-e` convention).
+    /// configured terminal (reusing [`Self::build_argv`]'s `-e` convention).
     ///
     /// When the file's type has no associated application, the user is
     /// notified instead of silently getting nothing. GUI handlers and
@@ -227,12 +450,38 @@ impl MainWindow {
     fn launch_file_open(path: &str, config: &Config) -> std::io::Result<std::process::Child> {
         match Self::resolve_default_handler(path) {
             HandlerResolution::Found(handler) if handler.terminal => {
-                let exec = expand_exec_for_file(&handler.exec, path);
-                info!(
-                    "File handler is terminal-based; opening in terminal: {}",
-                    exec
-                );
-                Self::launch_command(&exec, true, config)
+                match crate::command_line::desktop_exec_argv_with(
+                    &handler.exec,
+                    Some(path),
+                    handler.name.as_deref(),
+                    handler.icon.as_deref(),
+                    handler.path.as_deref(),
+                ) {
+                    Ok(argv) if crate::command_line::invokes_shell(&argv) => {
+                        log::warn!(
+                            "Refusing terminal handler {:?} for '{}': it invokes a shell command string; falling back to xdg-open",
+                            handler.exec,
+                            path
+                        );
+                        Self::launch_argv("xdg-open", &[path.to_string()], false, config)
+                    }
+                    Ok(argv) => {
+                        info!(
+                            "File handler is terminal-based; opening in terminal: {:?}",
+                            argv
+                        );
+                        Self::launch_argv(&argv[0], &argv[1..], true, config)
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Invalid terminal handler Exec {:?} for '{}': {}; falling back to xdg-open",
+                            handler.exec,
+                            path,
+                            e
+                        );
+                        Self::launch_argv("xdg-open", &[path.to_string()], false, config)
+                    }
+                }
             }
             HandlerResolution::NoAssociation => {
                 let name = std::path::Path::new(path)
@@ -244,10 +493,10 @@ impl MainWindow {
                 crate::notify::notify("Cannot open file", &msg);
                 // Best-effort: hand it to xdg-open anyway in case the desktop
                 // environment offers its own "open with…" fallback.
-                Self::launch_command(&format!("xdg-open {}", shell_quote(path)), false, config)
+                Self::launch_argv("xdg-open", &[path.to_string()], false, config)
             }
             // GUI handler or indeterminate resolution: plain xdg-open.
-            _ => Self::launch_command(&format!("xdg-open {}", shell_quote(path)), false, config),
+            _ => Self::launch_argv("xdg-open", &[path.to_string()], false, config),
         }
     }
 
@@ -360,9 +609,31 @@ impl MainWindow {
         if let Ok(contents) = std::fs::read_to_string(app_desktop_path)
             && let Some(handler) = parse_desktop_handler(&contents)
         {
-            let exec = expand_exec_for_file(&handler.exec, file_path);
-            info!("Opening '{}' with chosen app: {}", file_path, exec);
-            return Self::launch_command(&exec, handler.terminal, config);
+            match crate::command_line::desktop_exec_argv_with(
+                &handler.exec,
+                Some(file_path),
+                handler.name.as_deref(),
+                handler.icon.as_deref(),
+                Some(app_desktop_path),
+            ) {
+                Ok(argv) if crate::command_line::invokes_shell(&argv) => {
+                    log::warn!(
+                        "Refusing desktop Exec {:?} in '{}': it invokes a shell command string; falling back to gio",
+                        handler.exec,
+                        app_desktop_path
+                    );
+                }
+                Ok(argv) => {
+                    info!("Opening '{}' with chosen app: {:?}", file_path, argv);
+                    return Self::launch_argv(&argv[0], &argv[1..], handler.terminal, config);
+                }
+                Err(e) => log::warn!(
+                    "Invalid desktop Exec {:?} in '{}': {}; falling back to gio",
+                    handler.exec,
+                    app_desktop_path,
+                    e
+                ),
+            }
         }
         // Fallback: let gio launch the .desktop with the file as an argument.
         info!(
@@ -439,7 +710,10 @@ impl MainWindow {
             .ok()
             .and_then(|c| parse_desktop_handler(&c))
         {
-            Some(handler) => HandlerResolution::Found(handler),
+            Some(mut handler) => {
+                handler.path = Some(desktop_path.to_string_lossy().to_string());
+                HandlerResolution::Found(handler)
+            }
             None => HandlerResolution::Indeterminate,
         }
     }
@@ -496,6 +770,9 @@ impl MainWindow {
 pub(super) struct DesktopHandler {
     exec: String,
     terminal: bool,
+    name: Option<String>,
+    icon: Option<String>,
+    path: Option<String>,
 }
 
 /// Outcome of resolving a file's default application.
@@ -510,11 +787,6 @@ pub(super) enum HandlerResolution {
     Indeterminate,
 }
 
-/// Shell-quote `s` for inclusion in a single-quoted `sh -c` argument.
-fn shell_quote(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
-}
-
 /// Parse the `[Desktop Entry]` group of a `.desktop` file for `Exec=` and
 /// `Terminal=`. Only the first `Exec=` in the group is used, and only that
 /// group is consulted (action groups are ignored). Returns `None` when there
@@ -523,6 +795,8 @@ fn parse_desktop_handler(contents: &str) -> Option<DesktopHandler> {
     let mut in_entry = false;
     let mut exec: Option<String> = None;
     let mut terminal = false;
+    let mut name: Option<String> = None;
+    let mut icon: Option<String> = None;
 
     for line in contents.lines() {
         let line = line.trim();
@@ -533,51 +807,30 @@ fn parse_desktop_handler(contents: &str) -> Option<DesktopHandler> {
         if !in_entry {
             continue;
         }
-        if let Some(value) = line.strip_prefix("Exec=") {
-            if exec.is_none() {
-                exec = Some(value.trim().to_string());
-            }
+        if let Some(value) = line.strip_prefix("Exec=")
+            && exec.is_none()
+        {
+            exec = Some(crate::command_line::unescape_desktop_value(value.trim()));
         } else if let Some(value) = line.strip_prefix("Terminal=") {
             terminal = value.trim().eq_ignore_ascii_case("true");
+        } else if let Some(value) = line.strip_prefix("Name=")
+            && name.is_none()
+        {
+            name = Some(crate::command_line::unescape_desktop_value(value.trim()));
+        } else if let Some(value) = line.strip_prefix("Icon=")
+            && icon.is_none()
+        {
+            icon = Some(crate::command_line::unescape_desktop_value(value.trim()));
         }
     }
 
-    exec.map(|exec| DesktopHandler { exec, terminal })
-}
-
-/// Expand a desktop `Exec` line's field codes against a single `path`.
-///
-/// `%f %F %u %U` are replaced with the shell-quoted path; `%%` becomes a
-/// literal `%`; every other code (`%i %c %k`, …) is dropped per the
-/// freedesktop spec. If the line carries no file field code, the path is
-/// appended so the file is still passed to the handler.
-fn expand_exec_for_file(exec: &str, path: &str) -> String {
-    let quoted = shell_quote(path);
-    let mut out = String::new();
-    let mut substituted = false;
-    let mut chars = exec.chars();
-
-    while let Some(c) = chars.next() {
-        if c != '%' {
-            out.push(c);
-            continue;
-        }
-        match chars.next() {
-            Some('f') | Some('F') | Some('u') | Some('U') => {
-                out.push_str(&quoted);
-                substituted = true;
-            }
-            Some('%') => out.push('%'),
-            _ => {} // drop %i %c %k and unknown/trailing codes
-        }
-    }
-
-    let mut out = out.trim().to_string();
-    if !substituted {
-        out.push(' ');
-        out.push_str(&quoted);
-    }
-    out
+    exec.map(|exec| DesktopHandler {
+        exec,
+        terminal,
+        name,
+        icon,
+        path: None,
+    })
 }
 
 #[cfg(test)]
@@ -597,6 +850,83 @@ mod tests {
             tags: Vec::new(),
             source: ItemSource::Core,
         }
+    }
+
+    fn activation_item(activation: ItemActivation, source: ItemSource) -> LaunchItem {
+        LaunchItem {
+            id: "x".into(),
+            name: "x".into(),
+            description: None,
+            icon: None,
+            provider: ProviderType::Plugin("script".into()),
+            command: "display".into(),
+            terminal: false,
+            activation,
+            tags: Vec::new(),
+            source,
+        }
+    }
+
+    #[test]
+    fn script_legacy_shell_command_is_blocked() {
+        let it = activation_item(ItemActivation::Launch, ItemSource::ScriptPlugin);
+        assert!(MainWindow::script_activation_blocker(&it).is_some());
+    }
+
+    #[test]
+    fn script_argv_is_allowed_because_it_never_meets_a_shell() {
+        let it = activation_item(
+            ItemActivation::Argv {
+                program: "sh".into(),
+                args: vec!["-c".into(), "touch /tmp/pwned".into()],
+            },
+            ItemSource::ScriptPlugin,
+        );
+        assert!(MainWindow::script_activation_blocker(&it).is_none());
+    }
+
+    #[test]
+    fn script_argv_with_metacharacters_in_arguments_is_allowed() {
+        let it = activation_item(
+            ItemActivation::Argv {
+                program: "xdg-open".into(),
+                args: vec!["https://example.com; touch /tmp/pwned".into()],
+            },
+            ItemSource::ScriptPlugin,
+        );
+        assert!(MainWindow::script_activation_blocker(&it).is_none());
+    }
+
+    #[test]
+    fn script_stdin_and_pipe_are_allowed_as_structured_operations() {
+        let stdin = activation_item(
+            ItemActivation::Stdin {
+                program: "wl-copy".into(),
+                args: Vec::new(),
+                input: "text".into(),
+            },
+            ItemSource::ScriptPlugin,
+        );
+        assert!(MainWindow::script_activation_blocker(&stdin).is_none());
+
+        let pipe = activation_item(
+            ItemActivation::Pipe {
+                source_program: "printf".into(),
+                source_args: vec!["text".into()],
+                dest_program: "wl-copy".into(),
+                dest_args: Vec::new(),
+            },
+            ItemSource::ScriptPlugin,
+        );
+        assert!(MainWindow::script_activation_blocker(&pipe).is_none());
+    }
+
+    #[test]
+    fn legacy_core_shell_payload_is_refused_without_spawning() {
+        let it = activation_item(ItemActivation::Launch, ItemSource::Core);
+        assert!(MainWindow::script_activation_blocker(&it).is_none());
+        let err = MainWindow::launch_activation(&it, &Config::default()).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
     }
 
     #[test]
@@ -659,35 +989,121 @@ mod tests {
     }
 
     #[test]
-    fn expand_substitutes_file_field_codes() {
+    fn desktop_exec_substitutes_file_field_codes_as_argv() {
         assert_eq!(
-            expand_exec_for_file("nvim %F", "/home/u/a.rs"),
-            "nvim '/home/u/a.rs'"
+            crate::command_line::desktop_exec_argv("nvim %F", "/home/u/a.rs").unwrap(),
+            vec!["nvim", "/home/u/a.rs"]
         );
-        assert_eq!(expand_exec_for_file("vim %f", "/tmp/x"), "vim '/tmp/x'");
-        assert_eq!(expand_exec_for_file("app %u", "/tmp/x"), "app '/tmp/x'");
-        assert_eq!(expand_exec_for_file("app %U", "/tmp/x"), "app '/tmp/x'");
-    }
-
-    #[test]
-    fn expand_drops_unknown_codes_and_keeps_literal_percent() {
         assert_eq!(
-            expand_exec_for_file("app %i %c %F 100%%", "/tmp/x"),
-            "app   '/tmp/x' 100%"
+            crate::command_line::desktop_exec_argv("app %u", "/tmp/x").unwrap(),
+            vec!["app", "/tmp/x"]
+        );
+        assert_eq!(
+            crate::command_line::desktop_exec_argv("app %i %c %F 100%%", "/tmp/x").unwrap(),
+            vec!["app", "/tmp/x", "100%"]
         );
     }
 
     #[test]
-    fn expand_appends_path_when_no_field_code() {
-        assert_eq!(expand_exec_for_file("nvim", "/tmp/x"), "nvim '/tmp/x'");
+    fn desktop_exec_appends_path_when_no_field_code() {
+        assert_eq!(
+            crate::command_line::desktop_exec_argv("nvim", "/tmp/x").unwrap(),
+            vec!["nvim", "/tmp/x"]
+        );
     }
 
     #[test]
-    fn expand_quotes_embedded_single_quotes() {
+    fn desktop_exec_keeps_quoted_paths_as_one_argument() {
         assert_eq!(
-            expand_exec_for_file("nvim %F", "/tmp/it's a file"),
-            "nvim '/tmp/it'\\''s a file'"
+            crate::command_line::desktop_exec_argv("nvim %F", "/tmp/it's a file").unwrap(),
+            vec!["nvim", "/tmp/it's a file"]
         );
+    }
+
+    #[test]
+    fn terminal_command_rejects_shell_metacharacters() {
+        let mut config = Config::default();
+        config.general.terminal_command = Some("xterm; touch /tmp/pwned".into());
+        let err = MainWindow::build_argv("true", &[], true, &config).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn stdin_payload_is_capped_before_spawn() {
+        let input = "x".repeat(MAX_STDIN_BYTES + 1);
+        let err = MainWindow::launch_stdin("true", &[], &input, &Config::default()).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn a_child_that_does_not_read_stdin_does_not_block_activation() {
+        let input = "x".repeat(MAX_STDIN_BYTES);
+        let started = std::time::Instant::now();
+        let mut child =
+            MainWindow::launch_stdin("sleep", &["5".to_string()], &input, &Config::default())
+                .unwrap();
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "stdin write blocked the caller for {:?}",
+            started.elapsed()
+        );
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    #[test]
+    fn max_stdin_payload_reaches_a_delayed_reader_in_full() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("stdin");
+        let input = "x".repeat(MAX_STDIN_BYTES);
+        let started = std::time::Instant::now();
+        let mut child = MainWindow::launch_stdin(
+            "sh",
+            &[
+                "-c".to_string(),
+                format!("sleep 2; cat > '{}'", out.display()),
+            ],
+            &input,
+            &Config::default(),
+        )
+        .expect("the capped payload should be delivered");
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "activation waited for the reader: {elapsed:?}"
+        );
+        assert!(child.wait().unwrap().success());
+        assert_eq!(std::fs::read(&out).unwrap(), input.as_bytes());
+    }
+
+    #[test]
+    fn desktop_exec_activation_refuses_shell_command_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        for (name, exec) in [
+            ("shell.desktop", "sh -c \"prog %f\""),
+            ("wrapped.desktop", "env sh -c \"prog %f\""),
+            ("terminal.desktop", "xterm -e bash -lc \"prog %f\""),
+        ] {
+            let path = dir.path().join(name);
+            std::fs::write(
+                &path,
+                format!("[Desktop Entry]\nName=Shell\nExec={exec}\nTerminal=false\n"),
+            )
+            .unwrap();
+            assert!(
+                MainWindow::desktop_exec_activation(path.to_str().unwrap()).is_none(),
+                "accepted shell handler {exec:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn desktop_exec_does_not_execute_shell_metacharacters() {
+        let argv =
+            crate::command_line::desktop_exec_argv("app; touch /tmp/pwned %f", "/tmp/x").unwrap();
+        assert_eq!(argv[0], "app;");
+        assert!(argv.iter().any(|a| a == "/tmp/pwned"));
+        assert_eq!(argv.last().unwrap(), "/tmp/x");
     }
 
     #[test]

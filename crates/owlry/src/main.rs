@@ -13,27 +13,42 @@ use log::debug;
 /// Returns `Some(File)` if the lock was acquired (no other instance running),
 /// or `None` if another instance already holds the lock.
 /// The returned `File` must be kept alive for the duration of the process.
-fn try_acquire_lock() -> Option<std::fs::File> {
-    use std::os::unix::fs::OpenOptionsExt;
+fn try_acquire_lock() -> std::io::Result<Option<std::fs::File>> {
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 
-    let lock_path = paths::socket_path().parent().unwrap().join("owlry-ui.lock");
+    let socket_path = paths::socket_path()?;
+    let lock_path = socket_path.with_file_name("owlry-ui.lock");
 
-    if let Some(parent) = lock_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-
-    std::fs::OpenOptions::new()
+    let file = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
-        .truncate(true)
         .mode(0o600)
-        .open(&lock_path)
-        .ok()
-        .and_then(|f| {
-            let fd = f.as_raw_fd();
-            let ret = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
-            if ret == 0 { Some(f) } else { None }
-        })
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(&lock_path)?;
+    // The lock file has no content; only the flock matters. Do not truncate an
+    // existing path, and refuse anything that is not our own regular file (for
+    // example a hardlink planted in a shared runtime directory). Once the
+    // descriptor is validated, tighten the mode through that descriptor.
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.uid() != unsafe { libc::geteuid() } || metadata.nlink() != 1
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("unsafe UI lock file '{}'", lock_path.display()),
+        ));
+    }
+    file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    let fd = file.as_raw_fd();
+    let ret = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+    if ret == 0 {
+        return Ok(Some(file));
+    }
+    let error = std::io::Error::last_os_error();
+    if error.kind() == std::io::ErrorKind::WouldBlock {
+        Ok(None)
+    } else {
+        Err(error)
+    }
 }
 
 fn main() {
@@ -88,10 +103,16 @@ fn main() {
     // Toggle behavior: if another instance is already running, tell the daemon
     // to toggle visibility and exit immediately.
     let _lock_guard = match try_acquire_lock() {
-        Some(file) => file,
-        None => {
+        Ok(Some(file)) => file,
+        Ok(None) => {
             info!("Another owlry instance detected, sending toggle");
-            let socket_path = client::CoreClient::socket_path();
+            let socket_path = match client::CoreClient::socket_path() {
+                Ok(path) => path,
+                Err(e) => {
+                    eprintln!("Cannot resolve the owlry socket path: {e}");
+                    std::process::exit(1);
+                }
+            };
             if let Ok(mut client) = client::CoreClient::connect(&socket_path) {
                 if let Err(e) = client.toggle() {
                     eprintln!("Failed to toggle existing instance: {}", e);
@@ -102,6 +123,10 @@ fn main() {
                 std::process::exit(1);
             }
             std::process::exit(0);
+        }
+        Err(e) => {
+            eprintln!("Cannot start owlry: {e}");
+            std::process::exit(1);
         }
     };
 

@@ -8,7 +8,7 @@ use crate::config::Config;
 use crate::data::FrecencyStore;
 use crate::filter::ProviderFilter;
 use crate::ipc::{ProviderDesc, ResultItem};
-use crate::providers::{ItemActivation, ItemSource, LaunchItem, ProviderManager, ProviderType};
+use crate::providers::{ItemActivation, LaunchItem, ProviderManager, ProviderType};
 use log::warn;
 use std::sync::{Arc, Mutex};
 
@@ -404,9 +404,8 @@ impl SearchBackend {
 /// Convert an IPC ResultItem to the internal LaunchItem type.
 fn result_to_launch_item(item: ResultItem) -> LaunchItem {
     let provider: ProviderType = item.provider.parse().unwrap_or(ProviderType::Application);
-    let source: ItemSource = item.source.parse().unwrap_or(ItemSource::Core);
     let command = item.command.unwrap_or_default();
-    let activation = if item.activation.is_launch() {
+    let activation = if item.activation.is_legacy_launch() {
         ItemActivation::from_legacy_command(&command)
     } else {
         item.activation
@@ -429,6 +428,6 @@ fn result_to_launch_item(item: ResultItem) -> LaunchItem {
         terminal: item.terminal,
         activation,
         tags: item.tags,
-        source,
+        source: item.source,
     }
 }
