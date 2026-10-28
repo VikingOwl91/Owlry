@@ -3,19 +3,13 @@
 #
 # File Locations (XDG Base Directory compliant):
 # ┌─────────────────────────────────────────────────────────────────────┐
-# │ Config:  ~/.config/owlry/config.toml        Main configuration     │
-# │ Themes:  ~/.config/owlry/themes/*.css       Custom theme files     │
-# │ Style:   ~/.config/owlry/style.css          CSS overrides          │
-# │ Plugins: ~/.config/owlry/plugins/           User Lua/Rune plugins  │
-# │ Scripts: ~/.local/share/owlry/scripts/      Executable scripts     │
-# │ Data:    ~/.local/share/owlry/frecency.json Usage history          │
+# │ Lua:     ~/.config/owlry/owlry.lua          Preferred config        │
+# │ Config:  ~/.config/owlry/config.toml        TOML fallback           │
+# │ Themes:  ~/.config/owlry/themes/*.css       Custom theme files      │
+# │ Style:   ~/.config/owlry/style.css          CSS overrides           │
+# │ Data:    ~/.local/share/owlry/frecency.json Usage history           │
 # └─────────────────────────────────────────────────────────────────────┘
 #
-# System Plugin Locations:
-# ┌─────────────────────────────────────────────────────────────────────┐
-# │ Native:   /usr/lib/owlry/plugins/*.so       Installed plugins      │
-# │ Runtimes: /usr/lib/owlry/runtimes/*.so      Lua/Rune runtimes      │
-# └─────────────────────────────────────────────────────────────────────┘
 
 # ═══════════════════════════════════════════════════════════════════════
 # DMENU MODE
@@ -49,7 +43,8 @@ show_icons = true
 max_results = 100
 
 # Terminal emulator for SSH, scripts, etc.
-# Auto-detection order: $TERMINAL → xdg-terminal-exec → DE-native → Wayland → X11 → xterm
+# Auto-detection order: $TERMINAL → xdg-terminal-exec → DE-native → Wayland
+# terminals → X11 terminals → x-terminal-emulator → xterm
 # Uncomment to override:
 # terminal_command = "kitty"
 
@@ -61,8 +56,7 @@ max_results = 100
 
 # Header tabs — provider tabs shown in the UI bar (Ctrl+1..9 to toggle)
 # Core values: app, cmd, dmenu
-# Plugin values: uuctl, calc, clip, emoji, rofimoji, file, ssh, power, web, bm
-# Any installed plugin's type_id is valid (e.g. "weather", "media")
+# Optional provider ids: uuctl, calc, clip, emoji, rofimoji, file, ssh, power, web
 tabs = ["app", "cmd", "uuctl"]
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -93,68 +87,41 @@ border_radius = 12
 # Provider badge colors (optional)
 # badge_app = "#7aa2f7"
 # badge_cmd = "#9ece6a"
-# badge_bookmark = "#e0af68"
 # badge_calc = "#bb9af7"
 # badge_clip = "#7dcfff"
 # badge_dmenu = "#c0caf5"
 # badge_emoji = "#f7768e"
 # badge_file = "#73daca"
-# badge_script = "#ff9e64"
 # badge_ssh = "#2ac3de"
 # badge_power = "#f7768e"     # alias: badge_sys
 # badge_uuctl = "#9ece6a"
 # badge_web = "#7aa2f7"
-# badge_media = "#bb9af7"
-# badge_weather = "#7dcfff"
-# badge_pomo = "#f7768e"
-
-# ═══════════════════════════════════════════════════════════════════════
-# PLUGINS
-# ═══════════════════════════════════════════════════════════════════════
-#
-# All installed plugins are loaded by default. Use 'disabled_plugins' to blacklist.
-# Plugin IDs: calculator, system, ssh, clipboard, emoji, scripts, bookmarks,
-#             websearch, filesearch, systemd, weather, media, pomodoro
-
-[plugins]
-enabled = true               # Master switch for all plugins
-
-# Plugins to disable (by ID)
-disabled_plugins = []
-
-# Examples:
-# disabled_plugins = ["emoji", "pomodoro"]     # Disable specific plugins
-# disabled_plugins = ["weather", "media"]      # Disable widget plugins
-
-# Custom plugin registry URL (defaults to official registry)
-# registry_url = "https://my-registry.example.com/plugins.json"
-
-# ─────────────────────────────────────────────────────────────────────────
-# Sandbox settings (for Lua/Rune script plugins)
-# ─────────────────────────────────────────────────────────────────────────
-# [plugins.sandbox]
-# allow_filesystem = false   # Allow file system access beyond plugin dir
-# allow_network = false      # Allow network requests
-# allow_commands = false     # Allow shell command execution
-# memory_limit = 67108864    # Memory limit in bytes (64 MB default)
 
 # ═══════════════════════════════════════════════════════════════════════
 # PROVIDERS
 # ═══════════════════════════════════════════════════════════════════════
 #
-# Controls built-in providers only. Plugins are enabled/disabled via
-# [plugins] disabled_plugins or `owlry plugin enable/disable <name>`.
+# Provider availability is a compile-time cargo feature. The AUR package and
+# builds with --features full include every optional provider. [providers]
+# controls runtime enablement; a provider that is not compiled in produces no
+# results even when enabled here.
 
 [providers]
-# Core providers
+# Core providers (always compiled)
 applications = true      # .desktop applications from XDG dirs
 commands = true          # Executables from $PATH
-
-# Built-in providers (compiled into owlry-core)
-calculator = true        # Math expressions (= or calc trigger)
-converter = true         # Unit/currency conversion (> trigger)
+calculator = true        # Math expressions (= or :calc)
+converter = true         # Unit/currency conversion (> or :conv)
 power = true             # Power actions: shutdown, reboot, lock, etc. (alias: system)
-rofimoji = true          # Emoji + kaomoji picker via the optional rofimoji command
+
+# Optional providers (require the matching cargo feature)
+clipboard = true         # Clipboard history via cliphist
+emoji = true             # Emoji picker via wl-clipboard
+rofimoji = true          # Emoji + kaomoji picker via rofimoji
+ssh = true               # ~/.ssh/config hosts
+systemd = true           # systemd user units (:uuctl)
+websearch = true         # Web search
+filesearch = true        # Filesystem search via fd or locate
 
 # Frecency — boost frequently/recently used items
 # Data stored in: ~/.local/share/owlry/frecency.json
@@ -164,7 +131,7 @@ frecency_max_entries = 5000     # cap retained entries (0 = unbounded)
 frecency_max_age_days = 180     # drop entries older than this (0 = no age pruning)
 frecency_min_launches = 3       # launches that exempt an old entry from age pruning
 
-# Web search engine (used by owlry-plugin-websearch)
+# Web search engine (used by the web search provider)
 # Options: google, duckduckgo, bing, startpage, searxng, brave, ecosia
 # Or a custom URL: "https://search.example.com/?q={query}"
 search_engine = "duckduckgo"
