@@ -101,7 +101,9 @@ owlry.tabs { "app", "cmd", "uuctl" }
 -- 6. User-defined providers.
 --    Register your own search source. Every field except `id` and
 --    `items` is optional. `items` is called once at startup and the
---    results cached (dynamic per-keystroke providers land in 2.2).
+--    results cached (dynamic per-keystroke providers are not implemented
+--    yet). Prefer `program` + `args`; a `command` string is parsed into
+--    argv and never passed to a shell.
 -- ──────────────────────────────────────────────────────────────────────
 -- owlry.provider {
 --   id          = "hs",
@@ -111,9 +113,9 @@ owlry.tabs { "app", "cmd", "uuctl" }
 --   search_noun = "shutdown actions",
 --   items = function()
 --     return {
---       { name = "Lock",     command = "hyprlock" },
---       { name = "Shutdown", command = "systemctl poweroff" },
---       { name = "Reboot",   command = "systemctl reboot" },
+--       { name = "Lock",     program = "hyprlock" },
+--       { name = "Shutdown", program = "systemctl", args = { "poweroff" } },
+--       { name = "Reboot",   program = "systemctl", args = { "reboot" } },
 --     }
 --   end,
 -- }
@@ -142,7 +144,8 @@ owlry.tabs { "app", "cmd", "uuctl" }
 --         items[#items + 1] = {
 --           name = name,
 --           description = image,
---           command = "docker exec -it " .. name .. " bash",
+--           program = "docker",
+--           args = { "exec", "-it", name, "bash" },
 --           terminal = true,
 --         }
 --       end
