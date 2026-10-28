@@ -1,119 +1,195 @@
 # Owlry Roadmap
 
-Feature ideas and future development plans. For the v2 rewrite story (where 14 packages and the dynamic plugin system went), see [docs/RESTRUCTURE-V2.md](docs/RESTRUCTURE-V2.md).
+This is the active roadmap. It separates work that is committed from work that
+is proposed or exploratory. Uncommitted items do not have assigned releases or
+dates.
 
-## Locked-in for an upcoming 2.x release
+- Release history: [CHANGELOG.md](CHANGELOG.md)
+- Published releases: <https://somegit.dev/Owlibou/owlry/releases>
+- v2 rewrite story: [docs/RESTRUCTURE-V2.md](docs/RESTRUCTURE-V2.md)
+- Shipped implementation notes: [docs/roadmap-archive.md](docs/roadmap-archive.md)
 
-### Lua-driven configuration — **shipped in 2.1**
-`~/.config/owlry/owlry.lua` is the canonical config from 2.1 onwards (TOML stays supported as a back-compat fallback until 3.0). Real Lua 5.4 via vendored `mlua`. The full surface is documented in [`docs/lua-api.md`](docs/lua-api.md):
+Labels: `[committed]` is planned for the current cycle, `[proposed]` is a
+concrete candidate that needs a decision, and `[exploratory]` is an idea
+without a design or schedule.
 
-- `owlry.set` / `owlry.providers` / `owlry.tabs` / `owlry.theme` / `owlry.profiles` for declarative config
-- `owlry.provider {}` for user-defined providers (Hyprland-style configs-as-code)
-- `owlry.util.{shell, shell_lines, read_file, glob, env, hostname}` host helpers inside provider callbacks
-- Hot reload on save via the `notify` crate — broken edits surface as desktop notifications and keep the previous state live
-- `owlry migrate-config [--force]` — deterministic TOML → Lua migration
-- `owlry config validate` — categorised report (errors exit 1, warnings exit 2)
+## Now
 
-```lua
-owlry.set { theme = "owl", width = 850 }
-owlry.providers { "app", "cmd", "power", "systemd" }
-owlry.tabs { "app", "cmd", "uuctl" }
+### 2.8.0 integration verification `[committed]`
 
-owlry.provider {
-  id = "hs", prefix = ":hs", tab_label = "Shutdown",
-  items = function() return { { name = "Lock", command = "hyprlock" } } end,
-}
-```
+The 2.8.0 release passed the unit, formatting, Clippy, and audit gates. These
+live paths still need verification. They are unverified integration paths, not
+known vulnerabilities.
 
-**Future follow-ups:** dynamic (per-keystroke) Lua providers via `dynamic = true`; `owlry.bind` for runtime keybindings; `owlry.util.http_get`. These do not have an assigned release yet.
+- Cross-user IPC: a second UID must be rejected by both client and daemon.
+- Real systemd socket activation, including multi-FD handoff and restart.
+- Desktop and terminal handlers in a live Wayland session.
+- Clipboard delivery, including byte-for-byte content.
+- `locate` fallback when `fd` is absent.
+- Mixed-version UI/daemon behavior and the restart requirement.
 
-### Widget providers return
-Weather, MPRIS media controls, and pomodoro timer were deferred from 2.0 while the widget-row UI is redesigned. They'll come back as a feature group once the placement model is settled. ([D20 in the v2 plan](docs/RESTRUCTURE-V2.md).)
+The detailed checklist is under Maintenance & Technical Debt.
 
-### Bookmarks return
-Firefox + Chromium bookmarks were deferred from 2.0 — the `rusqlite` dep used to read Firefox's `places.sqlite` made the AUR chroot build brittle (`libsqlite3-sys`'s `bundled` feature kept slipping out of the resolved feature graph). Returns when we wire up a pure-Rust path: Chromium's bookmarks file is already JSON, and Firefox exposes JSON backups under `~/.mozilla/firefox/<profile>/bookmarkbackups/`. No SQLite required.
+### 2.8.0 documentation refresh `[committed]`
 
----
+Refresh the README, split detailed material into `docs/`, keep the
+configuration examples and CLI reference aligned with 2.8.0, and validate
+internal links and cross-references.
 
-## High Value, Low Effort
+## Next
 
-### ~~Frecency pruning — expose thresholds~~ — **landed (ships in 2.4)**
-The startup prune thresholds are now configurable via `[providers]`: `frecency_max_entries` (0 = unbounded), `frecency_max_age_days` (0 = no age pruning), `frecency_min_launches` — defaulting to the historical 5000/180/3. Honored by the daemon and the daemonless (dmenu / fallback) stores alike. Applied at store load; a daemon restart is needed to re-prune after a config change.
+### Window switcher with live thumbnails `[proposed]`
 
-### ~~`:recent` prefix~~ — **landed (ships in 2.4)**
-`:recent` shows the most recently launched items, newest first. Since `FrecencyEntry` stores only `launch_count` + `last_launch` keyed by `item.id`, the daemon (`ProviderManager::recent_items`) resolves ids against its in-memory static-provider items and drops dangling ones (uninstalled apps, dynamic-provider results). Routed via `parse_query`'s unknown-prefix fallback (`prefix="recent"`) — no IPC change.
+A `windows` provider using Wayland screencopy and compositor IPC to show live
+thumbnails, potentially replacing Alt+Tab. Hyprland and Sway expose window
+lists; a shared abstraction is the main design question.
 
-### ~~Clipboard images~~ — **landed (ships in 2.4)**
-Image clipboard entries are detected from cliphist's `[[ binary data … ]]` preview, named cleanly (`Image — png 1920x1080`), and decoded to a cached thumbnail under `$XDG_CACHE_HOME/owlry/clip-thumbs/` that the result row renders via `Image::from_file`. (Surfaced and fixed a pre-existing bug: clipboard paste fed `cliphist decode` a bare id, which it rejects — now feeds `<id>\t`.) Each refresh prunes thumbnails for entries no longer present while leaving unrelated files and directories untouched.
+This remains the first pick for a new workflow, carried over from the previous
+roadmap. The priority is not changed here.
 
-### ~~Dynamic providers in `owlry doctor`~~ — **landed (ships in 2.4)**
-`available_providers()` already enumerated the dynamic providers; `doctor` now labels each `[static]` / `[dynamic]` via a `kind` field on `ProviderDesc`.
+### `owlry doctor` installation and version checks `[proposed]`
 
-### ~~Orphan reporting in `owlry doctor`~~ — **landed (ships in 2.4)**
-`doctor` now reports stale system-level remnants under `[stale system files]` (path + size + `pacman -Qo` ownership): the pre-v2 `/usr/lib/owlry` runtimes dir, old `owlryd.{service,socket}` units, and an uncompressed `owlry.1` man page *only when* the packaged `.gz` also exists (shadowing). Report-only — `doctor` never deletes.
+Add report-only diagnostics for common upgrade problems:
 
----
+- A local `owlry` earlier in `PATH` than the packaged `/usr/bin/owlry`.
+- User systemd drop-ins that override the packaged `ExecStart`.
+- A running daemon whose executable differs from the installed package.
+- A running UI and daemon with different versions.
 
-## Medium Effort, High Value
+The checks should print the exact paths, unit files, and versions, and suggest
+manual fixes. They must never modify `PATH`, units, symlinks, or services, and
+must never restart the daemon. A small read-only IPC version query may be
+needed for the UI/daemon comparison.
 
-### ~~Actions on any result~~ — **first pass landed**
-Press Right Arrow on a launchable result to open its contextual action menu. Plain Enter keeps its existing primary behavior, and systemd service results continue to open their provider submenu directly. Result activation is now typed across provider, IPC, backend, and UI boundaries; the old `SUBMENU:` command encoding remains only as a compatibility path for older peers and script providers.
+This is the smaller operational candidate. See the priority note at the end.
 
-| Provider | Actions |
-|----------|---------|
-| Any launchable result | Its existing primary Open, Run, Copy, or Connect action |
-| Applications | Open in terminal, show `.desktop` location |
-| Files | Open containing folder, copy path, move to trash |
-| Commands | Run in terminal |
-| SSH | Copy host alias, edit SSH config |
+## Later
 
-Bookmark actions remain pending until bookmarks return. Removing individual clipboard-history entries is also still future work.
+### Widget providers `[exploratory]`
 
-### ~~Result action capture~~ — **landed with contextual actions**
-Calculator and converter results expose Copy as their primary action. File paths and SSH host aliases expose explicit Copy actions. Plain Enter keeps copying calculator and converter output as before.
+Weather, MPRIS media controls, and pomodoro timer, deferred from 2.0 while the
+widget-row placement model is designed. See [D20](docs/RESTRUCTURE-V2.md).
 
-### Split the remaining 1000+ LOC files
-Contextual-action construction now lives in `ui/actions.rs` instead of adding another provider-specific branch to `ui/main_window.rs`. `providers/mod.rs`, `ui/main_window.rs`, and `providers/converter/units.rs` still need further focused extraction. (Phase 5 hygiene in the v2 plan.)
+### Bookmarks `[exploratory]`
 
----
+Firefox and Chromium bookmarks, deferred from 2.0. The v2 plan avoided a
+SQLite dependency; Chromium's file is JSON and Firefox exposes JSON backups.
+The provider design is still open. See [D22](docs/RESTRUCTURE-V2.md).
 
-## Bigger Bets
+### Dynamic Lua providers `[exploratory]`
 
-### Window switcher with live thumbnails
-A `windows` provider using Wayland screencopy to show live thumbnails of open windows. Hyprland and Sway expose window lists via IPC. Could replace Alt+Tab.
+`owlry.provider { dynamic = true }` for per-keystroke items. Current releases
+reject `dynamic = true` and support only static providers. No release
+assigned.
 
-### Cross-device bookmark sync
-Firefox and Chrome sync bookmarks across devices. Parse sync metadata to show "recently added on other devices".
+### Runtime keybindings and HTTP helper `[exploratory]`
 
-### Natural language commands
-Parse simple natural language into system commands:
+`owlry.bind` for runtime keybindings and `owlry.util.http_get` for user
+providers. Neither has a design or release assigned.
 
-```
-"shutdown in 30 minutes" → systemd-run --user --on-active=30m systemctl poweroff
-"remind me in 1 hour"    → notify-send scheduled via at/systemd timer
-"volume 50%"             → wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.5
-```
+### Natural-language commands `[exploratory]`
 
-Local pattern matching, no cloud required.
+Map simple phrases to system actions, such as "shutdown in 30 minutes" or
+"volume 50%". Local pattern matching, no cloud dependency. The grammar, safety
+rules, and confirmation model need design work.
 
-### Drop the daemon
-After Lua config lands and we profile startup honestly: if the daemon's keep-providers-warm justification doesn't hold up against an mmap'd cache, collapse to a single-process model. Eliminates the socket protocol, IPC types, and most of `client.rs` + `server.rs`. ([D17 deferred this decision past 2.0.](docs/RESTRUCTURE-V2.md))
+### Cross-device bookmark sync `[exploratory]`
 
----
+Show bookmarks recently added on other devices. This depends on the bookmarks
+provider and on parsing each browser's sync metadata.
 
-## Technical Debt
+### Remove individual clipboard entries `[exploratory]`
 
-### `expr-solver-lib` evaluation
-The calculator's `expr-solver-lib` dep is small and old. If it stagnates further or becomes unsupported, switch to `evalexpr` v13+ which is actively maintained.
+Add a contextual action to delete one cliphist entry without clearing the
+whole history.
 
-### ~~Submenu protocol redesign~~ — **landed**
-Results now carry a typed activation variant for launches, submenus, and provider actions. Legacy `SUBMENU:<plugin_id>:<data>` commands are decoded only at compatibility boundaries. (Phase 5 hygiene.)
+### Daemon architecture evaluation `[exploratory]`
 
-### Double-daemon spawn
-Pre-2.0, the systemd unit and a Hyprland `exec-once = owlryd` could both spawn a daemon. The 2.0 socket-activation path (`owlry.socket`) eliminates the need for an explicit autostart — verify nothing else still launches the daemon directly. (Phase 5 hygiene.)
+After Lua configuration and honest startup profiling, compare the warm daemon
+against an mmap'd cache and a single-process model. Removing the daemon would
+delete the IPC protocol and much of `client.rs` and `server.rs`. This is an
+evaluation, not a committed rewrite. See [D17](docs/RESTRUCTURE-V2.md).
 
----
+## Maintenance & Technical Debt
+
+### Owlry 2.8.0 integration verification `[committed]`
+
+Run these in a disposable environment and record the result:
+
+- [ ] Two-UID IPC test: client and server reject the other UID.
+- [ ] systemd socket activation with the packaged units, including restart.
+- [ ] Multi-FD activation with a custom unit.
+- [ ] Live desktop handler and terminal handler launch.
+- [ ] Clipboard text and image delivery with exact bytes.
+- [ ] `locate` fallback with `fd` absent.
+- [ ] New UI against an old daemon and old UI against a new daemon.
+
+Accepted risks from the 2.8 review are not defects: heuristic desktop
+shell-wrapper detection, fallback launchers re-resolving a refused handler,
+non-atomic frecency writes, and environment-dependent pipe capacity. Keep them
+documented; add tests only when a concrete failure is observed.
+
+### Split the largest modules `[maintenance]`
+
+The remaining large files are `providers/mod.rs` (about 2,050 lines),
+`server.rs` (about 1,180), `ui/main_window/launch.rs` (about 1,130),
+`lua/migrate.rs` (about 1,180), and `config/mod.rs` (about 1,040).
+`ui/main_window.rs` is now under 400 lines and
+`providers/converter/units.rs` is under 1,000. Extract focused units; do not
+do a blanket rewrite.
+
+### Double-daemon launch audit `[maintenance]`
+
+The 2.8 per-socket lock prevents a second daemon from binding the same socket.
+Audit external compositor autostarts and user units for `owlryd` or direct
+`owlry -d` entries. Prefer the packaged `owlry.service`; keep the lock as the
+last line of defense.
+
+### `expr-solver-lib` evaluation `[maintenance]`
+
+The calculator uses `expr-solver-lib`. Evaluate `evalexpr` only if the current
+crate stagnates or becomes unsupported. No change is planned now.
+
+### Frecency persistence `[maintenance]`
+
+Writes are not atomic; a crash during save can truncate the file. This was
+accepted in the 2.8 review. Consider an atomic replace only if data loss is
+observed in practice.
+
+### Dependency advisories `[maintenance]`
+
+Three unmaintained zbus-family crates arrive through `notify-rust`. They are
+documented exceptions, not known vulnerabilities. Remove the exceptions when
+`notify-rust` moves to zbus 6 or the notification layer is replaced. See
+[docs/dependency-audit.md](docs/dependency-audit.md).
+
+## Shipped & History
+
+Detailed implementation notes are in
+[docs/roadmap-archive.md](docs/roadmap-archive.md). The release history is in
+[CHANGELOG.md](CHANGELOG.md).
+
+- **2.8.0**: security hardening, typed activation across IPC and launch paths,
+  IPC peer authentication, socket lifecycle, frecency permissions, desktop
+  `Exec` parsing, `fd`/`locate` terminators, systemd unit validation, and
+  bounded currency fetches. See the
+  [2.8.0 release](https://somegit.dev/Owlibou/owlry/releases/tag/owlry-v2.8.0).
+- **2.7.0**: provider freshness, tab order from configuration, and
+  `show_all_tab`.
+- **2.6.0**: rofimoji integration.
+- **2.5.0**: typed contextual actions, the submenu protocol redesign, and
+  result action capture.
+- **2.4.0**: frecency pruning thresholds, `:recent`, clipboard image
+  thumbnails, and doctor provider labels and orphan reporting.
+- **2.1.0**: Lua configuration, `owlry.provider`, hot reload,
+  `owlry migrate-config`, and `owlry config validate`.
+- **2.0.0**: package collapse and the single-binary model. See
+  [docs/RESTRUCTURE-V2.md](docs/RESTRUCTURE-V2.md).
 
 ## Priority
 
-If we had to pick one for the next release: **Window switcher with live thumbnails**. The contextual-action foundation is now in place; a window provider would add a genuinely new workflow on top of it.
+The first pick for a new workflow remains the **window switcher with live
+thumbnails**, carried over from the previous roadmap. The `owlry doctor`
+installation and version checks are the smaller operational candidate.
+Changing this order requires maintainer approval; this document does not change
+it silently.

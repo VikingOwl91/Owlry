@@ -17,7 +17,7 @@ Last reviewed: 2026-10-28.
 ## Upstream chain
 
 ```text
-owlry 2.7.0
+owlry 2.8.0
 └── notify-rust 4.18.0
     └── zbus 5.19.0
         ├── zbus_names 4.3.4
