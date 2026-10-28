@@ -1053,6 +1053,31 @@ mod tests {
     }
 
     #[test]
+    fn max_stdin_payload_reaches_a_delayed_reader_in_full() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("stdin");
+        let input = "x".repeat(MAX_STDIN_BYTES);
+        let started = std::time::Instant::now();
+        let mut child = MainWindow::launch_stdin(
+            "sh",
+            &[
+                "-c".to_string(),
+                format!("sleep 2; cat > '{}'", out.display()),
+            ],
+            &input,
+            &Config::default(),
+        )
+        .expect("the capped payload should be delivered");
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "activation waited for the reader: {elapsed:?}"
+        );
+        assert!(child.wait().unwrap().success());
+        assert_eq!(std::fs::read(&out).unwrap(), input.as_bytes());
+    }
+
+    #[test]
     fn desktop_exec_activation_refuses_shell_command_mode() {
         let dir = tempfile::tempdir().unwrap();
         for (name, exec) in [

@@ -259,9 +259,10 @@ whitespace. `command = "xdg-open https://example.com"` still works for simple
 cases, but the string never reaches `sh -c`. For a clipboard item, use
 `program = "wl-copy", stdin = text` instead of `printf ... | wl-copy`.
 
-`stdin` is capped at 64 KiB. It is written without blocking the UI, so a
-program that does not read stdin promptly may receive only part of the payload.
-Use `program` + `args` for larger data or write it to a file first.
+`stdin` is capped at 64 KiB, which fits in the kernel pipe buffer. The UI
+hands the payload to the kernel without waiting for the program to read it,
+so a program that reads stdin later still receives all of it. Use
+`program` + `args` for larger data or write it to a file first.
 
 **Multiple `owlry.provider` calls accumulate** — each call registers an additional provider. Calling twice with the same `id` overrides the previous registration (warning emitted).
 
