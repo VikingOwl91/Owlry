@@ -50,7 +50,7 @@ fn test_results_response_roundtrip() {
             terminal: false,
             activation: owlry::providers::ItemActivation::Launch,
             tags: vec![],
-            source: "core".into(),
+            source: owlry::providers::ItemSource::Core,
         }],
     };
     let json = serde_json::to_string(&resp).unwrap();
@@ -178,7 +178,7 @@ fn test_terminal_field_roundtrip() {
         terminal: true,
         activation: owlry::providers::ItemActivation::Launch,
         tags: vec![],
-        source: "cmd".into(),
+        source: owlry::providers::ItemSource::Core,
     };
     let json = serde_json::to_string(&item).unwrap();
     assert!(json.contains("\"terminal\":true"));

@@ -4,7 +4,7 @@
 //! an item runs `cliphist decode | wl-copy` to put the entry back on the
 //! clipboard. Requires `cliphist` and `wl-clipboard` to be installed.
 
-use super::{ItemSource, LaunchItem, Provider, ProviderType};
+use super::{ItemActivation, ItemSource, LaunchItem, Provider, ProviderType};
 use crate::paths;
 use std::collections::HashSet;
 use std::io;
@@ -133,7 +133,12 @@ impl ClipboardProvider {
                 provider: ProviderType::Plugin(TYPE_ID.into()),
                 command,
                 terminal: false,
-                activation: super::ItemActivation::Launch,
+                activation: ItemActivation::Pipe {
+                    source_program: "cliphist".into(),
+                    source_args: vec!["decode".into(), clip_id.to_string()],
+                    dest_program: "wl-copy".into(),
+                    dest_args: Vec::new(),
+                },
                 tags,
                 source: ItemSource::Core,
             });

@@ -2,7 +2,9 @@ use chrono::{DateTime, Utc};
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::io::{Read, Write};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::path::{Path, PathBuf};
 
 use crate::paths;
 
@@ -157,14 +159,42 @@ impl FrecencyStore {
         paths::frecency_file().unwrap_or_else(|| PathBuf::from("frecency.json"))
     }
 
-    /// Load frecency data from a file
-    fn load_from_path(path: &PathBuf) -> Option<FrecencyData> {
-        if !path.exists() {
-            debug!("Frecency file not found at {:?}", path);
-            return None;
+    /// Load frecency data from a regular file owned by the current user.
+    ///
+    /// Symlinks and files owned by other users are ignored. An existing file
+    /// with group/other permissions is tightened before its contents are read.
+    fn load_from_path(path: &Path) -> Option<FrecencyData> {
+        match std::fs::symlink_metadata(path) {
+            Ok(metadata) => {
+                if !metadata.file_type().is_file() || metadata.uid() != unsafe { libc::geteuid() } {
+                    warn!(
+                        "Ignoring frecency file with unsafe type or owner: {:?}",
+                        path
+                    );
+                    return None;
+                }
+                if let Err(e) = Self::set_private_mode(path) {
+                    warn!("Failed to tighten frecency permissions: {}", e);
+                    return None;
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                debug!("Frecency file not found at {:?}", path);
+                return None;
+            }
+            Err(e) => {
+                warn!("Failed to inspect frecency file {:?}: {}", path, e);
+                return None;
+            }
         }
 
-        let content = std::fs::read_to_string(path).ok()?;
+        let mut file = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(path)
+            .ok()?;
+        let mut content = String::new();
+        file.read_to_string(&mut content).ok()?;
         match serde_json::from_str(&content) {
             Ok(data) => Some(data),
             Err(e) => {
@@ -174,7 +204,18 @@ impl FrecencyStore {
         }
     }
 
-    /// Save frecency data to disk
+    fn set_private_mode(path: &Path) -> std::io::Result<()> {
+        let metadata = std::fs::symlink_metadata(path)?;
+        if metadata.permissions().mode() & 0o077 != 0 {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+        }
+        Ok(())
+    }
+
+    /// Save frecency data to disk.
+    ///
+    /// The file is created 0600 and an existing file is tightened in place.
+    /// Symlinks are refused so a permissive path cannot redirect the write.
     pub fn save(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if !self.dirty {
             return Ok(());
@@ -182,8 +223,30 @@ impl FrecencyStore {
 
         paths::ensure_parent_dir(&self.path)?;
 
+        match std::fs::symlink_metadata(&self.path) {
+            Ok(metadata) => {
+                if !metadata.file_type().is_file() || metadata.uid() != unsafe { libc::geteuid() } {
+                    return Err(format!(
+                        "refusing to write frecency data to unsafe path '{}'",
+                        self.path.display()
+                    )
+                    .into());
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+
         let content = serde_json::to_string_pretty(&self.data)?;
-        std::fs::write(&self.path, content)?;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&self.path)?;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        file.set_len(0)?;
+        file.write_all(content.as_bytes())?;
         self.dirty = false;
 
         debug!("Frecency data saved to {:?}", self.path);
@@ -352,19 +415,100 @@ mod tests {
         assert!((score_many / score_few - 10.0).abs() < 0.1); // Should be ~10x
     }
 
-    #[test]
-    fn record_launch_sets_dirty_without_saving() {
-        let mut store = FrecencyStore {
+    fn store_at(path: PathBuf) -> FrecencyStore {
+        FrecencyStore {
             data: FrecencyData::default(),
-            path: PathBuf::from("/dev/null"),
+            path,
             dirty: false,
             prune_config: FrecencyPruneConfig::default(),
-        };
+        }
+    }
+
+    #[test]
+    fn save_creates_a_0600_file_under_a_permissive_umask() {
+        let dir = std::env::temp_dir().join(format!(
+            "owlry-frecency-{}-{}",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("frecency.json");
+
+        let previous = unsafe { libc::umask(0o022) };
+        let mut store = store_at(path.clone());
+        store.record_launch("firefox");
+        store.save().unwrap();
+        unsafe { libc::umask(previous) };
+
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn save_tightens_an_existing_world_readable_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!(
+            "owlry-frecency-existing-{}-{}",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("frecency.json");
+        std::fs::write(&path, "{}").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        let mut store = store_at(path.clone());
+        store.record_launch("firefox");
+        store.save().unwrap();
+
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_ignores_a_symlink() {
+        let dir = std::env::temp_dir().join(format!(
+            "owlry-frecency-symlink-{}-{}",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("target.json");
+        std::fs::write(
+            &target,
+            r#"{"version":1,"entries":{"secret":{"launch_count":1,"last_launch":"2026-01-01T00:00:00Z"}}}"#,
+        )
+        .unwrap();
+        let link = dir.join("frecency.json");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        let before = std::fs::read_to_string(&target).unwrap();
+        assert!(FrecencyStore::load_from_path(&link).is_none());
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), before);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn record_launch_sets_dirty_without_saving() {
+        let dir = std::env::temp_dir().join(format!(
+            "owlry-frecency-dirty-{}-{}",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut store = store_at(dir.join("frecency.json"));
 
         store.record_launch("test-item");
 
         assert!(store.dirty, "record_launch should set dirty flag");
         assert_eq!(store.data.entries["test-item"].launch_count, 1);
+
+        // Drop would otherwise save the file; keep this test I/O-free.
+        store.dirty = false;
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn entries_with(

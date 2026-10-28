@@ -220,8 +220,8 @@ Run a development daemon on a separate socket:
 .PP
 .RS
 .EX
-OWLRY_SOCKET=/tmp/owlry-dev.sock owlry \-d &
-OWLRY_SOCKET=/tmp/owlry-dev.sock owlry providers
+OWLRY_SOCKET="$XDG_RUNTIME_DIR/owlry-dev.sock" owlry \-d &
+OWLRY_SOCKET="$XDG_RUNTIME_DIR/owlry-dev.sock" owlry providers
 .EE
 .RE
 .SH SEE ALSO

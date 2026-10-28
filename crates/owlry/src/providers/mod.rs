@@ -120,9 +120,26 @@ impl std::str::FromStr for ItemSource {
     type Err = ();
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "script_plugin" => Ok(ItemSource::ScriptPlugin),
-            _ => Ok(ItemSource::Core),
+            "core" => Ok(ItemSource::Core),
+            // Unknown or absent trust metadata is untrusted, never core.
+            _ => Ok(ItemSource::ScriptPlugin),
         }
+    }
+}
+
+impl serde::Serialize for ItemSource {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ItemSource {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        Ok(match value.as_str() {
+            "core" => ItemSource::Core,
+            _ => ItemSource::ScriptPlugin,
+        })
     }
 }
 
@@ -134,8 +151,33 @@ impl std::str::FromStr for ItemSource {
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ItemActivation {
+    /// Historical launch payload: `LaunchItem::command` is a shell command.
+    /// Only built-in providers may use this variant.
     #[default]
     Launch,
+    /// Spawn a program with an argument vector, without a shell.
+    Argv {
+        program: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        args: Vec<String>,
+    },
+    /// Spawn a program without a shell and write `input` to its stdin.
+    Stdin {
+        program: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        args: Vec<String>,
+        input: String,
+    },
+    /// Run one program and pipe its stdout into another's stdin. Both stages
+    /// are argv, never shell strings.
+    Pipe {
+        source_program: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        source_args: Vec<String>,
+        dest_program: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        dest_args: Vec<String>,
+    },
     Submenu {
         provider_id: String,
         data: String,
@@ -146,7 +188,18 @@ pub enum ItemActivation {
 }
 
 impl ItemActivation {
+    /// Whether selecting the item launches something. Used by the action menu
+    /// to decide whether contextual actions apply.
     pub fn is_launch(&self) -> bool {
+        matches!(
+            self,
+            Self::Launch | Self::Argv { .. } | Self::Stdin { .. } | Self::Pipe { .. }
+        )
+    }
+
+    /// Whether this is the legacy shell-command payload, which is omitted
+    /// from IPC when serializing a result.
+    pub fn is_legacy_launch(&self) -> bool {
         matches!(self, Self::Launch)
     }
 
@@ -1553,7 +1606,7 @@ mod tests {
     }
 
     #[test]
-    fn item_source_from_str_maps_unknown_to_core() {
+    fn item_source_from_str_maps_unknown_to_script_plugin() {
         // NativePlugin variant is gone; unknown strings (including the old
         // "native_plugin" tag from pre-2.0 daemons) decode to Core.
         use std::str::FromStr;
@@ -1562,9 +1615,15 @@ mod tests {
             ItemSource::from_str("script_plugin"),
             Ok(ItemSource::ScriptPlugin)
         );
-        assert_eq!(ItemSource::from_str("native_plugin"), Ok(ItemSource::Core));
-        assert_eq!(ItemSource::from_str(""), Ok(ItemSource::Core));
-        assert_eq!(ItemSource::from_str("anything-else"), Ok(ItemSource::Core));
+        assert_eq!(
+            ItemSource::from_str("native_plugin"),
+            Ok(ItemSource::ScriptPlugin)
+        );
+        assert_eq!(ItemSource::from_str(""), Ok(ItemSource::ScriptPlugin));
+        assert_eq!(
+            ItemSource::from_str("anything-else"),
+            Ok(ItemSource::ScriptPlugin)
+        );
     }
 
     #[test]

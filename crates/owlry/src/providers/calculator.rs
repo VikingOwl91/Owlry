@@ -1,6 +1,6 @@
 use expr_solver::{SymTable, eval_with_table};
 
-use super::{DynamicProvider, ItemSource, LaunchItem, ProviderType};
+use super::{DynamicProvider, ItemActivation, ItemSource, LaunchItem, ProviderType};
 
 /// Built-in calculator provider. Evaluates mathematical expressions via `expr-solver-lib`.
 ///
@@ -57,7 +57,11 @@ impl DynamicProvider for CalculatorProvider {
                     provider: ProviderType::Plugin("calc".into()),
                     command: copy_cmd,
                     terminal: false,
-                    activation: super::ItemActivation::Launch,
+                    activation: ItemActivation::Stdin {
+                        program: "wl-copy".into(),
+                        args: Vec::new(),
+                        input: display,
+                    },
                     tags: vec!["math".into(), "calculator".into()],
                     source: ItemSource::Core,
                 }]

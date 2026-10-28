@@ -1,4 +1,4 @@
-use super::{ItemSource, LaunchItem, Provider, ProviderType};
+use super::{ItemActivation, ItemSource, LaunchItem, Provider, ProviderType};
 use log::debug;
 use std::collections::HashSet;
 use std::os::unix::fs::PermissionsExt;
@@ -49,14 +49,31 @@ impl CommandProvider {
             return false;
         }
 
-        let path = std::path::Path::new(executable);
-        if executable.contains('/') {
+        Self::is_executable_word(executable)
+    }
+
+    /// Validate an already-tokenized direct command. Unlike
+    /// [`Self::is_direct_command`], this does not split on whitespace, so a
+    /// quoted argument containing spaces stays one argument.
+    pub(crate) fn is_direct_argv(argv: &[String]) -> bool {
+        let Some(program) = argv.first() else {
+            return false;
+        };
+        if argv.len() < 2 || program.starts_with('-') {
+            return false;
+        }
+        Self::is_executable_word(program)
+    }
+
+    fn is_executable_word(program: &str) -> bool {
+        let path = std::path::Path::new(program);
+        if program.contains('/') {
             return Self::is_executable(path);
         }
 
         Self::get_path_dirs()
             .iter()
-            .map(|dir| dir.join(executable))
+            .map(|dir| dir.join(program))
             .any(|candidate| Self::is_executable(&candidate))
     }
 }
@@ -114,9 +131,12 @@ impl Provider for CommandProvider {
                     description: Some(format!("Run {}", path.display())),
                     icon: Some("utilities-terminal".to_string()),
                     provider: ProviderType::Command,
-                    command: name,
+                    command: name.clone(),
                     terminal: false,
-                    activation: super::ItemActivation::Launch,
+                    activation: ItemActivation::Argv {
+                        program: name,
+                        args: Vec::new(),
+                    },
                     tags: Vec::new(),
                     source: ItemSource::Core,
                 };

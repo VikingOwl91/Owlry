@@ -1,4 +1,4 @@
-use super::{DynamicProvider, ItemSource, LaunchItem, ProviderType};
+use super::{DynamicProvider, ItemActivation, ItemSource, LaunchItem, ProviderType};
 
 /// Built-in web search provider. Opens a search URL in the user's browser via
 /// `xdg-open`.
@@ -131,7 +131,10 @@ impl WebSearchProvider {
             provider: ProviderType::Plugin("websearch".into()),
             command,
             terminal: false,
-            activation: super::ItemActivation::Launch,
+            activation: ItemActivation::Argv {
+                program: "xdg-open".into(),
+                args: vec![url],
+            },
             tags: vec!["web".into(), "search".into()],
             source: ItemSource::Core,
         })

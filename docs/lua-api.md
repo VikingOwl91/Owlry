@@ -207,7 +207,9 @@ A provider in `providers` but not in `tabs` is fully searchable (auto mode + `:p
 
 ### 4.4 `owlry.provider { ... }` — user-defined provider
 
-Defines a custom provider that runs alongside the built-ins. The minimum useful shape:
+Defines a custom provider that runs alongside the built-ins. Item commands are
+spawned as argv, never through a shell; see the item table below for the
+`program`, `args` and `stdin` fields. The minimum useful shape:
 
 ```lua
 owlry.provider {
@@ -243,11 +245,19 @@ Each entry in the table returned by `items` is itself a table:
 | Field | Type | Required | What it does |
 |---|---|---|---|
 | `name` | `string` | yes | Item title shown in the result row |
-| `command` | `string` | yes | Shell command executed on launch |
+| `program` | `string` | one of `program`/`command` | Executable to spawn, with no shell |
+| `args` | `table` | no | Argument list for `program` |
+| `stdin` | `string` | no | Text written to the program's stdin |
+| `command` | `string` | one of `program`/`command` | Command line parsed into argv with quotes and backslash escapes. It is **not** passed to a shell; unquoted `;`, `&`, `|`, `$`, backticks and redirections are rejected. |
 | `description` | `string` | no | Secondary text below the title |
 | `icon` | `string` | no | Per-item icon (overrides provider icon) |
-| `terminal` | `boolean` | no | If true, launches inside a terminal |
+| `terminal` | `boolean` | no | If true, launches inside a terminal. Only valid with `program` + `args`; `stdin`/pipe items cannot request a terminal. |
 | `tags` | `table` | no | List of tag strings for `:tag:X` filtering |
+
+Prefer `program` + `args` when one argument can contain shell characters or
+whitespace. `command = "xdg-open https://example.com"` still works for simple
+cases, but the string never reaches `sh -c`. For a clipboard item, use
+`program = "wl-copy", stdin = text` instead of `printf ... | wl-copy`.
 
 **Multiple `owlry.provider` calls accumulate** — each call registers an additional provider. Calling twice with the same `id` overrides the previous registration (warning emitted).
 

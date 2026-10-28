@@ -4,7 +4,7 @@
 //! input insertion. Owlry exposes convenient launch entries for the common
 //! character sets and for the selector/typer backends installed on the host.
 
-use super::{ItemSource, LaunchItem, Provider, ProviderType};
+use super::{ItemActivation, ItemSource, LaunchItem, Provider, ProviderType};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -78,14 +78,36 @@ impl RofimojiProvider {
         format!("'{}'", value.replace('\'', "'\\''"))
     }
 
-    fn clipboard_command(character: &str) -> Option<String> {
+    fn clipboard_command(character: &str) -> Option<(String, ItemActivation)> {
         let quoted = Self::shell_quote(character);
+        let input = character.to_string();
         if Self::executable_exists("wl-copy") {
-            Some(format!("printf '%s' {quoted} | wl-copy"))
+            Some((
+                format!("printf '%s' {quoted} | wl-copy"),
+                ItemActivation::Stdin {
+                    program: "wl-copy".into(),
+                    args: Vec::new(),
+                    input,
+                },
+            ))
         } else if Self::executable_exists("xclip") {
-            Some(format!("printf '%s' {quoted} | xclip -selection clipboard"))
+            Some((
+                format!("printf '%s' {quoted} | xclip -selection clipboard"),
+                ItemActivation::Stdin {
+                    program: "xclip".into(),
+                    args: vec!["-selection".into(), "clipboard".into()],
+                    input,
+                },
+            ))
         } else if Self::executable_exists("xsel") {
-            Some(format!("printf '%s' {quoted} | xsel --clipboard --input"))
+            Some((
+                format!("printf '%s' {quoted} | xsel --clipboard --input"),
+                ItemActivation::Stdin {
+                    program: "xsel".into(),
+                    args: vec!["--clipboard".into(), "--input".into()],
+                    input,
+                },
+            ))
         } else {
             None
         }
@@ -142,7 +164,7 @@ impl RofimojiProvider {
                     description.push_str(", shrug");
                 }
 
-                let command = Self::clipboard_command(character)?;
+                let (command, activation) = Self::clipboard_command(character)?;
                 let tags: Vec<String> = description
                     .split(',')
                     .map(|tag| tag.trim().to_string())
@@ -154,6 +176,7 @@ impl RofimojiProvider {
                     character,
                     &format!("Kaomoji · {description}"),
                     command,
+                    activation,
                     &tags.iter().map(String::as_str).collect::<Vec<_>>(),
                 );
                 // Keep the kaomoji in the result name/description only. A
@@ -163,7 +186,37 @@ impl RofimojiProvider {
             .collect()
     }
 
-    fn item(id: &str, name: &str, description: &str, command: String, tags: &[&str]) -> LaunchItem {
+    fn picked_item(
+        id: &str,
+        name: &str,
+        description: &str,
+        command: String,
+        tags: &[&str],
+    ) -> LaunchItem {
+        let mut argv =
+            crate::command_line::split_words(&command).unwrap_or_else(|_| vec![command.clone()]);
+        let program = argv.remove(0);
+        Self::item(
+            id,
+            name,
+            description,
+            command,
+            ItemActivation::Argv {
+                program,
+                args: argv,
+            },
+            tags,
+        )
+    }
+
+    fn item(
+        id: &str,
+        name: &str,
+        description: &str,
+        command: String,
+        activation: ItemActivation,
+        tags: &[&str],
+    ) -> LaunchItem {
         LaunchItem {
             id: format!("{TYPE_ID}:{id}"),
             name: name.to_string(),
@@ -174,7 +227,7 @@ impl RofimojiProvider {
             provider: ProviderType::Plugin(TYPE_ID.into()),
             command,
             terminal: false,
-            activation: super::ItemActivation::Launch,
+            activation,
             tags: tags.iter().map(|tag| (*tag).to_string()).collect(),
             source: ItemSource::Core,
         }
@@ -186,28 +239,28 @@ impl RofimojiProvider {
         }
 
         let mut items = vec![
-            Self::item(
+            Self::picked_item(
                 "all",
                 "Emoji + Kaomoji",
                 "Open rofimoji with emojis and kaomoji",
                 Self::command(&["emojis", "kaomoji"], "type", None, None),
                 &["emoji", "kaomoji", "characters"],
             ),
-            Self::item(
+            Self::picked_item(
                 "emoji",
                 "Emoji picker",
                 "Open rofimoji with emojis",
                 Self::command(&["emojis"], "type", None, None),
                 &["emoji", "characters"],
             ),
-            Self::item(
+            Self::picked_item(
                 "kaomoji",
                 "Kaomoji picker",
                 "Open rofimoji with kaomoji",
                 Self::command(&["kaomoji"], "type", None, None),
                 &["kaomoji", "characters"],
             ),
-            Self::item(
+            Self::picked_item(
                 "copy",
                 "Emoji + Kaomoji → Clipboard",
                 "Copy the selected character instead of typing it",
@@ -220,7 +273,7 @@ impl RofimojiProvider {
 
         for (selector, binary) in SELECTORS {
             if Self::executable_exists(binary) {
-                items.push(Self::item(
+                items.push(Self::picked_item(
                     &format!("selector-{selector}"),
                     &format!("Emoji + Kaomoji ({selector})"),
                     &format!("Use rofimoji with the {selector} selector"),
@@ -232,7 +285,7 @@ impl RofimojiProvider {
 
         for (typer, binary) in TYPERS {
             if Self::executable_exists(binary) {
-                items.push(Self::item(
+                items.push(Self::picked_item(
                     &format!("typer-{}", typer.replace('-', "_")),
                     &format!("Emoji + Kaomoji (typer: {typer})"),
                     &format!("Use rofimoji with the {typer} typer"),

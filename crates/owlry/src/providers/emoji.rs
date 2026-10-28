@@ -4,7 +4,7 @@
 //! the emoji glyph to the Wayland clipboard via `wl-copy`. Search matches the
 //! human-readable name and the keyword bag.
 
-use super::{ItemSource, LaunchItem, Provider, ProviderType};
+use super::{ItemActivation, ItemSource, LaunchItem, Provider, ProviderType};
 
 const TYPE_ID: &str = "emoji";
 
@@ -417,7 +417,11 @@ impl EmojiProvider {
                     provider: ProviderType::Plugin(TYPE_ID.into()),
                     command: format!("printf '%s' '{}' | wl-copy", emoji),
                     terminal: false,
-                    activation: super::ItemActivation::Launch,
+                    activation: ItemActivation::Stdin {
+                        program: "wl-copy".into(),
+                        args: Vec::new(),
+                        input: (*emoji).to_string(),
+                    },
                     tags,
                     source: ItemSource::Core,
                 }

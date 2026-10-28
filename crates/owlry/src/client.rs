@@ -58,6 +58,7 @@ impl CoreClient {
     /// if the daemon stops responding.
     pub fn connect(socket_path: &Path) -> io::Result<Self> {
         let stream = UnixStream::connect(socket_path)?;
+        crate::ipc_auth::ensure_same_uid(&stream)?;
         stream.set_read_timeout(Some(Duration::from_secs(5)))?;
         let reader = BufReader::new(stream.try_clone()?);
         Ok(Self { stream, reader })
@@ -68,11 +69,19 @@ impl CoreClient {
     ///
     /// Backoff schedule: 100ms, 200ms, 400ms.
     pub fn connect_or_start() -> io::Result<Self> {
-        let path = Self::socket_path();
+        let path = Self::socket_path()?;
 
-        // First attempt: just try connecting.
-        if let Ok(client) = Self::connect(&path) {
-            return Ok(client);
+        // First attempt: just try connecting. Only a missing or refusing
+        // socket justifies starting the service; an authentication failure or
+        // a malformed socket path is reported to the caller.
+        match Self::connect(&path) {
+            Ok(client) => return Ok(client),
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+                ) => {}
+            Err(e) => return Err(e),
         }
 
         // Socket not available — try to start the daemon.
@@ -113,7 +122,7 @@ impl CoreClient {
     ///
     /// Delegates to `crate::paths::socket_path()` to keep a single
     /// source of truth.
-    pub fn socket_path() -> PathBuf {
+    pub fn socket_path() -> io::Result<PathBuf> {
         crate::paths::socket_path()
     }
 
@@ -356,7 +365,7 @@ mod tests {
                 terminal: false,
                 activation: crate::providers::ItemActivation::Launch,
                 tags: vec![],
-                source: "app".into(),
+                source: crate::providers::ItemSource::Core,
             }],
         };
 
@@ -500,7 +509,7 @@ mod tests {
                 terminal: false,
                 activation: crate::providers::ItemActivation::Launch,
                 tags: vec![],
-                source: "native_plugin".into(),
+                source: crate::providers::ItemSource::Core,
             }],
         };
 
@@ -535,7 +544,8 @@ mod tests {
 
     #[test]
     fn socket_path_delegates_to_core() {
-        let path = CoreClient::socket_path();
-        assert!(path.ends_with("owlry/owlry.sock"));
+        if let Ok(path) = CoreClient::socket_path() {
+            assert!(path.ends_with("owlry/owlry.sock"));
+        }
     }
 }

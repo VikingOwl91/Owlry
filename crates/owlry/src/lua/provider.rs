@@ -122,12 +122,17 @@ fn parse_item(t: &Table, provider_id: &str, idx: usize) -> mlua::Result<LaunchIt
     let name: String = t.get("name").map_err(|_| {
         mlua::Error::RuntimeError("item missing required field `name` (string)".into())
     })?;
-    let command: String = t.get("command").map_err(|_| {
-        mlua::Error::RuntimeError(format!(
-            "item '{}' missing required field `command` (string)",
-            name
-        ))
-    })?;
+    let command: Option<String> = t.get("command")?;
+    let program: Option<String> = t.get("program")?;
+    let args: Vec<String> = t
+        .get::<Option<Table>>("args")?
+        .map(|tt| {
+            tt.sequence_values::<String>()
+                .collect::<mlua::Result<Vec<_>>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let stdin: Option<String> = t.get("stdin")?;
     let description: Option<String> = t.get("description")?;
     let icon: Option<String> = t.get("icon")?;
     let terminal: bool = t.get::<Option<bool>>("terminal")?.unwrap_or(false);
@@ -140,7 +145,70 @@ fn parse_item(t: &Table, provider_id: &str, idx: usize) -> mlua::Result<LaunchIt
         .transpose()?
         .unwrap_or_default();
 
-    let activation = crate::providers::ItemActivation::from_legacy_command(&command);
+    let legacy = command
+        .as_deref()
+        .map(crate::providers::ItemActivation::from_legacy_command);
+    let activation = match legacy {
+        Some(
+            activation @ (crate::providers::ItemActivation::PluginAction { .. }
+            | crate::providers::ItemActivation::Submenu { .. }),
+        ) => activation,
+        Some(crate::providers::ItemActivation::Launch)
+            if command.as_deref() == Some("") && program.is_none() =>
+        {
+            crate::providers::ItemActivation::Launch
+        }
+        _ => {
+            let (program, args) = if let Some(program) = program {
+                if program.is_empty() {
+                    return Err(mlua::Error::RuntimeError(format!(
+                        "item '{}' has an empty `program`",
+                        name
+                    )));
+                }
+                (program, args)
+            } else if let Some(command) = command.as_deref() {
+                let mut words =
+                    crate::command_line::split_words_strict(command).map_err(|e| {
+                        mlua::Error::RuntimeError(format!(
+                            "item '{}' has an unsafe `command` string ({}); use `program` + `args` instead",
+                            name, e
+                        ))
+                    })?;
+                let program = words.remove(0);
+                (program, words)
+            } else {
+                return Err(mlua::Error::RuntimeError(format!(
+                    "item '{}' must provide `program` or `command`",
+                    name
+                )));
+            };
+
+            if let Some(input) = stdin {
+                crate::providers::ItemActivation::Stdin {
+                    program,
+                    args,
+                    input,
+                }
+            } else {
+                crate::providers::ItemActivation::Argv { program, args }
+            }
+        }
+    };
+
+    let command = command.unwrap_or_else(|| match &activation {
+        crate::providers::ItemActivation::Argv { program, args }
+        | crate::providers::ItemActivation::Stdin { program, args, .. } => {
+            let mut display = program.clone();
+            for arg in args {
+                display.push(' ');
+                display.push_str(arg);
+            }
+            display
+        }
+        _ => String::new(),
+    });
+
     Ok(LaunchItem {
         id: format!("{}:{}:{}", provider_id, idx, name),
         name,
@@ -274,6 +342,67 @@ mod tests {
         assert_eq!(it.icon.as_deref(), Some("system-reboot"));
         assert!(it.terminal);
         assert_eq!(it.tags, vec!["power", "destructive"]);
+    }
+
+    #[test]
+    fn refresh_parses_program_args_and_stdin_into_structured_activation() {
+        let mut p = build(
+            r#"
+            owlry.provider {
+              id = "hs",
+              items = function()
+                return {
+                  { name = "Open", program = "xdg-open", args = { "https://example.com" } },
+                  { name = "Copy", program = "wl-copy", stdin = "literal text" },
+                }
+              end,
+            }
+            "#,
+        );
+        p.refresh();
+        assert_eq!(p.items().len(), 2);
+        assert_eq!(
+            p.items()[0].activation,
+            crate::providers::ItemActivation::Argv {
+                program: "xdg-open".into(),
+                args: vec!["https://example.com".into()],
+            }
+        );
+        assert_eq!(
+            p.items()[1].activation,
+            crate::providers::ItemActivation::Stdin {
+                program: "wl-copy".into(),
+                args: Vec::new(),
+                input: "literal text".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn refresh_drops_a_command_string_with_shell_metacharacters() {
+        let mut p = build(
+            r#"
+            owlry.provider {
+              id = "hs",
+              items = function()
+                return {
+                  { name = "Evil", command = "xdg-open https://example.com; touch /tmp/pwned" },
+                  { name = "Safe", command = "xdg-open https://example.com" },
+                }
+              end,
+            }
+            "#,
+        );
+        p.refresh();
+        assert_eq!(p.items().len(), 1);
+        assert_eq!(p.items()[0].name, "Safe");
+        assert_eq!(
+            p.items()[0].activation,
+            crate::providers::ItemActivation::Argv {
+                program: "xdg-open".into(),
+                args: vec!["https://example.com".into()],
+            }
+        );
     }
 
     #[test]

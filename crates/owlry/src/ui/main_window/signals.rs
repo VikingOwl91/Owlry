@@ -7,6 +7,24 @@ use crate::ui::submenu;
 /// Debounce delay for search input (milliseconds).
 const SEARCH_DEBOUNCE_MS: u64 = 50;
 
+/// How Enter should execute a typed command.
+#[derive(Debug)]
+enum DirectCommand {
+    /// Spawn without a shell. Used for the implicit `program args` form.
+    Argv(Vec<String>),
+    /// Run through `sh -c`. Only the explicit `:cmd` form takes this path.
+    Shell(String),
+}
+
+impl std::fmt::Display for DirectCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DirectCommand::Argv(argv) => write!(f, "{}", argv.join(" ")),
+            DirectCommand::Shell(command) => write!(f, "{command}"),
+        }
+    }
+}
+
 impl MainWindow {
     pub(super) fn setup_signals(&self) {
         // Search input handling with prefix detection and debouncing
@@ -248,8 +266,17 @@ impl MainWindow {
                 && config_for_activate.borrow().providers.commands
                 && let Some(command) = Self::direct_command_text(&entry.text())
             {
-                let launch_result =
-                    Self::launch_command(&command, false, &config_for_activate.borrow());
+                let launch_result = match &command {
+                    DirectCommand::Argv(argv) => Self::launch_argv(
+                        &argv[0],
+                        &argv[1..],
+                        false,
+                        &config_for_activate.borrow(),
+                    ),
+                    DirectCommand::Shell(command) => {
+                        Self::launch_command(command, false, &config_for_activate.borrow())
+                    }
+                };
                 if let Err(e) = launch_result {
                     let msg = format!("Failed to launch '{}': {}", command, e);
                     log::error!("{}", msg);
@@ -485,16 +512,33 @@ impl MainWindow {
     /// Bare queries remain normal fuzzy searches unless their first token is
     /// an executable and there is at least one argument. `:cmd` is accepted as
     /// an explicit equivalent; other prefixes keep their existing behavior.
-    fn direct_command_text(raw: &str) -> Option<String> {
+    fn direct_command_text(raw: &str) -> Option<DirectCommand> {
+        // `:shell` is the explicit opt-in to shell semantics. `:cmd` keeps
+        // its historical role as a PATH-command filter; it does not imply a
+        // shell and still goes through the argv parser below.
+        let trimmed = raw.trim_start();
+        if let Some(command) = trimmed.strip_prefix(":shell ") {
+            let command = command.trim();
+            return (!command.is_empty()).then(|| DirectCommand::Shell(command.to_string()));
+        }
+
         let parsed = ProviderFilter::parse_query(raw);
-        let allowed_scope = parsed.prefix.is_none() || parsed.prefix == Some(ProviderType::Command);
-        if !allowed_scope {
+        let command = parsed.query.trim();
+        if command.is_empty() {
+            return None;
+        }
+        if parsed.prefix.is_some() && parsed.prefix != Some(ProviderType::Command) {
             return None;
         }
 
-        let command = parsed.query.trim();
-        (!command.is_empty() && CommandProvider::is_direct_command(command))
-            .then(|| command.to_string())
+        if !CommandProvider::is_direct_command(command) {
+            return None;
+        }
+        let argv = crate::command_line::split_words_strict(command).ok()?;
+        if !CommandProvider::is_direct_argv(&argv) {
+            return None;
+        }
+        Some(DirectCommand::Argv(argv))
     }
 }
 
@@ -504,18 +548,45 @@ mod tests {
 
     #[test]
     fn direct_command_text_accepts_bare_command_with_arguments() {
-        assert_eq!(
-            MainWindow::direct_command_text("printf hello").as_deref(),
-            Some("printf hello")
-        );
+        match MainWindow::direct_command_text("printf hello") {
+            Some(DirectCommand::Argv(argv)) => {
+                assert_eq!(argv, vec!["printf", "hello"]);
+            }
+            other => panic!("expected argv, got {other:?}"),
+        }
     }
 
     #[test]
-    fn direct_command_text_accepts_cmd_prefix() {
-        assert_eq!(
-            MainWindow::direct_command_text(":cmd printf hello").as_deref(),
-            Some("printf hello")
-        );
+    fn direct_command_text_keeps_cmd_prefix_as_a_filter() {
+        match MainWindow::direct_command_text(":cmd printf hello") {
+            Some(DirectCommand::Argv(argv)) => assert_eq!(argv, vec!["printf", "hello"]),
+            _ => panic!("expected argv from the :cmd filter"),
+        }
+    }
+
+    #[test]
+    fn direct_command_text_accepts_shell_prefix_as_explicit_shell() {
+        match MainWindow::direct_command_text(":shell printf hello; echo done") {
+            Some(DirectCommand::Shell(command)) => {
+                assert_eq!(command, "printf hello; echo done")
+            }
+            _ => panic!("expected shell command"),
+        }
+    }
+
+    #[test]
+    fn direct_command_text_rejects_shell_syntax_without_the_shell_prefix() {
+        for line in [
+            "printf hi; touch /tmp/pwned",
+            "printf hi && touch /tmp/pwned",
+            "printf $(id)",
+            ":cmd printf hi; touch /tmp/pwned",
+        ] {
+            assert!(
+                MainWindow::direct_command_text(line).is_none(),
+                "accepted shell syntax in implicit mode: {line:?}"
+            );
+        }
     }
 
     #[test]

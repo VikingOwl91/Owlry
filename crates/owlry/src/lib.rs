@@ -9,11 +9,13 @@ pub mod application_watcher;
 pub mod backend;
 pub mod cli;
 pub mod client;
+pub mod command_line;
 pub mod commands;
 pub mod config;
 pub mod data;
 pub mod filter;
 pub mod ipc;
+pub mod ipc_auth;
 #[cfg(feature = "lua")]
 pub mod lua;
 pub mod notify;

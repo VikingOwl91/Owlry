@@ -1,5 +1,7 @@
+use std::fs::File;
 use std::io::{self, BufRead, BufReader, Write};
-use std::os::unix::fs::PermissionsExt;
+use std::os::fd::{FromRawFd, RawFd};
+use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 #[cfg(feature = "lua")]
@@ -94,6 +96,13 @@ use crate::providers::{LaunchItem, Provider, ProviderManager};
 pub struct Server {
     listener: UnixListener,
     socket_path: PathBuf,
+    socket_identity: crate::paths::SocketIdentity,
+    /// True when this process created the socket and therefore owns cleanup.
+    /// A socket inherited from systemd must be left in place.
+    socket_owned: bool,
+    /// Held for the daemon's lifetime so a second daemon cannot race the
+    /// stale-socket check and bind the same path.
+    _socket_lock: File,
     provider_manager: Arc<RwLock<ProviderManager>>,
     frecency: Arc<RwLock<FrecencyStore>>,
     config: Arc<RwLock<Config>>,
@@ -112,19 +121,220 @@ pub struct Server {
     _application_watcher: Option<crate::application_watcher::ApplicationWatcher>,
 }
 
+fn validate_socket_path(socket_path: &Path) -> io::Result<()> {
+    if !socket_path.is_absolute() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("socket path '{}' must be absolute", socket_path.display()),
+        ));
+    }
+    let parent = socket_path.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "socket path '{}' has no parent directory",
+                socket_path.display()
+            ),
+        )
+    })?;
+    crate::paths::validate_socket_parent(parent, false)
+}
+
+/// Acquire the per-socket daemon lock. The returned file must stay alive for
+/// the daemon's lifetime.
+fn acquire_socket_lock(socket_path: &Path) -> io::Result<File> {
+    use fs2::FileExt;
+
+    let file_name = socket_path
+        .file_name()
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("socket path '{}' has no file name", socket_path.display()),
+            )
+        })?
+        .to_string_lossy();
+    let lock_path = socket_path.with_file_name(format!("{file_name}.lock"));
+    let lock = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(&lock_path)
+        .map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!("failed to open socket lock '{}': {e}", lock_path.display()),
+            )
+        })?;
+    lock.try_lock_exclusive().map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!(
+                "another owlry daemon owns '{}' (lock '{}': {e})",
+                socket_path.display(),
+                lock_path.display()
+            ),
+        )
+    })?;
+    Ok(lock)
+}
+
+/// If systemd passed a listening AF_UNIX socket, take ownership of fd 3.
+/// The service unit deliberately supports socket activation, and the socket
+/// path already exists in that case.
+fn inherited_listener() -> Option<UnixListener> {
+    let pid = std::env::var("LISTEN_PID").ok()?.parse::<u32>().ok()?;
+    if pid != std::process::id() {
+        return None;
+    }
+    let fds = std::env::var("LISTEN_FDS").ok()?.parse::<u32>().ok()?;
+    if fds == 0 {
+        return None;
+    }
+
+    let fd: RawFd = 3;
+    if !fd_is_unix_socket(fd) {
+        return None;
+    }
+    // SAFETY: systemd passed this file descriptor to this process and the
+    // listener takes ownership of it exactly once.
+    Some(unsafe { UnixListener::from_raw_fd(fd) })
+}
+
+#[cfg(target_os = "linux")]
+fn fd_is_unix_socket(fd: RawFd) -> bool {
+    let mut domain: libc::c_int = 0;
+    let mut len = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
+    // SAFETY: `domain` and `len` are valid for writes.
+    let ret = unsafe {
+        libc::getsockopt(
+            fd,
+            libc::SOL_SOCKET,
+            libc::SO_DOMAIN,
+            &mut domain as *mut _ as *mut libc::c_void,
+            &mut len,
+        )
+    };
+    ret == 0 && domain == libc::AF_UNIX
+}
+
+#[cfg(not(target_os = "linux"))]
+fn fd_is_unix_socket(_fd: RawFd) -> bool {
+    false
+}
+
+/// Finish startup when systemd already owns the listening socket.
+fn bind_inherited(
+    socket_path: &Path,
+    listener: UnixListener,
+) -> io::Result<(File, UnixListener, crate::paths::SocketIdentity)> {
+    validate_socket_path(socket_path)?;
+    let lock = acquire_socket_lock(socket_path)?;
+
+    let metadata = std::fs::symlink_metadata(socket_path)?;
+    let ours = unsafe { libc::geteuid() };
+    if !metadata.file_type().is_socket() || metadata.uid() != ours {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!(
+                "socket-activated path '{}' is not a socket owned by uid {ours}",
+                socket_path.display()
+            ),
+        ));
+    }
+    std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o600))?;
+    let identity = crate::paths::SocketIdentity::from_path(socket_path)?;
+    Ok((lock, listener, identity))
+}
+
+/// Bind the IPC socket without ever deleting a file that is not our own stale
+/// socket. The returned lock file must be kept alive for the daemon's
+/// lifetime.
+fn bind_socket(
+    socket_path: &Path,
+) -> io::Result<(File, UnixListener, crate::paths::SocketIdentity)> {
+    validate_socket_path(socket_path)?;
+    let ours = unsafe { libc::geteuid() };
+    let lock = acquire_socket_lock(socket_path)?;
+
+    match std::fs::symlink_metadata(socket_path) {
+        Ok(existing) => {
+            if !existing.file_type().is_socket() {
+                return Err(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    format!(
+                        "refusing to replace '{}': it is not a socket",
+                        socket_path.display()
+                    ),
+                ));
+            }
+            if existing.uid() != ours {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!(
+                        "refusing to replace '{}': socket is owned by uid {}, not current uid {ours}",
+                        socket_path.display(),
+                        existing.uid()
+                    ),
+                ));
+            }
+            match UnixStream::connect(socket_path) {
+                Ok(_) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::AlreadyExists,
+                        format!(
+                            "a daemon is already listening on '{}'",
+                            socket_path.display()
+                        ),
+                    ));
+                }
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        io::ErrorKind::ConnectionRefused | io::ErrorKind::NotFound
+                    ) =>
+                {
+                    info!("Removing stale socket at {:?}", socket_path);
+                    std::fs::remove_file(socket_path)?;
+                }
+                Err(e) => {
+                    return Err(io::Error::new(
+                        e.kind(),
+                        format!(
+                            "refusing to replace '{}': cannot prove it is stale: {e}",
+                            socket_path.display()
+                        ),
+                    ));
+                }
+            }
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+
+    let listener = UnixListener::bind(socket_path)?;
+    if let Err(e) = std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o600)) {
+        let _ = std::fs::remove_file(socket_path);
+        return Err(e);
+    }
+    let identity = crate::paths::SocketIdentity::from_path(socket_path)?;
+    Ok((lock, listener, identity))
+}
+
 impl Server {
     /// Bind to the given socket path, loading config and creating a ProviderManager.
     ///
-    /// Removes a stale socket file if one already exists at the path.
+    /// A file at the socket path is only replaced when it is a socket owned by
+    /// the current user and no process is listening on it.
     pub fn bind(socket_path: &Path) -> io::Result<Self> {
-        // Remove stale socket if present
-        if socket_path.exists() {
-            info!("Removing stale socket at {:?}", socket_path);
-            std::fs::remove_file(socket_path)?;
-        }
-
-        let listener = UnixListener::bind(socket_path)?;
-        std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o600))?;
+        let inherited = inherited_listener();
+        let socket_owned = inherited.is_none();
+        let (socket_lock, listener, socket_identity) = match inherited {
+            Some(listener) => bind_inherited(socket_path, listener)?,
+            None => bind_socket(socket_path)?,
+        };
         info!("IPC server listening on {:?}", socket_path);
 
         // Resolve config + any Lua-defined user providers in a single pass.
@@ -210,6 +420,9 @@ impl Server {
         Ok(Self {
             listener,
             socket_path: socket_path.to_path_buf(),
+            socket_identity,
+            socket_owned,
+            _socket_lock: socket_lock,
             provider_manager,
             frecency: Arc::new(RwLock::new(frecency)),
             config,
@@ -292,6 +505,8 @@ impl Server {
             use signal_hook::iterator::Signals;
             let frecency = Arc::clone(&self.frecency);
             let socket_path = self.socket_path.clone();
+            let socket_identity = self.socket_identity;
+            let socket_owned = self.socket_owned;
             let mut signals = Signals::new([SIGTERM, SIGINT]).map_err(io::Error::other)?;
             thread::spawn(move || {
                 // Block until we receive SIGTERM or SIGINT, then save and exit.
@@ -308,7 +523,9 @@ impl Server {
                         warn!("Shutdown: frecency lock poisoned; skipping save");
                     }
                 }
-                let _ = std::fs::remove_file(&socket_path);
+                if socket_owned {
+                    let _ = crate::paths::remove_socket_if_owned(&socket_path, socket_identity);
+                }
                 std::process::exit(0);
             });
         }
@@ -337,6 +554,10 @@ impl Server {
         for stream in self.listener.incoming() {
             match stream {
                 Ok(mut stream) => {
+                    if let Err(e) = crate::ipc_auth::ensure_same_uid(&stream) {
+                        warn!("Rejecting IPC client: {e}");
+                        continue;
+                    }
                     match ConnectionGuard::try_acquire() {
                         Some(guard) => {
                             let pm = Arc::clone(&self.provider_manager);
@@ -378,6 +599,7 @@ impl Server {
     /// is unnecessary.
     pub fn handle_one_for_testing(&self) -> io::Result<()> {
         let (stream, _addr) = self.listener.accept()?;
+        crate::ipc_auth::ensure_same_uid(&stream)?;
         Self::handle_client(
             stream,
             Arc::clone(&self.provider_manager),
@@ -643,9 +865,10 @@ impl Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
-        // Best-effort cleanup of the socket file
-        if self.socket_path.exists() {
-            let _ = std::fs::remove_file(&self.socket_path);
+        // Best-effort cleanup, but only of the inode this server created and
+        // only when systemd did not pass us the listening socket.
+        if self.socket_owned {
+            let _ = crate::paths::remove_socket_if_owned(&self.socket_path, self.socket_identity);
         }
     }
 }
@@ -671,7 +894,7 @@ fn launch_item_to_result(item: LaunchItem, score: i64) -> ResultItem {
         terminal: item.terminal,
         activation: item.activation,
         tags: item.tags,
-        source: item.source.as_str().to_string(),
+        source: item.source,
     }
 }
 
@@ -693,6 +916,7 @@ fn descriptor_to_desc(desc: crate::providers::ProviderDescriptor) -> ProviderDes
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::fd::AsRawFd;
 
     // Wrap a Cursor in a BufReader backed by a UnixStream-like interface.
     // Since read_bounded_line takes BufReader<UnixStream>, we test it indirectly
@@ -741,5 +965,108 @@ mod tests {
     fn no_trailing_newline_returns_content() {
         let result = bounded_line_from_bytes(b"hello", 100).unwrap();
         assert_eq!(result, Some("hello".to_string()));
+    }
+
+    fn test_dir(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("owlry-server-test-{}-{}", std::process::id(), name));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn fd_domain_check_distinguishes_unix_and_tcp() {
+        let (unix, _peer) = UnixStream::pair().unwrap();
+        assert!(fd_is_unix_socket(unix.as_raw_fd()));
+        let tcp = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        assert!(!fd_is_unix_socket(tcp.as_raw_fd()));
+    }
+
+    #[test]
+    fn bind_socket_sets_0600_and_releases_lock_on_drop() {
+        let dir = test_dir("bind");
+        let path = dir.join("owlry.sock");
+        let (lock, listener, identity) = bind_socket(&path).unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        assert_eq!(
+            crate::paths::SocketIdentity::from_path(&path).unwrap(),
+            identity
+        );
+        drop(lock);
+        drop(listener);
+        crate::paths::remove_socket_if_owned(&path, identity).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bind_socket_refuses_to_replace_a_regular_file() {
+        let dir = test_dir("regular");
+        let path = dir.join("owlry.sock");
+        std::fs::write(&path, b"do not delete me").unwrap();
+
+        let err = bind_socket(&path).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&path).unwrap(), b"do not delete me");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bind_socket_refuses_a_second_live_listener() {
+        let dir = test_dir("live");
+        let path = dir.join("owlry.sock");
+        let (_lock, _listener, _identity) = bind_socket(&path).unwrap();
+
+        let err = bind_socket(&path).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bind_socket_recovers_a_stale_socket_owned_by_us() {
+        let dir = test_dir("stale");
+        let path = dir.join("owlry.sock");
+        let (lock, listener, identity) = bind_socket(&path).unwrap();
+        drop(listener);
+        // The path is left behind, as it would be after a crash.
+        assert!(path.exists());
+
+        // The lock is still held, so a second daemon must wait for the first
+        // process to exit. Releasing it models a restart.
+        drop(lock);
+        let (new_lock, new_listener, new_identity) = bind_socket(&path).unwrap();
+        assert_ne!(identity, new_identity);
+        drop(new_lock);
+        drop(new_listener);
+        crate::paths::remove_socket_if_owned(&path, new_identity).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bind_socket_refuses_a_group_writable_parent() {
+        let dir = test_dir("unsafe-parent");
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o777)).unwrap();
+        let path = dir.join("owlry.sock");
+
+        let err = bind_socket(&path).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn remove_socket_if_owned_skips_a_replacement_inode() {
+        let dir = test_dir("replacement");
+        let path = dir.join("owlry.sock");
+        let (lock, listener, identity) = bind_socket(&path).unwrap();
+        drop(lock);
+        drop(listener);
+        std::fs::remove_file(&path).unwrap();
+        std::fs::write(&path, b"replacement").unwrap();
+
+        assert!(!crate::paths::remove_socket_if_owned(&path, identity).unwrap());
+        assert_eq!(std::fs::read(&path).unwrap(), b"replacement");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

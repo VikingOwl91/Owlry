@@ -13,13 +13,21 @@ use crate::config::Config;
 use crate::ipc::ProviderDesc;
 use crate::{paths, server};
 
+/// Resolve the socket path for CLI subcommands, exiting with a diagnostic when
+/// the runtime directory is missing or unsafe.
+fn socket_path_or_exit() -> PathBuf {
+    match paths::socket_path() {
+        Ok(path) => path,
+        Err(e) => {
+            eprintln!("Cannot resolve the owlry socket path: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
 /// `owlry daemon` / `owlry -d`: bind the IPC socket and run the daemon loop.
 pub fn run_daemon() -> ! {
-    let sock = paths::socket_path();
-    if let Err(e) = paths::ensure_parent_dir(&sock) {
-        eprintln!("Failed to create socket directory: {e}");
-        std::process::exit(1);
-    }
+    let sock = socket_path_or_exit();
     match server::Server::bind(&sock) {
         Ok(s) => match s.run() {
             Ok(()) => std::process::exit(0),
@@ -176,7 +184,7 @@ pub fn run_doctor() -> ! {
     let _ = writeln!(out);
 
     // Daemon socket.
-    let sock = paths::socket_path();
+    let sock = socket_path_or_exit();
     let _ = writeln!(out, "[daemon]");
     let _ = writeln!(out, "  socket path: {}", sock.display());
     match CoreClient::connect(&sock) {
@@ -408,7 +416,7 @@ fn print_orphan_report(out: &mut impl Write, findings: &[OrphanFinding]) {
 
 /// `owlry providers [<id>]`: list providers, or show one in detail.
 pub fn run_providers(id: Option<String>) -> ! {
-    let sock = paths::socket_path();
+    let sock = socket_path_or_exit();
     let mut client = match CoreClient::connect(&sock) {
         Ok(c) => c,
         Err(e) => {
@@ -462,7 +470,7 @@ pub fn run_providers(id: Option<String>) -> ! {
 
 /// `owlry refresh [<id>]`: refresh every static provider or one provider.
 pub fn run_refresh(id: Option<String>) -> ! {
-    let sock = paths::socket_path();
+    let sock = socket_path_or_exit();
     let mut client = match CoreClient::connect(&sock) {
         Ok(c) => c,
         Err(e) => {

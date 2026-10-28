@@ -3,7 +3,7 @@
 //! Parses `~/.ssh/config` and exposes each non-wildcard `Host` entry as a
 //! launchable item that opens an `ssh <host>` session in the user's terminal.
 
-use super::{ItemSource, LaunchItem, Provider, ProviderType};
+use super::{ItemActivation, ItemSource, LaunchItem, Provider, ProviderType};
 use std::fs;
 use std::path::PathBuf;
 
@@ -165,8 +165,12 @@ impl SshProvider {
         // Build SSH command - just use the host alias, SSH will resolve the rest
         let ssh_command = format!("ssh {}", host);
 
-        // Wrap in terminal
+        // Wrap in the provider's configured terminal, preserving the
+        // historical `[plugins.ssh] terminal` setting.
         let command = format!("{} -e {}", self.terminal_command, ssh_command);
+        let mut argv =
+            crate::command_line::split_words(&command).unwrap_or_else(|_| vec![command.clone()]);
+        let program = argv.remove(0);
 
         self.items.push(LaunchItem {
             id: format!("ssh:{}", host),
@@ -176,7 +180,10 @@ impl SshProvider {
             provider: ProviderType::Plugin(TYPE_ID.into()),
             command,
             terminal: false,
-            activation: super::ItemActivation::Launch,
+            activation: ItemActivation::Argv {
+                program,
+                args: argv,
+            },
             tags: vec!["ssh".to_string(), "remote".to_string()],
             source: ItemSource::Core,
         });
