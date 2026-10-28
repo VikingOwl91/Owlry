@@ -63,6 +63,23 @@ needed for the UI/daemon comparison.
 
 This is the smaller operational candidate. See the priority note at the end.
 
+### Structured Query Engine `[proposed]`
+
+Add a provider-agnostic query layer so filters can appear anywhere in the
+input instead of only as a leading prefix:
+
+- Position-independent filters such as `is:failed` and `type:service`.
+- Free-text terms and filters may appear in any order.
+- Negation, for example `-is:running`.
+- Provider-extensible filter definitions.
+- Explicit semantics for repeated filters, unknown filters, and quoted values.
+- Initial implementation target: `uuctl`.
+- Potential reuse for future providers, especially the proposed `windows`
+  provider.
+
+No release target is assigned, and this does not take priority above the
+window switcher.
+
 ## Later
 
 ### Widget providers `[exploratory]`
@@ -190,6 +207,7 @@ Detailed implementation notes are in
 
 The first pick for a new workflow remains the **window switcher with live
 thumbnails**, carried over from the previous roadmap. The `owlry doctor`
-installation and version checks are the smaller operational candidate.
-Changing this order requires maintainer approval; this document does not change
-it silently.
+installation and version checks are the smaller operational candidate. The
+Structured Query Engine is a proposed feature and does not take priority above
+the window switcher. Changing this order requires maintainer approval; this
+document does not change it silently.
