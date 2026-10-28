@@ -798,17 +798,17 @@ fn parse_desktop_handler(contents: &str) -> Option<DesktopHandler> {
         if let Some(value) = line.strip_prefix("Exec=")
             && exec.is_none()
         {
-            exec = Some(value.trim().to_string());
+            exec = Some(crate::command_line::unescape_desktop_value(value.trim()));
         } else if let Some(value) = line.strip_prefix("Terminal=") {
             terminal = value.trim().eq_ignore_ascii_case("true");
         } else if let Some(value) = line.strip_prefix("Name=")
             && name.is_none()
         {
-            name = Some(value.trim().to_string());
+            name = Some(crate::command_line::unescape_desktop_value(value.trim()));
         } else if let Some(value) = line.strip_prefix("Icon=")
             && icon.is_none()
         {
-            icon = Some(value.trim().to_string());
+            icon = Some(crate::command_line::unescape_desktop_value(value.trim()));
         }
     }
 

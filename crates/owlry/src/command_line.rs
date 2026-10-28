@@ -201,6 +201,35 @@ pub fn desktop_exec_argv_with(
     Ok(argv)
 }
 
+/// Decode the string-level escapes used by desktop-entry values.
+///
+/// The desktop spec applies these escapes to the key value before the `Exec`
+/// tokenizer sees it, so a literal backslash in an argument is written as
+/// `\\\\` in the file and arrives here as `\\`. Unknown escapes are preserved.
+pub fn unescape_desktop_value(value: &str) -> String {
+    let mut out = String::new();
+    let mut chars = value.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('s') => out.push(' '),
+            Some('n') => out.push('\n'),
+            Some('t') => out.push('\t'),
+            Some('r') => out.push('\r'),
+            Some('\\') => out.push('\\'),
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
+}
+
 /// Whether an argv vector invokes a shell anywhere in the command.
 ///
 /// A desktop entry such as `Exec=sh -c "prog %f"`, or a terminal wrapper
@@ -397,6 +426,17 @@ mod tests {
                 "/tmp/x",
             ]
         );
+    }
+
+    #[test]
+    fn desktop_values_decode_string_escapes_before_tokenizing() {
+        assert_eq!(unescape_desktop_value(r"a\\\\b"), r"a\\b");
+        assert_eq!(unescape_desktop_value(r"a\sb"), "a b");
+        assert_eq!(unescape_desktop_value(r"a\qb"), r"a\qb");
+
+        let exec = unescape_desktop_value(r#"app "a\\\\b" %f"#);
+        let argv = desktop_exec_argv(&exec, "/tmp/x").unwrap();
+        assert_eq!(argv, vec!["app", r"a\b", "/tmp/x"]);
     }
 
     #[test]
