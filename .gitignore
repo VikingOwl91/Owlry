@@ -2,6 +2,7 @@
 CLAUDE.md
 .worktrees/
 media.md
+!docs/media.md
 
 # Local Graphify analysis outputs
 /graphify-out/
