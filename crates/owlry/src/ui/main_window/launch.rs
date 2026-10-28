@@ -7,9 +7,9 @@ use log::debug;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-/// Structured stdin payloads must fit in the kernel pipe buffer. This keeps
-/// the synchronous write from blocking the GTK thread and avoids a detached
-/// writer that the UI could kill on exit.
+/// Structured stdin payloads are capped at the default Linux pipe buffer.
+/// The write runs on a short-lived thread with a bounded wait, so a child
+/// that does not read cannot stall the GTK thread.
 const MAX_STDIN_BYTES: usize = 64 * 1024;
 
 impl MainWindow {
@@ -441,8 +441,7 @@ impl MainWindow {
     /// whose default app is a terminal program (nvim, vim, less, …) launches
     /// windowless and appears to do nothing. When the resolved handler wants a
     /// terminal we reconstruct its `Exec` line and run it through the
-    /// configured terminal (reusing [`Self::launch_command`]'s terminal
-    /// handling, including its `-e` convention).
+    /// configured terminal (reusing [`Self::build_argv`]'s `-e` convention).
     ///
     /// When the file's type has no associated application, the user is
     /// notified instead of silently getting nothing. GUI handlers and
