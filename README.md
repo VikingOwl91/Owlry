@@ -40,6 +40,14 @@ paru -S owlry         # or yay -S owlry
 
 Upgrading from 1.x: paru/pacman transparently swaps the old `owlry-core`, `owlry-lua`, `owlry-rune`, and every `owlry-plugin-*` and `owlry-meta-*` package for the new unified `owlry`. The `.install` hook prints a banner with the systemd unit rename instructions (`owlryd.{service,socket}` → `owlry.{service,socket}`).
 
+Upgrading within 2.x: restart the daemon after an upgrade so the UI and daemon use the same IPC activation schema. If you use `owlry.socket` and upgraded from 2.7 or earlier, the old daemon replaced the socket file at the activation path and removed it on shutdown, so systemd still holds a listener whose path is gone. `systemctl --user restart owlry.service` then fails. Rebind it before restarting:
+
+```bash
+systemctl --user stop owlry.service owlry.socket && systemctl --user start owlry.socket && owlry
+```
+
+Both units must stop successfully before the socket starts again. If you run `owlry.service` without socket activation, restart it only when it is running; otherwise start it as a separate step with `systemctl --user start owlry.service`. The package hook only prints this guidance; it never enables, restarts, or reloads units. See [`docs/upgrading.md`](docs/upgrading.md) for all modes.
+
 ### Build from Source
 
 **System dependencies:**
@@ -118,7 +126,7 @@ owlry refresh app      # one provider from `owlry providers`
 systemctl --user enable owlry.socket
 ```
 
-Daemon starts the first time the UI connects.
+Daemon starts the first time the UI connects. If you upgraded from 2.7 or earlier and clients cannot connect, rebind the socket path as described in [`docs/upgrading.md`](docs/upgrading.md).
 
 **3. Compositor autostart**
 

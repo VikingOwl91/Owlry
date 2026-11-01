@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+# scripts/test-aur-install-hook
+#
+# Checks the informational AUR install hook without installing anything:
+# bash syntax, hook exit status, the text printed for 0.x/1.x and 2.x
+# upgrades, and that the hook never calls systemctl.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+HOOK="$REPO_ROOT/aur/owlry/owlry.install"
+
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/owlry-install-hook.XXXXXX")"
+trap 'rm -rf "$WORK"' EXIT
+
+fail() {
+    printf 'FAIL: %s\n' "$*" >&2
+    exit 1
+}
+
+ok() {
+    printf 'ok - %s\n' "$*"
+}
+
+assert_has() {
+    local file="$1" needle="$2" label="$3"
+    if ! grep -Fq -- "$needle" "$file"; then
+        printf 'FAIL: %s\n  missing: %s\n' "$label" "$needle" >&2
+        sed 's/^/  | /' "$file" >&2
+        exit 1
+    fi
+}
+
+assert_lacks() {
+    local file="$1" needle="$2" label="$3"
+    if grep -Fq -- "$needle" "$file"; then
+        printf 'FAIL: %s\n  unexpected: %s\n' "$label" "$needle" >&2
+        sed 's/^/  | /' "$file" >&2
+        exit 1
+    fi
+}
+
+# Source the hook in a clean bash process with a poisoned systemctl. Any call
+# the hook makes shows up as SYSTEMCTL_CALLED in the captured output.
+run_hook() {
+    local fn="$1"
+    shift
+    bash -c '
+        set -euo pipefail
+        systemctl() { printf "SYSTEMCTL_CALLED %s\n" "$*"; return 99; }
+        source "$1"
+        shift
+        "$@"
+    ' _ "$HOOK" "$fn" "$@"
+}
+
+[ -f "$HOOK" ] || fail "missing $HOOK"
+
+bash -n "$HOOK" || fail "bash syntax check failed for $HOOK"
+ok "bash syntax"
+
+bash -c '
+    source "$1"
+    for fn in post_install post_upgrade post_remove; do
+        declare -F "$fn" >/dev/null || { echo "missing function: $fn" >&2; exit 1; }
+    done
+' _ "$HOOK"
+ok "hook functions defined"
+
+# 0.x and 1.x upgrades use the unchanged migration banner.
+run_hook post_upgrade 2.8.1 1.9.0 >"$WORK/upgrade-1x.out"
+run_hook post_upgrade 2.8.1 0.4.10 >"$WORK/upgrade-0x.out"
+cmp -s "$WORK/upgrade-1x.out" "$WORK/upgrade-0x.out" \
+    || fail "0.x and 1.x upgrade banners differ"
+
+assert_has "$WORK/upgrade-1x.out" "owlry 2.x migration notes:" "1.x banner"
+assert_has "$WORK/upgrade-1x.out" "The \`owlryd\` binary was replaced by \`owlry -d\`." "1.x banner"
+assert_has "$WORK/upgrade-1x.out" "Remove stale units from ~/.config/systemd/user/" "1.x banner"
+assert_has "$WORK/upgrade-1x.out" "systemctl --user daemon-reload" "1.x banner"
+assert_has "$WORK/upgrade-1x.out" "systemctl --user enable --now owlry.service" "1.x banner"
+assert_lacks "$WORK/upgrade-1x.out" "reset-failed" "1.x banner"
+assert_lacks "$WORK/upgrade-1x.out" "SYSTEMCTL_CALLED" "1.x banner"
+ok "1.x migration banner unchanged"
+
+# Every 2.x upgrade gets the same two-mode guidance, including 2.7 which is
+# the version that leaves a systemd-owned socket path unlinked.
+for version in 2.5.0 2.7.0 2.8.0; do
+    run_hook post_upgrade 2.8.1 "$version" >"$WORK/upgrade-$version.out"
+    assert_lacks "$WORK/upgrade-$version.out" "SYSTEMCTL_CALLED" "post_upgrade $version"
+done
+cmp -s "$WORK/upgrade-2.5.0.out" "$WORK/upgrade-2.7.0.out" \
+    || fail "2.5.0 and 2.7.0 banners differ"
+cmp -s "$WORK/upgrade-2.7.0.out" "$WORK/upgrade-2.8.0.out" \
+    || fail "2.7.0 and 2.8.0 banners differ"
+ok "2.x banners are unconditional"
+
+TWO_X="$WORK/upgrade-2.7.0.out"
+assert_has "$TWO_X" "Owlry upgraded." "2.x banner"
+assert_has "$TWO_X" "Owlry 2.7 and earlier did not adopt the listener systemd passed." "2.x banner"
+assert_has "$TWO_X" "removed it again on shutdown" "2.x banner"
+assert_has "$TWO_X" "systemctl --user stop owlry.service owlry.socket" "2.x banner"
+assert_has "$TWO_X" "systemctl --user stop owlry.service owlry.socket && systemctl --user start owlry.socket" "2.x guarded recovery"
+assert_has "$TWO_X" "systemctl --user reset-failed owlry.service owlry.socket" "2.x scoped reset"
+assert_has "$TWO_X" "systemctl --user start owlry.socket" "2.x banner"
+assert_has "$TWO_X" "Both units must stop successfully before the socket starts again." "2.x banner"
+assert_has "$TWO_X" "client triggers service activation" "2.x banner"
+assert_has "$TWO_X" "systemctl --user restart owlry.service  # only when it is running" "2.x banner"
+assert_has "$TWO_X" "If it is not running, start it as a separate step:" "2.x banner"
+assert_has "$TWO_X" "systemctl --user start owlry.service" "2.x banner"
+assert_has "$TWO_X" "Manually started daemon (owlry -d or compositor autostart):" "2.x banner"
+assert_has "$TWO_X" "This hook is informational. It does not enable, restart, or reload units." "2.x banner"
+assert_has "$TWO_X" "Owlry 2.8.0 and later no longer remove an inherited socket path" "2.x banner"
+assert_lacks "$TWO_X" "enable --now" "2.x banner"
+ok "2.x socket, service, and manual mode guidance"
+
+run_hook post_install 2.8.1 >"$WORK/install.out"
+assert_has "$WORK/install.out" "owlry installed. Start the daemon with:" "post_install"
+assert_has "$WORK/install.out" "systemctl --user enable --now owlry.service" "post_install"
+assert_has "$WORK/install.out" "owlry -d &" "post_install"
+assert_has "$WORK/install.out" "owlry doctor" "post_install"
+assert_lacks "$WORK/install.out" "SYSTEMCTL_CALLED" "post_install"
+ok "post_install output"
+
+run_hook post_remove 2.8.1 >"$WORK/remove.out"
+assert_has "$WORK/remove.out" "owlry removed. Configuration in ~/.config/owlry remains intact." "post_remove"
+assert_lacks "$WORK/remove.out" "SYSTEMCTL_CALLED" "post_remove"
+ok "post_remove output"
+
+printf '\nAll install-hook checks passed.\n'

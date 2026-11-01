@@ -275,6 +275,49 @@ fn fd_is_unix_socket(_fd: RawFd) -> bool {
     false
 }
 
+/// Explain a missing socket-activated path without guessing why it vanished.
+///
+/// Every other error is returned untouched so callers keep the original kind,
+/// message, and security decision.
+fn inherited_path_error(socket_path: &Path, operation: &str, error: io::Error) -> io::Error {
+    if error.kind() != io::ErrorKind::NotFound {
+        return error;
+    }
+    io::Error::new(
+        io::ErrorKind::NotFound,
+        format!(
+            "socket-activated path '{}' is not available while {operation}: {error}. \
+             Stop both owlry.service and owlry.socket, then start owlry.socket \
+             (`systemctl --user stop owlry.service owlry.socket && \
+             systemctl --user start owlry.socket`).",
+            socket_path.display()
+        ),
+    )
+}
+
+/// Validate and secure the path systemd bound for us, returning its identity.
+///
+/// The listener is owned by systemd, so a missing path must fail startup with
+/// an actionable error instead of rebinding a replacement socket.
+fn adopt_inherited_socket_path(socket_path: &Path) -> io::Result<crate::paths::SocketIdentity> {
+    let metadata = std::fs::symlink_metadata(socket_path)
+        .map_err(|e| inherited_path_error(socket_path, "checking the activation path", e))?;
+    let ours = unsafe { libc::geteuid() };
+    if !metadata.file_type().is_socket() || metadata.uid() != ours {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!(
+                "socket-activated path '{}' is not a socket owned by uid {ours}",
+                socket_path.display()
+            ),
+        ));
+    }
+    std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o600))
+        .map_err(|e| inherited_path_error(socket_path, "setting its permissions", e))?;
+    crate::paths::SocketIdentity::from_path(socket_path)
+        .map_err(|e| inherited_path_error(socket_path, "recording its identity", e))
+}
+
 /// Finish startup when systemd already owns the listening socket.
 fn bind_inherited(
     socket_path: &Path,
@@ -293,19 +336,7 @@ fn bind_inherited(
         ));
     }
 
-    let metadata = std::fs::symlink_metadata(socket_path)?;
-    let ours = unsafe { libc::geteuid() };
-    if !metadata.file_type().is_socket() || metadata.uid() != ours {
-        return Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            format!(
-                "socket-activated path '{}' is not a socket owned by uid {ours}",
-                socket_path.display()
-            ),
-        ));
-    }
-    std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o600))?;
-    let identity = crate::paths::SocketIdentity::from_path(socket_path)?;
+    let identity = adopt_inherited_socket_path(socket_path)?;
     Ok((lock, listener, identity))
 }
 
@@ -1076,6 +1107,95 @@ mod tests {
         set_cloexec(stream.as_raw_fd());
         let flags = unsafe { libc::fcntl(stream.as_raw_fd(), libc::F_GETFD) };
         assert_ne!(flags & libc::FD_CLOEXEC, 0);
+    }
+
+    #[test]
+    fn inherited_socket_path_is_adopted_with_0600() {
+        let dir = test_dir("inherited-valid");
+        let path = dir.join("owlry.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+
+        let identity = adopt_inherited_socket_path(&path).unwrap();
+        assert_eq!(
+            crate::paths::SocketIdentity::from_path(&path).unwrap(),
+            identity
+        );
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+
+        drop(listener);
+        std::fs::remove_file(&path).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn inherited_bind_preserves_listener_and_socket() {
+        let dir = test_dir("inherited-bind-valid");
+        let path = dir.join("owlry.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        let manager_listener = listener.try_clone().unwrap();
+        let original = crate::paths::SocketIdentity::from_path(&path).unwrap();
+        let (lock, daemon_listener, identity) = bind_inherited(&path, listener).unwrap();
+        assert_eq!(identity, original);
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let _client = UnixStream::connect(&path).unwrap();
+        let (_stream, _) = daemon_listener.accept().unwrap();
+        assert!(acquire_socket_lock(&path).is_err());
+        drop(daemon_listener);
+        drop(lock);
+        assert_eq!(
+            crate::paths::SocketIdentity::from_path(&path).unwrap(),
+            original
+        );
+        assert!(acquire_socket_lock(&path).is_ok());
+        drop(manager_listener);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn inherited_socket_path_missing_after_unlink_is_actionable() {
+        let dir = test_dir("inherited-missing");
+        let path = dir.join("owlry.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+
+        let err = bind_inherited(&path, listener).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::NotFound);
+        let message = err.to_string();
+        assert!(message.contains(&path.display().to_string()), "{message}");
+        assert!(message.contains("owlry.service"), "{message}");
+        assert!(message.contains("owlry.socket"), "{message}");
+        assert!(message.contains(" && "), "{message}");
+        // Startup must report the missing path, not create a replacement
+        // socket that systemd does not own.
+        assert!(!path.exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn inherited_socket_path_keeps_the_non_socket_security_error() {
+        let dir = test_dir("inherited-regular");
+        let path = dir.join("owlry.sock");
+        std::fs::write(&path, b"not a socket").unwrap();
+
+        let err = adopt_inherited_socket_path(&path).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+        assert!(err.to_string().contains("is not a socket owned by uid"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"not a socket");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn inherited_path_error_preserves_other_errors() {
+        let original = io::Error::new(io::ErrorKind::PermissionDenied, "original detail");
+        let err = inherited_path_error(Path::new("/tmp/owlry.sock"), "checking", original);
+        assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(err.to_string(), "original detail");
     }
 
     #[test]

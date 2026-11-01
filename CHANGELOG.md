@@ -3,6 +3,13 @@
 User-facing changes for Owlry. Older releases are documented at
 <https://somegit.dev/Owlibou/owlry/releases>.
 
+## 2.8.1 - Unreleased
+
+### Fixed
+
+- Document recovery when an older daemon removes the systemd activation socket
+  during an upgrade, and report a missing inherited socket with recovery steps.
+
 ## 2.8.0 - 2026-10-28
 
 Security hardening release. The launcher no longer builds shell command

@@ -203,10 +203,7 @@ pub fn run_doctor() -> ! {
         }
         Err(e) => {
             let _ = writeln!(out, "  socket: UNREACHABLE ({e})");
-            let _ = writeln!(
-                out,
-                "  hint: start the daemon with `owlry -d` or via systemd"
-            );
+            print_daemon_hint(&mut out, e.kind());
         }
     }
 
@@ -216,6 +213,28 @@ pub fn run_doctor() -> ! {
     print_orphan_report(&mut out, &scan_orphans());
 
     std::process::exit(0);
+}
+
+fn print_daemon_hint(out: &mut impl Write, kind: io::ErrorKind) {
+    if kind == io::ErrorKind::NotFound {
+        let _ = writeln!(
+            out,
+            "  If you use owlry.socket and its path is missing, stop both units before starting the socket:"
+        );
+        let _ = writeln!(
+            out,
+            "    systemctl --user stop owlry.service owlry.socket && systemctl --user start owlry.socket"
+        );
+        let _ = writeln!(
+            out,
+            "  Otherwise start the daemon using your usual method, for example `owlry -d` for manual mode."
+        );
+    } else {
+        let _ = writeln!(
+            out,
+            "  hint: start the daemon with `owlry -d` or via systemd"
+        );
+    }
 }
 
 /// Package-manager ownership of a path, as reported by `pacman -Qo`.
@@ -865,6 +884,20 @@ pub fn run_selector(prompt: Option<String>) -> ! {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn daemon_hint_is_conditional_on_missing_socket() {
+        let mut output = Vec::new();
+        print_daemon_hint(&mut output, io::ErrorKind::NotFound);
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("If you use owlry.socket"));
+        assert!(
+            text.contains("stop owlry.service owlry.socket && systemctl --user start owlry.socket")
+        );
+        let mut output = Vec::new();
+        print_daemon_hint(&mut output, io::ErrorKind::PermissionDenied);
+        assert!(!String::from_utf8(output).unwrap().contains("owlry.socket"));
+    }
 
     #[test]
     fn parse_pacman_owner_detects_owned() {

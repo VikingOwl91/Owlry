@@ -136,6 +136,9 @@ package() {
 
     # Documentation + example configuration.
     install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+    if [[ -f docs/upgrading.md ]]; then
+        install -Dm644 docs/upgrading.md "$pkgdir/usr/share/doc/$pkgname/docs/upgrading.md"
+    fi
     install -Dm644 data/owlry.example.lua "$pkgdir/usr/share/doc/$pkgname/owlry.example.lua"
     install -Dm644 data/config.example.toml "$pkgdir/usr/share/doc/$pkgname/config.example.toml"
     install -Dm644 data/style.example.css "$pkgdir/usr/share/doc/$pkgname/style.example.css"
