@@ -1,18 +1,64 @@
 # Upgrading Owlry
 
-## Upgrading to 2.8.0
+## Upgrading to 2.8.1
 
-2.8.0 changes the IPC activation schema. The UI and daemon must run the same
-version, so restart the daemon after the package upgrade:
+2.8.0 changed the IPC activation schema. 2.8.1 fixes socket activation
+migration from 2.7.0. The Arch package's post-transaction hook checks live
+systemd user managers, reloads their units, and migrates active Owlry sockets
+when the running executable differs from the installed binary or the socket
+path is missing. It stops both Owlry units before starting the socket, so an
+old daemon cannot unlink the replacement socket. Future binary-changing
+upgrades use the same path. Healthy sockets and deliberately inactive units
+are left alone.
+
+Check pacman output for migration failures. The package transaction is already
+committed when this hook runs; a migration failure does not roll it back. Each
+user-manager operation has a timeout, but total hook time scales with the number
+of running user managers. There are no automatic retries.
+
+An interrupted migration keeps pending state in the affected user's runtime
+directory. Retry as that user, without reinstalling:
+
+```bash
+systemctl --user start owlry-user-migrate.service
+```
+
+Pending state is cleared after socket restoration and disappears at reboot.
+A retry with pending state restores the socket even if it was stopped in the
+meantime. Managers that are not running at upgrade time need no migration;
+their next normal startup uses the new units.
+
+Automatic migration supports the packaged default socket path. A socket unit
+overridden to listen elsewhere is left alone; manage its upgrade and recovery
+manually. If a custom configuration replaces the default while migration is
+pending, the helper reports failure without changing either unit or clearing
+pending state. Recover using your configured socket path and units:
+
+```bash
+systemctl --user stop owlry.service owlry.socket &&
+systemctl --user start owlry.socket &&
+OWLRY_SOCKET=/absolute/path/to/your/socket owlry doctor |
+    grep -E '^\[providers\][[:space:]]+[0-9]+ registered$' &&
+rm -f -- "$XDG_RUNTIME_DIR/owlry-migrate/pending"
+```
+
+Run this as the affected user. The service's `OWLRY_SOCKET` must match its
+socket unit's `ListenStream`, and clients must use that same path. Each step
+depends on the preceding step succeeding. `doctor` itself exits zero even when
+IPC is unreachable, so the explicit providers-response check must pass before
+the old pending marker is cleared.
+
+The 1.x `owlryd` unit-name migration below also remains manual.
+
+If you use only `owlry.service` without socket activation, the hook leaves it
+running. Restart it yourself after upgrading so it uses the new executable:
 
 ```bash
 systemctl --user restart owlry.service
 ```
 
-The package prints a reminder in its post-upgrade message, but it does not
-restart the daemon for you. If you run the daemon manually, stop the old
-`owlry -d` process and start it again. If you use the socket unit, restarting
-the service is enough.
+If you run the daemon manually (no systemd socket unit), stop the old
+`owlry -d` process and start it again.
 
 If the UI reports that a legacy shell payload was refused, the running daemon
 is still the old version. Restart it.
@@ -34,11 +80,13 @@ is still the old version. Restart it.
 
 ## Upgrading from 1.x
 
-The 2.0 release collapsed the old package set into one `owlry` package. The
-AUR package uses `replaces` and `conflicts` so `paru` or `pacman` swaps the
-old packages automatically. The retired names include `owlry-core`,
-`owlry-lua`, `owlry-rune`, every `owlry-plugin-*` package, and the
-`owlry-meta-*` bundles.
+The 2.0 release combined the old package set into one `owlry` package. The
+current AUR package no longer automatically replaces the pre-v2 split
+packages or provides their old package names. If you still have those packages,
+review their dependencies and migrate or remove them before installing `owlry`.
+Packages that depend on old names may need their dependencies updated. The
+retired names include `owlry-core`, `owlry-lua`, `owlry-rune`,
+`owlry-plugin-*`, and the `owlry-meta-*` bundles.
 
 The daemon binary and units were renamed:
 
@@ -46,10 +94,16 @@ The daemon binary and units were renamed:
 - `owlryd.service` and `owlryd.socket` are now `owlry.service` and
   `owlry.socket`.
 
-After upgrading, remove stale user units that shadow the package units:
+After upgrading, check for stale user units that shadow the package units:
 
 ```bash
 ls ~/.config/systemd/user/owlryd.* 2>/dev/null
+```
+
+Remove any obsolete overrides you no longer need, then reload and start the
+packaged service:
+
+```bash
 systemctl --user daemon-reload
 systemctl --user enable --now owlry.service
 ```
@@ -75,7 +129,7 @@ ignored entirely.
 ## After upgrading
 
 ```bash
-owlry --version    # owlry 2.8.0
+owlry --version    # owlry 2.8.1
 owlry providers
 owlry doctor
 ```

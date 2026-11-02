@@ -37,6 +37,7 @@ run-debug *ARGS:
 
 # Run the full test matrix used in CI.
 test:
+    bash scripts/test-aur-install-hook
     cargo test --locked --workspace --no-default-features
     cargo test --locked --workspace --all-features
 

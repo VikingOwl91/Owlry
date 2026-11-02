@@ -1,0 +1,4 @@
+c609104ccebd2ea1da1ae8deb035e8fd30b97d3bed2f60db9decfe871daec64b  aur/owlry/owlry-user-migrate-run.sh
+456f8a7a7aab1acaa30dd8bd73e986610ad55da63f8d26be1eff46b4bc19d37f  aur/owlry/owlry-user-migrate.sh
+e278b06ca761ed3504f65e4a7c18126437aba5fc8da83d2e55a8b6de57c3d303  aur/owlry/owlry-user-migrate.hook
+47aff165d264fed709e53285109f68a93781b9ede7666b4bbedeb6f55066c57a  aur/owlry/owlry-user-migrate.service

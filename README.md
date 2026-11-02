@@ -19,10 +19,11 @@ ships as a single binary, keeps providers warm in memory, and does not build
 shell command strings from ordinary results. Configuration is Lua-first in the
 AUR build, with TOML kept as a fallback through 2.x.
 
-> **Upgrading to 2.8.0?** Restart `owlry.service` after the package upgrade.
-> The IPC activation schema changed, and the UI and daemon must run the same
-> version. See [Upgrading](docs/upgrading.md) and the
-> [2.8.0 release notes](https://somegit.dev/Owlibou/owlry/releases/tag/owlry-v2.8.0).
+> **Upgrading to 2.8.1?** The Arch package automatically migrates active
+> Owlry sockets using the default path. Service-only and manually started
+> daemons need a manual restart; custom socket paths need manual handling.
+> The UI and daemon must run the same version. See [Upgrading](docs/upgrading.md)
+> and the [2.8.1 release notes](https://somegit.dev/Owlibou/owlry/releases/tag/owlry-v2.8.1).
 
 ## Highlights
 
@@ -48,15 +49,20 @@ AUR build, with TOML kept as a fallback through 2.x.
 
 ```bash
 paru -Syu owlry     # or: yay -Syu owlry
+```
+
+The libalpm hook reloads running user managers and migrates active default-path
+sockets when needed. Check pacman output for migration failures. If you run
+only `owlry.service` without socket activation, restart it after upgrading:
+
+```bash
 systemctl --user restart owlry.service
 ```
 
-The restart is required once when upgrading to 2.8.0. The package prints a
-reminder after the upgrade, but it does not restart the daemon for you.
-
-Upgrading from 1.x? The package replaces the old `owlry-*` packages
-automatically. See [Upgrading](docs/upgrading.md) for the unit rename and
-migration notes.
+Manually started daemons must also be restarted; custom socket paths require
+manual handling. Upgrades from the old 1.x split packages require manual
+migration: AUR `2.8.1-2` no longer replaces those packages automatically.
+See [Upgrading](docs/upgrading.md) for details and recovery steps.
 
 ### Build from source
 
@@ -153,7 +159,7 @@ in `~/.config/owlry/themes/*.css`. See [Theming](docs/theming.md).
 | [Theming](docs/theming.md) | Bundled themes, custom themes, CSS variables |
 | [File opening](docs/file-opening.md) | Default and terminal handlers, open-with picker |
 | [Architecture](docs/architecture.md) | Daemon, IPC, provider lifecycle, performance |
-| [Upgrading](docs/upgrading.md) | 1.x package migration, 2.8.0 restart, mixed versions |
+| [Upgrading](docs/upgrading.md) | 2.8.1 socket migration, recovery and older upgrades |
 | [Provider freshness](docs/provider-freshness.md) | Application and systemd state refresh |
 | [Rofimoji](docs/rofimoji.md) | Emoji and kaomoji picker integration |
 | [Dependency audit](docs/dependency-audit.md) | RustSec exceptions and removal conditions |
