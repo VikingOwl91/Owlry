@@ -2,145 +2,93 @@
 
 [![AUR](https://img.shields.io/aur/version/owlry?logo=archlinux&label=AUR)](https://aur.archlinux.org/packages/owlry)
 [![Rust](https://img.shields.io/badge/rust-1.90%2B-orange.svg)](https://www.rust-lang.org/)
-[![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](https://somegit.dev/Owlibou/owlry/src/commit/41f3e509fe6435f5c45825e310a728a20b7f001f/LICENSE)
 [![GTK4](https://img.shields.io/badge/GTK-4.12-green.svg)](https://gtk.org/)
 [![Wayland](https://img.shields.io/badge/Wayland-native-blueviolet.svg)](https://wayland.freedesktop.org/)
 
-A lightweight, owl-themed application launcher for Wayland, built with GTK4 and Layer Shell. Single-binary, configurable, fast.
+A fast, keyboard-first application launcher for Wayland. Owlry runs a small
+GTK4 client over a warm daemon, so the window opens immediately and results
+are already ranked. One binary provides the UI, daemon, and every provider.
 
 <p align="center">
-  <img src="assets/owlry-demo.gif" alt="Owlry — calculator, converter, web search, and power actions in the default theme" width="760">
+  <img src="https://somegit.dev/Owlibou/owlry/raw/commit/41f3e509fe6435f5c45825e310a728a20b7f001f/assets/owlry-demo.gif" alt="Owlry searching applications, calculating, converting units, and showing power actions" width="1000">
 </p>
 
-> **Where it stands (2.1).** Owlry collapsed from 15 AUR packages and a dynamic plugin system into a single binary: every provider (apps, commands, calculator, converter, power, clipboard, emoji, rofimoji, ssh, systemd, web search, file search) is compiled in and gated by a cargo feature. Configuration is Lua-first — `~/.config/owlry/owlry.lua`, with TOML kept as a back-compat fallback until 3.0. The AUR build ships everything; `cargo install` consumers pick a subset. See [`docs/RESTRUCTURE-V2.md`](docs/RESTRUCTURE-V2.md) for the rewrite story and [`docs/lua-api.md`](docs/lua-api.md) for the config surface.
+Owlry is built for people who want a launcher that stays out of the way. It
+ships as a single binary, keeps providers warm in memory, and does not build
+shell command strings from ordinary results. Configuration is Lua-first in the
+AUR build, with TOML kept as a fallback through 2.x.
 
-## Features
+> **Upgrading to 2.8.1?** The Arch package automatically migrates active
+> default-path Owlry sockets. Service-only users must restart `owlry.service`;
+> manually started daemons must also be restarted. The UI and daemon must run
+> the same version. See [Upgrading](docs/upgrading.md) for recovery and custom paths.
 
-- **Single binary** — UI client, daemon, and providers in one `/usr/bin/owlry`
-- **Client/daemon architecture** — Daemon (`owlry -d`) keeps providers warm; UI appears instantly
-- **Built-in providers** — Apps, PATH commands, calculator, unit/currency converter, power actions
-- **Optional providers** (compiled in via `--features full` on AUR) — Clipboard history (with image thumbnails), emoji, rofimoji emoji/kaomoji picker, SSH hosts, systemd user units, web search, filesystem search
-- **Fuzzy search with tags** — Fast matching across names, descriptions, category tags
-- **Direct commands** — Type an executable with arguments (for example `mpv VIDEO`) and press Enter to run the complete command
-- **Config profiles** — Named mode presets for different workflows
-- **Filter prefixes** — Scope searches with `:app`, `:cmd`, `:power`, `:uuctl`, `:tag:X`, etc.
-- **Frecency ranking** — Frequently/recently used items rank higher; `:recent` lists recent launches; startup pruning is configurable
-- **Toggle behavior** — Bind one key to open/close the launcher
-- **GTK4 theming** — System theme by default, 10 built-in themes shipped
-- **Wayland native** — Uses Layer Shell for proper overlay behavior
-- **dmenu compatible** — Pipe-based selection, no daemon required
+## Highlights
 
-## Installation
+- **Instant UI.** A warm daemon keeps provider data in memory, so opening the
+  launcher is a socket round-trip rather than a cold scan.
+- **One binary.** The UI, daemon, providers, and diagnostics all live in
+  `/usr/bin/owlry`.
+- **Useful defaults.** Applications, PATH commands, calculator, unit and
+  currency converter, power actions, and dmenu mode are always built in. The
+  default feature set adds systemd user units.
+- **Optional providers.** Clipboard history, emoji, rofimoji, SSH hosts, web
+  search, and filesystem search are compiled in with cargo features. The AUR
+  package enables all of them.
+- **Search that stays useful.** Fuzzy matching across names, descriptions, and
+  tags, with frecency ranking and `:recent`.
+- **Lua configuration.** Profiles, themes, user-defined providers, and hot
+  reload. TOML remains supported through 2.x.
+- **Wayland native.** GTK4 and Layer Shell, with ten bundled themes.
+
+## Install
 
 ### Arch Linux (AUR)
 
 ```bash
-paru -S owlry         # or yay -S owlry
+paru -Syu owlry     # or: yay -Syu owlry
 ```
 
-Upgrading from 1.x: paru/pacman transparently swaps the old `owlry-core`, `owlry-lua`, `owlry-rune`, and every `owlry-plugin-*` and `owlry-meta-*` package for the new unified `owlry`. The `.install` hook prints a banner with the systemd unit rename instructions (`owlryd.{service,socket}` → `owlry.{service,socket}`).
-
-Upgrading within 2.x: restart the daemon after an upgrade so the UI and daemon use the same IPC activation schema. If you use `owlry.socket` and upgraded from 2.7 or earlier, the old daemon replaced the socket file at the activation path and removed it on shutdown, so systemd still holds a listener whose path is gone. `systemctl --user restart owlry.service` then fails. Rebind it before restarting:
+The libalpm hook reloads live user managers and migrates active default-path
+sockets when needed. The `.install` messages provide guidance only. If you
+run the service without socket activation, restart it after upgrading:
 
 ```bash
-systemctl --user stop owlry.service owlry.socket && systemctl --user start owlry.socket && owlry
+systemctl --user restart owlry.service
 ```
 
-Both units must stop successfully before the socket starts again. If you run `owlry.service` without socket activation, restart it only when it is running; otherwise start it as a separate step with `systemctl --user start owlry.service`. The package hook only prints this guidance; it never enables, restarts, or reloads units. See [`docs/upgrading.md`](docs/upgrading.md) for all modes.
+Upgrading from 1.x? The package replaces the old `owlry-*` packages
+automatically. See [Upgrading](docs/upgrading.md) for the unit rename and
+migration notes.
 
-### Build from Source
+### Build from source
 
-**System dependencies:**
-
-```bash
-# Arch
-sudo pacman -S gtk4 gtk4-layer-shell
-
-# Ubuntu / Debian
-sudo apt install libgtk-4-dev libgtk4-layer-shell-dev
-
-# Fedora
-sudo dnf install gtk4-devel gtk4-layer-shell-devel
-```
-
-**Rust 1.90+:**
+Install GTK4 and gtk4-layer-shell, then build with the feature set you want:
 
 ```bash
 git clone https://somegit.dev/Owlibou/owlry.git
 cd owlry
-cargo build --release --features full     # full = all providers (matches the AUR build)
-just install-local                        # installs binary + systemd units (sudo)
+cargo build --release --features full
+just install-local    # development install of the binary and systemd units
 ```
 
-Cargo features (pick a subset if you don't need everything):
+`--features full` matches the AUR build. Core providers are always compiled;
+optional features are `clipboard`, `emoji`, `rofimoji`, `filesearch`, `ssh`,
+`systemd`, `websearch`, and `lua`. A default build enables only `systemd`.
+See [Contributing](https://somegit.dev/Owlibou/owlry/src/commit/41f3e509fe6435f5c45825e310a728a20b7f001f/CONTRIBUTING.md) for distro dependencies and the test
+matrix.
 
-| Feature       | Provider                                  | Default? |
-|---|---|---|
-| `app`         | XDG desktop applications                  | yes |
-| `cmd`         | Executables on `$PATH`                    | yes |
-| `calc`        | Calculator                                | yes |
-| `conv`        | Unit & currency converter                 | yes |
-| `power`       | Shutdown/reboot/lock                      | yes |
-| `dmenu`       | Pipe-based selection                      | yes |
-| `clipboard`   | Clipboard history (`cliphist`)            | opt-in |
-| `emoji`       | Emoji picker (`wl-clipboard`)             | opt-in |
-| `rofimoji`    | Emoji + kaomoji picker (external `rofimoji`) | opt-in |
-| `ssh`         | SSH hosts from `~/.ssh/config`            | opt-in |
-| `systemd`     | systemd user units (type_id: `uuctl`)     | opt-in |
-| `websearch`   | Web search (DuckDuckGo / configurable)    | opt-in |
-| `filesearch`  | `fd` / `mlocate` shellout                 | opt-in |
-| `full`        | All of the above                          | — |
+## Quick start
 
 ```bash
-cargo build --release --no-default-features --features "app,cmd,calc,conv,power,dmenu,systemd"
-```
-
-## Getting Started
-
-### Starting the Daemon
-
-Three options:
-
-**1. Systemd user service (recommended)**
-
-```bash
+# Recommended: run the daemon as a systemd user service
 systemctl --user enable --now owlry.service
 ```
 
-Reload config from disk without restarting:
+Bind `owlry` to a key:
 
-```bash
-systemctl --user reload owlry.service     # or: kill -HUP $(pidof owlry)
-```
-
-Refresh provider data without reloading the daemon:
-
-```bash
-owlry refresh          # all static providers
-owlry refresh app      # one provider from `owlry providers`
-```
-
-**2. Socket activation**
-
-```bash
-systemctl --user enable owlry.socket
-```
-
-Daemon starts the first time the UI connects. If you upgraded from 2.7 or earlier and clients cannot connect, rebind the socket path as described in [`docs/upgrading.md`](docs/upgrading.md).
-
-**3. Compositor autostart**
-
-```
-# Hyprland
-exec-once = owlry -d
-
-# Sway
-exec owlry -d
-```
-
-### Launching the UI
-
-```bash
+```text
 # Hyprland
 bind = SUPER, Space, exec, owlry
 
@@ -148,348 +96,102 @@ bind = SUPER, Space, exec, owlry
 bindsym $mod+space exec owlry
 ```
 
-Running `owlry` while a window is already open sends a toggle command — single keybind acts as open/close. If the daemon isn't running, the UI tries to start it via systemd.
+Running `owlry` while a window is open sends a toggle command, so one keybind
+opens and closes the launcher.
 
-## Usage
+Try these in the search field:
 
-```
-owlry                          launch UI, auto mode
-owlry -m auto                  launch UI, auto mode (explicit alias)
-owlry -m <mode>                launch UI in single-provider mode
-owlry --profile <name>         launch UI with a named profile
-
-owlry -d                       run the daemon (alias: `owlry daemon`)
-owlry dmenu [-p <prompt>]      dmenu mode (reads stdin, prints selection)
-owlry selector [-p <prompt>]   selector protocol mode (rofimoji and similar integrations)
-owlry doctor                   diagnostics: config + socket + providers (static/dynamic) + stale files
-owlry providers [<id>]         list providers (or show details for one)
-owlry refresh [<id>]           refresh all static providers (or one by id)
-owlry config validate          parse config, report errors (exit 1) and warnings (exit 2)
-owlry config show              print the resolved effective config as TOML
-owlry migrate-config [--force] TOML → owlry.lua (deterministic; refuses to overwrite without --force)
-```
-
-Application directories are watched automatically, so `.desktop` file changes
-appear without restarting Owlry. The `uuctl` provider controls systemd user
-units only; its unit discovery is cached, while submenu Start/Stop actions use
-the unit's current runtime state. See [`docs/provider-freshness.md`](docs/provider-freshness.md).
-
-### Profiles
-
-```toml
-[profiles.dev]
-modes = ["app", "cmd", "ssh"]
-
-[profiles.media]
-modes = ["emoji", "clipboard"]
-```
-
-```bash
-owlry --profile dev
-```
-
-### dmenu Mode
-
-`owlry dmenu` (or the legacy `owlry -m dmenu`) reads stdin and prints the selection to stdout. It runs locally — no daemon required.
-
-```bash
-# Screenshot menu
-printf '%s\n' \
-  "grimblast --notify copy screen" \
-  "grimblast --notify copy area" \
-  "grimblast --notify edit screen" \
-  | owlry dmenu -p "Screenshot" \
-  | sh
-
-# Git branch checkout
-git branch | owlry dmenu -p "checkout" | xargs git checkout
-
-# Kill a process
-ps -eo comm | sort -u | owlry dmenu -p "kill" | xargs pkill
-
-# Open a project
-find ~/projects -maxdepth 1 -type d | owlry dmenu | xargs code
-
-# Package manager
-pacman -Ssq | owlry dmenu -p "install" | xargs sudo pacman -S
-```
-
-### Keyboard Shortcuts
-
-| Key | Action |
-|-----|--------|
-| `Enter` | Launch selected item |
-| `Right Arrow` | Open contextual actions for the selected item |
-| `Shift+Enter` | Open a file with… (application picker); in the picker, set as default |
-| `Escape` | Close launcher / exit submenu |
-| `Up` / `Down` | Navigate results |
-| `Tab` | Cycle filter tabs |
-| `Shift+Tab` | Cycle filter tabs (reverse) |
-| `Ctrl+1..9` | Toggle tab by position |
-
-### Search Prefixes
-
-| Prefix | Provider | Example |
-|--------|----------|---------|
-| `:app` | Applications | `:app firefox` |
-| `:cmd` | PATH commands | `:cmd git` |
-| `:power` (`:sys`, `:system`) | Power & session actions | `:power shutdown` |
-| `:calc` | Calculator | `:calc sqrt(16)` |
-| `:conv` | Converter | `:conv 5 ft to m` |
-| `:clip` | Clipboard | `:clip password` |
-| `:emoji` | Emoji | `:emoji heart` |
-| `:rofimoji` (`:chars`, `:kaomoji`) | Emoji + kaomoji picker | `:rofimoji` |
-| `:ssh` | SSH hosts | `:ssh server` |
-| `:uuctl` (`:systemd`) | systemd user units | `:uuctl dbus` |
-| `:web` | Web search | `:web rust docs` |
-| `:file` | Files | `:file config` |
-| `:recent` | Recently launched items (newest first) | `:recent` |
-| `:tag:X` | Filter all results by tag | `:tag:development` |
-
-Typing `program args` launches the program directly, without a shell. To run a
-shell expression (pipes, `&&`, redirects), prefix it with `:shell`:
-
-```
+```text
+firefox
+= 1920/1080
+> 20 km to mi
+:power
+? wayland launcher
 :shell printf '%s\n' foo | wl-copy
 ```
 
-`:cmd` remains a PATH-command filter and does not enable shell syntax.
-
-### Trigger Prefixes
-
-| Trigger | Provider | Example |
-|---------|----------|---------|
-| `=` | Calculator | `= 5+3` |
-| `>` | Converter | `> 20 km to mi` |
-| `?` | Web search | `? rust programming` |
-| `/` | File search | `/ .bashrc` |
+Typing `program args` launches that argument vector without a shell. Shell
+syntax requires the explicit `:shell` prefix. `:cmd` remains a PATH-command
+filter and does not enable shell syntax.
 
 ## Configuration
 
-Owlry follows the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/latest/):
+Owlry reads `~/.config/owlry/owlry.lua` first, then
+`~/.config/owlry/config.toml`, then built-in defaults. The Lua layer is
+included in the AUR build and in any build with `--features lua`.
 
-| Path | Purpose |
-|------|---------|
-| `~/.config/owlry/owlry.lua` | Lua configuration (preferred, takes precedence over `config.toml`) |
-| `~/.config/owlry/config.toml` | TOML configuration (legacy; ignored when `owlry.lua` exists) |
-| `~/.config/owlry/themes/*.css` | Custom themes |
-| `~/.config/owlry/style.css` | CSS overrides |
-| `~/.local/share/owlry/frecency.json` | Usage history |
-| `$XDG_RUNTIME_DIR/owlry/owlry.sock` | IPC socket (overridable via `$OWLRY_SOCKET`) |
-| `/usr/share/doc/owlry/owlry.example.lua` | Example Lua configuration |
-| `/usr/share/doc/owlry/config.example.toml` | Example TOML configuration |
-| `/usr/share/owlry/themes/` | Bundled themes |
+```lua
+owlry.set { theme = "owl", width = 900, height = 700 }
+owlry.providers { "app", "cmd", "calc", "conv", "power", "systemd" }
+owlry.tabs { "app", "cmd", "uuctl" }
 
-Config resolution order (per [`docs/lua-api.md`](docs/lua-api.md) §2): `owlry.lua` → `config.toml` → built-in defaults. When `owlry.lua` is present `config.toml` is ignored entirely (an info log notes this at daemon startup). The daemon watches `owlry.lua` and Lua modules below its config directory and hot-reloads on save; broken edits surface as desktop notifications and keep the previous state alive.
-
-### Quick Start (Lua config — preferred from 2.1+)
-
-```bash
-mkdir -p ~/.config/owlry
-cp /usr/share/doc/owlry/owlry.example.lua ~/.config/owlry/owlry.lua
-$EDITOR ~/.config/owlry/owlry.lua
-owlry config validate
-```
-
-Already have a `config.toml`? Migrate it in one shot:
-
-```bash
-owlry migrate-config              # writes owlry.lua; refuses to overwrite
-owlry migrate-config --force      # overwrite an existing owlry.lua
-```
-
-The migrator is deterministic, emits only values that differ from defaults, and normalises pre-v2 aliases (`system` → `power`, `badge_sys` → `badge_power`).
-
-### Quick Start (TOML config — still supported in 2.x)
-
-```bash
-mkdir -p ~/.config/owlry
-cp /usr/share/doc/owlry/config.example.toml ~/.config/owlry/config.toml
-$EDITOR ~/.config/owlry/config.toml
-owlry config validate
-```
-
-### Example Configuration
-
-```toml
-[general]
-show_icons = true
-max_results = 100
-tabs = ["app", "cmd", "uuctl"]   # tabs shown in the header bar
-# terminal_command = "kitty"      # auto-detected; overrides $TERMINAL and xdg-terminal-exec
-# use_uwsm = false                # enable for systemd session integration (uwsm app --)
-
-[appearance]
-width = 850
-height = 650
-font_size = 14
-border_radius = 12
-# theme = "owl"                   # or: catppuccin-mocha, nord, dracula, ... (see Theming)
-
-# Optional per-element color overrides. All fields are optional; unset inherits from the theme.
-# [appearance.colors]
-# background = "#1e1e2e"
-# accent = "#cba6f7"
-# badge_app = "#a6e3a1"            # badge_* keys: app, cmd, clip, ssh, emoji, file,
-# badge_web = "#89dceb"            #   power (alias: badge_sys), uuctl, web, calc, bm, dmenu
-
-[providers]
-applications = true               # .desktop files
-commands = true                   # PATH executables
-calculator = true                 # `=` or :calc
-converter = true                  # `>` or :conv
-power = true                      # `:power` shutdown/reboot/lock (alias: system)
-systemd = true                    # `:uuctl` user units (alias: uuctl)
-clipboard = true                  # via cliphist
-emoji = true                      # picker via wl-clipboard
-rofimoji = true                   # emoji + kaomoji picker via rofimoji
-ssh = true                        # ~/.ssh/config hosts
-websearch = true                  # `?` or :web
-filesearch = true                 # `/` or :file
-frecency = true                   # boost frequently used items
-frecency_weight = 0.3             # 0.0 disabled .. 1.0 strong
-frecency_max_entries = 5000       # cap retained entries (0 = unbounded)
-frecency_max_age_days = 180       # drop entries older than this (0 = off)
-frecency_min_launches = 3         # launches that exempt an old entry from pruning
-
-# Web search engine: google, duckduckgo, bing, startpage, searxng, brave, ecosia
-# Or a custom URL with a {query} placeholder: "https://example.com/search?q={query}"
-search_engine = "duckduckgo"
-
-# Profiles — named mode sets
-[profiles.dev]
-modes = ["app", "cmd", "ssh"]
-[profiles.minimal]
-modes = ["app"]
-```
-
-See `/usr/share/doc/owlry/config.example.toml` for every option with documentation.
-
-`owlry config show` prints the resolved effective config (defaults merged with your file). `owlry config validate` parses it and reports errors.
-
-## Theming
-
-### Built-in Themes
-
-| Theme | Description |
-|-------|-------------|
-| `owl` | Dark theme with amber accents |
-| `catppuccin-mocha` | Soothing pastel |
-| `nord` | Arctic blue palette |
-| `rose-pine` | Natural pine vibes |
-| `dracula` | Dark vampire theme |
-| `gruvbox-dark` | Retro groove |
-| `tokyo-night` | Tokyo city lights |
-| `solarized-dark` | Precision colors |
-| `one-dark` | Atom's One Dark |
-| `apex-neon` | Neon cyberpunk |
-
-```toml
-[appearance]
-theme = "catppuccin-mocha"
-```
-
-### Custom Theme
-
-Create `~/.config/owlry/themes/mytheme.css`:
-
-```css
-:root {
-    --owlry-bg: #1e1e2e;
-    --owlry-bg-secondary: #313244;
-    --owlry-border: #45475a;
-    --owlry-text: #cdd6f4;
-    --owlry-text-secondary: #a6adc8;
-    --owlry-accent: #f38ba8;
-    --owlry-accent-bright: #f5c2e7;
+owlry.profiles {
+  dev = { "app", "cmd", "ssh" },
 }
 ```
 
-### CSS Variables
-
-| Variable | Description |
-|----------|-------------|
-| `--owlry-bg` | Main background |
-| `--owlry-bg-secondary` | Secondary surfaces |
-| `--owlry-border` | Border color |
-| `--owlry-text` | Primary text |
-| `--owlry-text-secondary` | Muted text |
-| `--owlry-accent` | Accent color |
-| `--owlry-accent-bright` | Bright accent |
-| `--owlry-shadow` | Window shadow (default: none) |
-
-## Architecture
-
-```
-owlry  (single binary)
-├── default invocation         GTK4 UI client (connects to daemon over socket)
-├── owlry -d / owlry daemon    IPC daemon (loads providers, listens on the socket)
-├── owlry dmenu                stdin → selection (no daemon)
-├── owlry selector            selector protocol (rofimoji et al.)
-└── owlry doctor / providers / config   diagnostics & config tools
-
-Daemon:
-├── Built-in providers     applications, commands, power, calculator, converter
-├── Optional providers     clipboard, emoji, rofimoji, ssh, systemd, websearch, filesearch
-│                          (compiled in per cargo feature)
-├── Frecency tracking      auto-saved every 5 min; flushed on SIGTERM/SIGINT
-└── IPC server             $XDG_RUNTIME_DIR/owlry/owlry.sock (newline-delimited JSON)
+```bash
+owlry config validate   # parse the active config
+owlry config show       # print the resolved effective config
+owlry migrate-config    # TOML to owlry.lua
 ```
 
-The daemon keeps providers and items warm in memory; the UI launches instantly because there's no work to do at startup. The UI client is a thin GTK4 layer that streams queries and renders results.
+See [Configuration](https://somegit.dev/Owlibou/owlry/src/commit/41f3e509fe6435f5c45825e310a728a20b7f001f/docs/configuration.md) for the full option reference and
+[Lua API](https://somegit.dev/Owlibou/owlry/src/commit/41f3e509fe6435f5c45825e310a728a20b7f001f/docs/lua-api.md) for the config surface, user providers, and host
+helpers.
 
-Set `OWLRY_SOCKET=/path/to/sock` to override the socket location — useful for running a development daemon alongside a production one.
+## Theming
 
-## Performance
+Ten themes ship with Owlry: `owl`, `catppuccin-mocha`, `nord`, `rose-pine`,
+`dracula`, `gruvbox-dark`, `tokyo-night`, `solarized-dark`, `one-dark`, and
+`apex-neon`. Pick one with `owlry.set { theme = "nord" }` or override colors
+in `~/.config/owlry/themes/*.css`. See [Theming](https://somegit.dev/Owlibou/owlry/src/commit/41f3e509fe6435f5c45825e310a728a20b7f001f/docs/theming.md).
 
-Because the daemon keeps every provider's items warm in memory, a query is just a frecency-ranked fuzzy match over cached data plus a Unix-socket round-trip — no per-keystroke disk or subprocess work on the hot path.
+## Documentation
 
-Typical latencies, measured against a warm daemon (single machine, informational — not a benchmark):
+The Arch package includes the upgrade guide. Other documentation links open a
+pinned repository snapshot.
 
-| Path | Latency |
-|------|---------|
-| Query round-trip (UI → daemon → results) | ~2–7 ms |
-| Result rendering (15 rows) | ~3 ms |
-| Frecency-ranked fuzzy match over all providers | low single-digit ms |
+| Guide | Covers |
+|---|---|
+| [Usage](https://somegit.dev/Owlibou/owlry/src/commit/41f3e509fe6435f5c45825e310a728a20b7f001f/docs/usage.md) | CLI, dmenu mode, keyboard shortcuts, prefixes, `:shell` |
+| [Configuration](https://somegit.dev/Owlibou/owlry/src/commit/41f3e509fe6435f5c45825e310a728a20b7f001f/docs/configuration.md) | Lua and TOML options, profiles, paths, migration |
+| [Lua API](https://somegit.dev/Owlibou/owlry/src/commit/41f3e509fe6435f5c45825e310a728a20b7f001f/docs/lua-api.md) | `owlry.set`, providers, tabs, themes, profiles, host helpers |
+| [Theming](https://somegit.dev/Owlibou/owlry/src/commit/41f3e509fe6435f5c45825e310a728a20b7f001f/docs/theming.md) | Bundled themes, custom themes, CSS variables |
+| [File opening](https://somegit.dev/Owlibou/owlry/src/commit/41f3e509fe6435f5c45825e310a728a20b7f001f/docs/file-opening.md) | Default and terminal handlers, open-with picker |
+| [Architecture](https://somegit.dev/Owlibou/owlry/src/commit/41f3e509fe6435f5c45825e310a728a20b7f001f/docs/architecture.md) | Daemon, IPC, provider lifecycle, performance |
+| [Upgrading](docs/upgrading.md) | 2.8.1 socket migration, service-only upgrades, 1.x unit names |
+| [Provider freshness](https://somegit.dev/Owlibou/owlry/src/commit/41f3e509fe6435f5c45825e310a728a20b7f001f/docs/provider-freshness.md) | Application and systemd state refresh |
+| [Rofimoji](https://somegit.dev/Owlibou/owlry/src/commit/41f3e509fe6435f5c45825e310a728a20b7f001f/docs/rofimoji.md) | Emoji and kaomoji picker integration |
+| [Dependency audit](https://somegit.dev/Owlibou/owlry/src/commit/41f3e509fe6435f5c45825e310a728a20b7f001f/docs/dependency-audit.md) | RustSec exceptions and removal conditions |
+| [Changelog](https://somegit.dev/Owlibou/owlry/src/commit/41f3e509fe6435f5c45825e310a728a20b7f001f/CHANGELOG.md) | Release history |
+| [Roadmap](https://somegit.dev/Owlibou/owlry/src/commit/41f3e509fe6435f5c45825e310a728a20b7f001f/ROADMAP.md) | Planned work |
 
-File search (`:file` / `/`) is the one provider that shells out (`fd`/`locate`). It runs **only** on its explicit prefix and is bounded — depth limit, directory exclusions, result cap, and a wall-clock timeout — so it never blocks the rest of the result set.
+## Contributing
 
-### Opening files and folders
+Issues and pull requests are welcome on
+[Gitea](https://somegit.dev/Owlibou/owlry). Before opening a pull request,
+run:
 
-Selecting a file or folder result opens it with the system's **default application** for that path's MIME type — the same association `xdg-open` uses. How it launches depends on the resolved handler:
+```bash
+just verify
+```
 
-- **GUI handler** (Zed, Firefox, an image viewer, a file manager for folders): launched directly via `xdg-open`.
-- **Terminal handler** (`Terminal=true` in the `.desktop` entry — `nvim`, `vim`, `less`, …): owlry reads the handler's `Exec` line and runs it inside your configured terminal (`general.terminal_command`), e.g. `kitty -e nvim <file>`. Plain `xdg-open` would launch these windowless, so without this they'd silently appear to do nothing.
-- **No associated application**: owlry opens the **"Open with…" picker** (below) instead of failing silently.
+That covers formatting, `cargo check`, tests on both feature axes, strict
+Clippy, and `cargo audit`. The development toolchain is pinned in
+`rust-toolchain.toml`; the crate MSRV is Rust 1.90. Commit messages follow the
+existing conventional style, and changes should stay focused.
 
-#### "Open with…" picker
-
-To open a file with something other than its default, press **Shift+Enter** on a file result. owlry shows the full installed-application list (searchable by typing); files whose type has *no* default app open this picker on plain **Enter** too. In the picker:
-
-- **Enter** — open the file with the chosen app **once** (nothing is saved).
-- **Shift+Enter** — **set that app as the default** for the file's MIME type (written to `~/.config/mimeapps.list` via `xdg-mime`), then open.
-
-The chosen app is launched the same way as the default handler, so a `Terminal=true` app still opens inside your terminal.
-
-To change a default without the picker, set it the usual freedesktop way, e.g. `xdg-mime default dev.zed.Zed.desktop text/x-c` for Rust source files. The terminal used for terminal handlers follows the `-e` convention; terminals that need a different flag may not pick up the file argument.
-
-## Roadmap
-
-See [ROADMAP.md](ROADMAP.md) for feature ideas and [docs/RESTRUCTURE-V2.md](docs/RESTRUCTURE-V2.md) for the v2 rewrite story.
-
-Headline upcoming work:
-- **Lua-driven configuration shipped in 2.1** — `~/.config/owlry/owlry.lua` is the canonical config from 2.1, with TOML kept as a back-compat fallback until 3.0. User-defined providers via `owlry.provider {}`, host helpers under `owlry.util.*`, hot reload, named profiles, theme overrides, and `owlry migrate-config` are all live. See [`docs/lua-api.md`](docs/lua-api.md) for the full surface.
-- **Widget providers return** — weather, MPRIS media controls, pomodoro timer. Deferred from 2.0 while the UI positioning is reworked.
-- **Bookmarks return** — Firefox + Chromium. Deferred from 2.0 to avoid a hard rusqlite/`libsqlite3-sys` dep in the chroot build path; returns with a pure-Rust reader (likely via Firefox's JSON backup files).
-- **Dynamic Lua providers** — `owlry.provider { dynamic = true }` for per-keystroke items. Current releases ship only static (`dynamic = false`) providers; no release is assigned yet.
+For security issues, contact the maintainer privately rather than opening a
+public issue. See [Contributing](https://somegit.dev/Owlibou/owlry/src/commit/41f3e509fe6435f5c45825e310a728a20b7f001f/CONTRIBUTING.md) for the full workflow.
 
 ## License
 
-GNU General Public License v3.0 — see [LICENSE](LICENSE).
+GNU General Public License v3.0 or later. See [LICENSE](https://somegit.dev/Owlibou/owlry/src/commit/41f3e509fe6435f5c45825e310a728a20b7f001f/LICENSE).
 
 ## Acknowledgments
 
-- [GTK4](https://gtk.org/) — UI toolkit
-- [gtk4-layer-shell](https://github.com/wmww/gtk4-layer-shell) — Wayland Layer Shell
-- [fuzzy-matcher](https://crates.io/crates/fuzzy-matcher) — Fuzzy search
-- [expr-solver-lib](https://crates.io/crates/expr-solver-lib) — Calculator backend
+- [GTK4](https://gtk.org/) for the UI toolkit
+- [gtk4-layer-shell](https://github.com/wmww/gtk4-layer-shell) for Wayland Layer Shell
+- [fuzzy-matcher](https://crates.io/crates/fuzzy-matcher) for fuzzy matching
+- [expr-solver-lib](https://crates.io/crates/expr-solver-lib) for the calculator

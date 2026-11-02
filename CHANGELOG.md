@@ -3,12 +3,27 @@
 User-facing changes for Owlry. Older releases are documented at
 <https://somegit.dev/Owlibou/owlry/releases>.
 
-## 2.8.1 - Unreleased
+## 2.8.1 - 2026-11-02
 
 ### Fixed
 
-- Document recovery when an older daemon removes the systemd activation socket
-  during an upgrade, and report a missing inherited socket with recovery steps.
+- The Arch package automatically migrates active systemd sockets at the packaged
+  default path when upgrading from 2.7.0. It stops the old daemon and socket
+  together before restoring the listener, so the legacy daemon cannot unlink
+  the replacement socket. Normal upgrades in this configuration need no manual
+  recovery.
+- Interrupted migrations retain pending state for a retry. Healthy sockets,
+  deliberately inactive units and custom socket paths are left alone.
+- Report a missing inherited socket with recovery steps, and document upgrade
+  handling for service-only and manually started daemons.
+
+### Upgrade notes
+
+- Service-only users must restart `owlry.service` after upgrading. Manually
+  started daemons must also be restarted; custom socket paths need manual
+  upgrade handling. See [Upgrading](docs/upgrading.md).
+- Check pacman output for migration failures. A failed migration does not roll
+  back the package transaction; the upgrade guide explains how to retry.
 
 ## 2.8.0 - 2026-10-28
 

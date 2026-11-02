@@ -24,39 +24,19 @@ post_upgrade() {
 EOF
             ;;
         *)
-            # No version comparison here: the hook runs as root and cannot
-            # inspect per-user units. Print both modes for every 2.x upgrade;
-            # the socket text also covers a path already lost in 2.7 or older.
             cat <<'EOF'
 
-  Owlry upgraded. Restart the daemon so the UI and daemon share the current
-  IPC activation schema. Choose the section that matches how you start it.
+  Active packaged sockets are migrated automatically when the running daemon
+  uses an older executable. Healthy sockets and deliberately inactive units
+  are left alone. Check pacman output for migration failures.
 
-  Socket activation (owlry.socket):
-    Owlry 2.7 and earlier did not adopt the listener systemd passed. They
-    replaced the socket file at that path and removed it again on shutdown,
-    leaving owlry.socket active with a path that no longer exists. Restarting
-    only owlry.service then fails, because the daemon now inherits a listener
-    whose path is gone. Rebind the path by stopping both units first:
-        systemctl --user stop owlry.service owlry.socket && systemctl --user start owlry.socket
-    If the service hits its start limit, run:
-        systemctl --user reset-failed owlry.service owlry.socket
-    Then repeat the command above.
-    Both units must stop successfully before the socket starts again. Then
-    launch owlry; the client triggers service activation.
-    Owlry 2.8.0 and later no longer remove an inherited socket path, but a
-    path already lost before the upgrade stays lost until the socket unit
-    restarts.
+  If migration was interrupted, retry as the affected user:
+      systemctl --user start owlry-user-migrate.service
 
-  Service without socket activation:
-        systemctl --user restart owlry.service  # only when it is running
-    If it is not running, start it as a separate step:
-        systemctl --user start owlry.service
+  If you use only owlry.service without socket activation, restart it yourself:
+      systemctl --user restart owlry.service
 
-  Manually started daemon (owlry -d or compositor autostart):
-    Stop the old process, then start `owlry -d` again.
-
-  This hook is informational. It does not enable, restart, or reload units.
+  For a manually started daemon, stop the old process and start it again.
 
 EOF
             ;;
