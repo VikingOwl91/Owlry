@@ -13,11 +13,15 @@ User-facing changes for Owlry. Older releases are documented at
   owlry's scope contains only owlry afterwards — monitoring, systemd-cgtop, OOM
   handling and stopping the scope no longer hit the apps together with owlry.
   The scope contains the spawned process and any children it forks after the
-  move. Non-D-Bus-activatable `.desktop` entries are spawned directly from the
-  parsed `Exec` argv, so the scoped PID is the app process itself;
-  D-Bus-activatable entries still go through `gio launch`/D-Bus activation and
-  get their own unit from the user manager. Without a session bus / systemd
-  user manager, apps are spawned directly as before.
+  move. Non-D-Bus-activatable `.desktop` entries with a plain `Exec` line are
+  spawned directly from the parsed argv, so the scoped PID is the app process
+  itself; `Terminal=true` entries launch in owlry's configured
+  `terminal_command` (default `xterm`) rather than whatever terminal gio/glib
+  would pick. D-Bus-activatable entries, and entries whose `Exec` is
+  shell-invoking or unparseable, still go through `gio launch` (D-Bus
+  activation / gio's own handling) and get their own unit from the user
+  manager. Without a session bus / systemd user manager, apps are spawned
+  directly as before.
 
 ## 2.8.0 - 2026-10-28
 

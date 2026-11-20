@@ -244,9 +244,13 @@ systemd user scope (`app-owlry-<appid>-<rand>.scope` under `app-graphical.slice`
 when a user manager is available, so apps don't share owlry's scope (the scope
 contains the spawned process and any children it forks after the move);
 otherwise they run as plain child processes. Desktop entries without
-`DBusActivatable=true` are spawned directly from their parsed `Exec` line, so
-the scoped PID is the app process itself; D-Bus-activatable entries go through
-`gio launch`/D-Bus activation and get their own unit from the user manager. To run a
+`DBusActivatable=true` and with a plain `Exec` line are spawned directly from
+the parsed `Exec`, so the scoped PID is the app process itself; `Terminal=true`
+entries launch in owlry's configured `terminal_command` (default `xterm`)
+rather than whatever terminal gio/glib would pick. D-Bus-activatable entries —
+and entries whose `Exec` is shell-invoking or unparseable — still fall back to
+`gio launch` (D-Bus activation / gio's own handling) and get their own unit
+from the user manager. To run a
 shell expression (pipes, `&&`, redirects), prefix it with `:shell`:
 
 ```

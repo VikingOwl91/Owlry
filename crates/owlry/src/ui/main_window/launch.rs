@@ -1091,12 +1091,14 @@ mod tests {
 
     #[test]
     fn parse_handler_ignores_action_groups() {
-        // Terminal=true in an action group must not leak into the main entry.
+        // Keys in an action group must not leak into the main entry.
         let contents = "[Desktop Entry]\nExec=zeditor %U\nTerminal=false\n\n\
-                        [Desktop Action new]\nExec=zeditor --new\nTerminal=true\n";
+                        [Desktop Action new]\nExec=zeditor --new\nTerminal=true\nDBusActivatable=true\nPath=/evil\n";
         let h = parse_desktop_handler(contents).expect("has command");
         assert_eq!(h.exec, "zeditor %U");
         assert!(!h.terminal);
+        assert!(!h.dbus_activatable);
+        assert!(h.cwd.is_none());
     }
 
     #[test]
