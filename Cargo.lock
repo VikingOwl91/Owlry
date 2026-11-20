@@ -1932,7 +1932,7 @@ dependencies = [
 
 [[package]]
 name = "owlry"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "chrono",
  "clap",
