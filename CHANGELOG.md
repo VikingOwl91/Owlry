@@ -3,7 +3,7 @@
 User-facing changes for Owlry. Older releases are documented at
 <https://somegit.dev/Owlibou/owlry/releases>.
 
-## 2.8.2 - Unreleased
+## 2.8.2 - 2026-11-20
 
 ### Fixed
 
