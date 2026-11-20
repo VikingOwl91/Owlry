@@ -126,7 +126,7 @@ Sets top-level config values. Takes a table of key-value pairs. Calling `owlry.s
 | `font_size` | `integer` | `14` | Base font size in points |
 | `border_radius` | `integer` | `12` | Window corner radius in pixels |
 | `terminal` | `string \| nil` | autodetected | Terminal command for items marked `terminal=true`. Falls back to `$TERMINAL` → `xdg-terminal-exec` → common terminals |
-| `use_uwsm` | `boolean` | `false` | Launch apps via `uwsm app --` for systemd session integration |
+| `use_uwsm` | `boolean` | `false` | Launch apps via `uwsm app --` for systemd session integration. When `false`, each launch is placed into its own transient `app-owlry-<appid>-<rand>.scope` in `app-graphical.slice` via the systemd user manager (direct spawn when unavailable) |
 | `show_icons` | `boolean` | `true` | Show provider icons in results |
 | `max_results` | `integer` | `100` | Cap on results returned per query |
 | `frecency` | `boolean` | `true` | Boost frequently/recently used items |

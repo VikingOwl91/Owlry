@@ -21,6 +21,7 @@ pub mod lua;
 pub mod notify;
 pub mod paths;
 pub mod providers;
+pub mod scope;
 pub mod server;
 pub mod theme;
 pub mod ui;

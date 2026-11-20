@@ -6,6 +6,7 @@ use log::info;
 use log::debug;
 use std::io::Write;
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 
 /// Structured stdin payloads are capped at the default Linux pipe buffer.
 /// The write runs on a short-lived thread with a bounded wait, so a child
@@ -107,8 +108,13 @@ impl MainWindow {
     /// When `use_uwsm` is enabled in config, launches via `uwsm app -- <file>`
     /// which starts the app in a proper systemd user session.
     ///
-    /// Otherwise, uses `gio launch` which is always available (part of glib2/GTK4)
-    /// and handles D-Bus activation, field codes, Terminal flag, etc.
+    /// Otherwise, non-D-Bus-activatable entries are spawned directly from the
+    /// parsed `Exec` argv (so the scoped PID is the app itself), and
+    /// D-Bus-activatable or unparseable entries go through `gio launch` (part
+    /// of glib2/GTK4; handles D-Bus activation, field codes, Terminal flag,
+    /// etc.). Every spawned child is then moved into its own transient user
+    /// scope (`app-owlry-<appid>-<rand>.scope`) when a systemd user manager is
+    /// available.
     fn launch_desktop_file(
         desktop_path: &str,
         config: &Config,
@@ -124,16 +130,7 @@ impl MainWindow {
         }
 
         if config.general.use_uwsm {
-            // Check if uwsm is available
-            let uwsm_available = Command::new("which")
-                .arg("uwsm")
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .map(|s| s.success())
-                .unwrap_or(false);
-
-            if !uwsm_available {
+            if !uwsm_available() {
                 let msg = "uwsm is enabled in config but not installed";
                 log::error!("{}", msg);
                 crate::notify::notify("Launch failed", msg);
@@ -145,8 +142,31 @@ impl MainWindow {
                 .args(["app", "--", desktop_path])
                 .spawn()
         } else {
-            info!("Launching via gio: {}", desktop_path);
-            Command::new("gio").args(["launch", desktop_path]).spawn()
+            let plan = std::fs::read_to_string(desktop_path)
+                .map(|contents| desktop_launch_plan(&contents, desktop_path))
+                .unwrap_or(DesktopLaunchPlan::Gio);
+            match plan {
+                DesktopLaunchPlan::Direct {
+                    argv,
+                    terminal,
+                    cwd,
+                } => {
+                    info!("Launching directly: {:?}", argv);
+                    let argv = Self::build_argv(&argv[0], &argv[1..], terminal, config)?;
+                    let mut command = Command::new(&argv[0]);
+                    command.args(&argv[1..]);
+                    if let Some(cwd) = cwd {
+                        command.current_dir(cwd);
+                    }
+                    Self::spawn_scoped(&mut command, &desktop_appid(desktop_path))
+                }
+                DesktopLaunchPlan::Gio => {
+                    info!("Launching via gio: {}", desktop_path);
+                    let mut command = Command::new("gio");
+                    command.args(["launch", desktop_path]);
+                    Self::spawn_scoped(&mut command, &desktop_appid(desktop_path))
+                }
+            }
         }
     }
 
@@ -217,6 +237,16 @@ impl MainWindow {
         }
     }
 
+    /// Spawn `command` and move the child into its own transient systemd user
+    /// scope (`app-owlry-<appid>-<rand>.scope` under `app-graphical.slice`) when
+    /// a user manager is reachable, so the app does not share owlry's scope.
+    /// Without a session bus / user manager this is a plain direct spawn.
+    fn spawn_scoped(command: &mut Command, appid: &str) -> std::io::Result<std::process::Child> {
+        let child = command.spawn()?;
+        crate::scope::scope_child(&child, appid);
+        Ok(child)
+    }
+
     /// Spawn a program with argv, never through a shell.
     pub(super) fn launch_argv(
         program: &str,
@@ -228,7 +258,9 @@ impl MainWindow {
         if config.general.use_uwsm && !Self::skip_uwsm_for(&argv[0]) {
             Command::new("uwsm").args(["app", "--"]).args(&argv).spawn()
         } else {
-            Command::new(&argv[0]).args(&argv[1..]).spawn()
+            let mut command = Command::new(&argv[0]);
+            command.args(&argv[1..]);
+            Self::spawn_scoped(&mut command, &program_appid(&argv[0]))
         }
     }
 
@@ -249,10 +281,9 @@ impl MainWindow {
             ));
         }
 
-        let mut child = Command::new(program)
-            .args(args)
-            .stdin(Stdio::piped())
-            .spawn()?;
+        let mut command = Command::new(program);
+        command.args(args).stdin(Stdio::piped());
+        let mut child = Self::spawn_scoped(&mut command, &program_appid(program))?;
         if let Some(mut stdin) = child.stdin.take() {
             // A healthy reader drains this immediately. A child that never
             // reads must not freeze the GTK thread, so wait only briefly for
@@ -283,10 +314,9 @@ impl MainWindow {
         dest_args: &[String],
         _config: &Config,
     ) -> std::io::Result<std::process::Child> {
-        let mut source = Command::new(source_program)
-            .args(source_args)
-            .stdout(Stdio::piped())
-            .spawn()?;
+        let mut source_command = Command::new(source_program);
+        source_command.args(source_args).stdout(Stdio::piped());
+        let mut source = Self::spawn_scoped(&mut source_command, &program_appid(source_program))?;
         let stdout = match source.stdout.take() {
             Some(stdout) => stdout,
             None => {
@@ -298,11 +328,9 @@ impl MainWindow {
                 ));
             }
         };
-        let dest = match Command::new(dest_program)
-            .args(dest_args)
-            .stdin(Stdio::from(stdout))
-            .spawn()
-        {
+        let mut dest_command = Command::new(dest_program);
+        dest_command.args(dest_args).stdin(Stdio::from(stdout));
+        let dest = match Self::spawn_scoped(&mut dest_command, &program_appid(dest_program)) {
             Ok(dest) => dest,
             Err(e) => {
                 let _ = source.kill();
@@ -419,7 +447,9 @@ impl MainWindow {
                 .args(["app", "--", "sh", "-c", &cmd])
                 .spawn()
         } else {
-            Command::new("sh").arg("-c").arg(&cmd).spawn()
+            let mut command = Command::new("sh");
+            command.arg("-c").arg(&cmd);
+            Self::spawn_scoped(&mut command, "shell")
         }
     }
 
@@ -640,9 +670,9 @@ impl MainWindow {
             "Opening '{}' via gio launch {}",
             file_path, app_desktop_path
         );
-        Command::new("gio")
-            .args(["launch", app_desktop_path, file_path])
-            .spawn()
+        let mut command = Command::new("gio");
+        command.args(["launch", app_desktop_path, file_path]);
+        Self::spawn_scoped(&mut command, &desktop_appid(app_desktop_path))
     }
 
     /// Persist `desktop_id` as the default application for `mime` via
@@ -764,15 +794,18 @@ impl MainWindow {
     }
 }
 
-/// A file's default desktop handler: its `Exec` line (field codes intact) and
-/// whether it requests a terminal.
+/// A file's default desktop handler: its `Exec` line (field codes intact),
+/// whether it requests a terminal, whether it is D-Bus activatable, and its
+/// working directory (`Path=`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct DesktopHandler {
     exec: String,
     terminal: bool,
+    dbus_activatable: bool,
     name: Option<String>,
     icon: Option<String>,
     path: Option<String>,
+    cwd: Option<String>,
 }
 
 /// Outcome of resolving a file's default application.
@@ -787,16 +820,18 @@ pub(super) enum HandlerResolution {
     Indeterminate,
 }
 
-/// Parse the `[Desktop Entry]` group of a `.desktop` file for `Exec=` and
-/// `Terminal=`. Only the first `Exec=` in the group is used, and only that
-/// group is consulted (action groups are ignored). Returns `None` when there
-/// is no `Exec` line — nothing to launch.
+/// Parse the `[Desktop Entry]` group of a `.desktop` file for `Exec=`,
+/// `Terminal=`, `DBusActivatable=` and `Path=`. Only the first `Exec=` in the
+/// group is used, and only that group is consulted (action groups are
+/// ignored). Returns `None` when there is no `Exec` line — nothing to launch.
 fn parse_desktop_handler(contents: &str) -> Option<DesktopHandler> {
     let mut in_entry = false;
     let mut exec: Option<String> = None;
     let mut terminal = false;
+    let mut dbus_activatable = false;
     let mut name: Option<String> = None;
     let mut icon: Option<String> = None;
+    let mut cwd: Option<String> = None;
 
     for line in contents.lines() {
         let line = line.trim();
@@ -813,6 +848,12 @@ fn parse_desktop_handler(contents: &str) -> Option<DesktopHandler> {
             exec = Some(crate::command_line::unescape_desktop_value(value.trim()));
         } else if let Some(value) = line.strip_prefix("Terminal=") {
             terminal = value.trim().eq_ignore_ascii_case("true");
+        } else if let Some(value) = line.strip_prefix("DBusActivatable=") {
+            dbus_activatable = value.trim().eq_ignore_ascii_case("true");
+        } else if let Some(value) = line.strip_prefix("Path=")
+            && cwd.is_none()
+        {
+            cwd = Some(crate::command_line::unescape_desktop_value(value.trim()));
         } else if let Some(value) = line.strip_prefix("Name=")
             && name.is_none()
         {
@@ -827,9 +868,85 @@ fn parse_desktop_handler(contents: &str) -> Option<DesktopHandler> {
     exec.map(|exec| DesktopHandler {
         exec,
         terminal,
+        dbus_activatable,
         name,
         icon,
         path: None,
+        cwd,
+    })
+}
+
+/// How to launch a `.desktop` file without uwsm.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DesktopLaunchPlan {
+    /// Spawn the parsed `Exec` argv ourselves, so the scoped PID is the app
+    /// process itself (gio would fork the app as its own child).
+    Direct {
+        argv: Vec<String>,
+        terminal: bool,
+        cwd: Option<String>,
+    },
+    /// Let `gio launch` handle it (D-Bus activation, or an Exec we cannot
+    /// safely turn into argv).
+    Gio,
+}
+
+/// Decide how to launch a `.desktop` file's contents: D-Bus-activatable
+/// entries go through gio (the user manager gives the app its own unit); a
+/// plain `Exec` is spawned directly; anything unparseable or shell-invoking
+/// falls back to gio.
+fn desktop_launch_plan(contents: &str, desktop_path: &str) -> DesktopLaunchPlan {
+    let Some(handler) = parse_desktop_handler(contents) else {
+        return DesktopLaunchPlan::Gio;
+    };
+    if handler.dbus_activatable {
+        return DesktopLaunchPlan::Gio;
+    }
+    match crate::command_line::desktop_exec_argv_with(
+        &handler.exec,
+        None,
+        handler.name.as_deref(),
+        handler.icon.as_deref(),
+        Some(desktop_path),
+    ) {
+        Ok(argv) if !crate::command_line::invokes_shell(&argv) => DesktopLaunchPlan::Direct {
+            argv,
+            terminal: handler.terminal,
+            cwd: handler.cwd,
+        },
+        _ => DesktopLaunchPlan::Gio,
+    }
+}
+
+/// Appid for a spawned program: basename of argv[0].
+fn program_appid(program: &str) -> String {
+    std::path::Path::new(program)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(program)
+        .to_string()
+}
+
+/// Appid for a `.desktop` launch: file basename without the `.desktop` suffix.
+fn desktop_appid(desktop_path: &str) -> String {
+    let name = program_appid(desktop_path);
+    match name.strip_suffix(".desktop") {
+        Some(stripped) => stripped.to_string(),
+        None => name,
+    }
+}
+
+/// Cached `which uwsm` probe — the check runs a subprocess, so do it once.
+fn uwsm_available() -> bool {
+    static UWSM_AVAILABLE: OnceLock<bool> = OnceLock::new();
+    *UWSM_AVAILABLE.get_or_init(|| {
+        Command::new("which")
+            .arg("uwsm")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
     })
 }
 
@@ -974,12 +1091,14 @@ mod tests {
 
     #[test]
     fn parse_handler_ignores_action_groups() {
-        // Terminal=true in an action group must not leak into the main entry.
+        // Keys in an action group must not leak into the main entry.
         let contents = "[Desktop Entry]\nExec=zeditor %U\nTerminal=false\n\n\
-                        [Desktop Action new]\nExec=zeditor --new\nTerminal=true\n";
+                        [Desktop Action new]\nExec=zeditor --new\nTerminal=true\nDBusActivatable=true\nPath=/evil\n";
         let h = parse_desktop_handler(contents).expect("has command");
         assert_eq!(h.exec, "zeditor %U");
         assert!(!h.terminal);
+        assert!(!h.dbus_activatable);
+        assert!(h.cwd.is_none());
     }
 
     #[test]
@@ -1126,5 +1245,80 @@ mod tests {
     fn desktop_id_basename_none_for_non_desktop_paths() {
         assert!(MainWindow::desktop_id_basename("/usr/bin/nvim").is_none());
         assert!(MainWindow::desktop_id_basename("").is_none());
+    }
+
+    #[test]
+    fn parse_handler_reads_dbus_activatable_and_path() {
+        let contents = "[Desktop Entry]\nName=App\nExec=app\nDBusActivatable=True\nPath=/opt/app\n";
+        let h = parse_desktop_handler(contents).expect("has exec");
+        assert!(h.dbus_activatable);
+        assert_eq!(h.cwd.as_deref(), Some("/opt/app"));
+
+        let contents = "[Desktop Entry]\nExec=app\nDBusActivatable=False\n";
+        assert!(!parse_desktop_handler(contents).unwrap().dbus_activatable);
+
+        let contents = "[Desktop Entry]\nExec=app\n";
+        let h = parse_desktop_handler(contents).unwrap();
+        assert!(!h.dbus_activatable);
+        assert!(h.cwd.is_none());
+    }
+
+    #[test]
+    fn plan_is_direct_for_plain_exec() {
+        let contents =
+            "[Desktop Entry]\nName=App\nExec=myapp --flag %k\nTerminal=true\nPath=/opt/app\n";
+        match desktop_launch_plan(contents, "/tmp/app.desktop") {
+            DesktopLaunchPlan::Direct {
+                argv,
+                terminal,
+                cwd,
+            } => {
+                assert_eq!(argv, vec!["myapp", "--flag", "/tmp/app.desktop"]);
+                assert!(terminal);
+                assert_eq!(cwd.as_deref(), Some("/opt/app"));
+            }
+            other => panic!("expected Direct, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn plan_is_gio_for_dbus_activatable_shell_exec_or_missing_exec() {
+        let dbus = "[Desktop Entry]\nExec=app\nDBusActivatable=true\n";
+        assert_eq!(
+            desktop_launch_plan(dbus, "/tmp/app.desktop"),
+            DesktopLaunchPlan::Gio
+        );
+
+        let shell = "[Desktop Entry]\nExec=sh -c \"prog %f\"\n";
+        assert_eq!(
+            desktop_launch_plan(shell, "/tmp/app.desktop"),
+            DesktopLaunchPlan::Gio
+        );
+
+        let no_exec = "[Desktop Entry]\nName=Broken\n";
+        assert_eq!(
+            desktop_launch_plan(no_exec, "/tmp/app.desktop"),
+            DesktopLaunchPlan::Gio
+        );
+
+        let unparseable = "[Desktop Entry]\nExec=app \"unterminated\n";
+        assert_eq!(
+            desktop_launch_plan(unparseable, "/tmp/app.desktop"),
+            DesktopLaunchPlan::Gio
+        );
+    }
+
+    #[test]
+    fn launch_desktop_file_spawns_non_dbus_app_directly_not_via_gio() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sleepy.desktop");
+        std::fs::write(&path, "[Desktop Entry]\nName=Sleepy\nExec=/bin/sleep 30\n").unwrap();
+        let mut child =
+            MainWindow::launch_desktop_file(path.to_str().unwrap(), &Config::default()).unwrap();
+        // The child PID must be the app itself, not a `gio launch` wrapper.
+        let comm = std::fs::read_to_string(format!("/proc/{}/comm", child.id())).unwrap();
+        assert_eq!(comm.trim(), "sleep");
+        let _ = child.kill();
+        let _ = child.wait();
     }
 }

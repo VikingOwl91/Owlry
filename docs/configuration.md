@@ -77,7 +77,7 @@ show_icons = true
 max_results = 100
 tabs = ["app", "cmd", "uuctl"]
 # terminal_command = "kitty"      # auto-detected; overrides $TERMINAL and xdg-terminal-exec
-# use_uwsm = false                # enable for systemd session integration (uwsm app --)
+# use_uwsm = false                # true: launch via `uwsm app --`; false: direct spawn, each app moved into its own app-owlry-<appid>-<rand>.scope (systemd user manager, else plain child)
 
 [appearance]
 width = 850

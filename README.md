@@ -114,7 +114,11 @@ firefox
 
 Typing `program args` launches that argument vector without a shell. Shell
 syntax requires the explicit `:shell` prefix. `:cmd` remains a PATH-command
-filter and does not enable shell syntax.
+filter and does not enable shell syntax. Unless `use_uwsm` is enabled, each
+launch is moved into its own transient systemd user scope
+(`app-owlry-<appid>-<rand>.scope` under `app-graphical.slice`) via the user
+manager, so apps don't share owlry's scope; without a user manager they run as
+plain child processes.
 
 ## Configuration
 
