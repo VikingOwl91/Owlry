@@ -12,8 +12,12 @@ User-facing changes for Owlry. Older releases are documented at
   `app-graphical.slice`) via the user manager's `StartTransientUnit`, so
   owlry's scope contains only owlry afterwards — monitoring, systemd-cgtop, OOM
   handling and stopping the scope no longer hit the apps together with owlry.
-  Without a session bus / systemd user manager, apps are spawned directly as
-  before.
+  The scope contains the spawned process and any children it forks after the
+  move. Non-D-Bus-activatable `.desktop` entries are spawned directly from the
+  parsed `Exec` argv, so the scoped PID is the app process itself;
+  D-Bus-activatable entries still go through `gio launch`/D-Bus activation and
+  get their own unit from the user manager. Without a session bus / systemd
+  user manager, apps are spawned directly as before.
 
 ## 2.8.0 - 2026-10-28
 

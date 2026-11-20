@@ -14,6 +14,7 @@
 use std::process::Child;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+use zbus::blocking::connection::Builder as ConnectionBuilder;
 use zbus::blocking::{Connection, Proxy};
 use zbus::names::BusName;
 use zbus::zvariant::{OwnedObjectPath, Value};
@@ -29,13 +30,18 @@ type Props = Vec<(String, Value<'static>)>;
 
 /// Cached session-bus connection. `Some` only when a session bus exists and
 /// the systemd user manager owns `org.freedesktop.systemd1` on it; `None`
-/// means direct-spawn fallback.
+/// means direct-spawn fallback. Method calls are bounded to 2 s so a hung
+/// user manager cannot block the caller for the ~25 s bus default.
 static CONNECTION: OnceLock<Option<Connection>> = OnceLock::new();
 
 fn connection() -> Option<&'static Connection> {
     CONNECTION
         .get_or_init(|| {
-            let conn = Connection::session().ok()?;
+            let conn = ConnectionBuilder::session()
+                .ok()?
+                .method_timeout(std::time::Duration::from_secs(2))
+                .build()
+                .ok()?;
             let dbus = zbus::blocking::fdo::DBusProxy::new(&conn).ok()?;
             let name = BusName::try_from(SYSTEMD_NAME).ok()?;
             dbus.get_name_owner(name).ok()?;
@@ -122,7 +128,7 @@ fn sanitize_appid(appid: &str) -> String {
     out
 }
 
-/// 8 hex chars of entropy: system time nanos ^ pid ^ counter.
+/// 8 hex chars of entropy: low 32 bits of (time nanos ^ pid ^ counter * golden ratio).
 fn random_suffix() -> String {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let nanos = std::time::SystemTime::now()
@@ -131,7 +137,7 @@ fn random_suffix() -> String {
         .unwrap_or(0);
     let pid = u128::from(std::process::id());
     let counter = u128::from(COUNTER.fetch_add(1, Ordering::Relaxed));
-    let mix = nanos ^ (pid << 32) ^ counter.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    let mix = nanos ^ pid ^ counter.wrapping_mul(0x9E37_79B9_7F4A_7C15);
     format!("{:08x}", (mix & 0xFFFF_FFFF) as u32)
 }
 

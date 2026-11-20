@@ -241,8 +241,12 @@ pacman -Ssq | owlry dmenu -p "install" | xargs sudo pacman -S
 Typing `program args` launches the program directly, without a shell. Unless
 `use_uwsm` is enabled, the launched process is moved into its own transient
 systemd user scope (`app-owlry-<appid>-<rand>.scope` under `app-graphical.slice`)
-when a user manager is available, so apps don't share owlry's scope; otherwise
-they run as plain child processes. To run a
+when a user manager is available, so apps don't share owlry's scope (the scope
+contains the spawned process and any children it forks after the move);
+otherwise they run as plain child processes. Desktop entries without
+`DBusActivatable=true` are spawned directly from their parsed `Exec` line, so
+the scoped PID is the app process itself; D-Bus-activatable entries go through
+`gio launch`/D-Bus activation and get their own unit from the user manager. To run a
 shell expression (pipes, `&&`, redirects), prefix it with `:shell`:
 
 ```

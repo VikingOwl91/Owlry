@@ -108,10 +108,13 @@ impl MainWindow {
     /// When `use_uwsm` is enabled in config, launches via `uwsm app -- <file>`
     /// which starts the app in a proper systemd user session.
     ///
-    /// Otherwise, uses `gio launch` which is always available (part of glib2/GTK4)
-    /// and handles D-Bus activation, field codes, Terminal flag, etc. The spawned
-    /// child is then moved into its own transient user scope
-    /// (`app-owlry-<appid>-<rand>.scope`) when a systemd user manager is available.
+    /// Otherwise, non-D-Bus-activatable entries are spawned directly from the
+    /// parsed `Exec` argv (so the scoped PID is the app itself), and
+    /// D-Bus-activatable or unparseable entries go through `gio launch` (part
+    /// of glib2/GTK4; handles D-Bus activation, field codes, Terminal flag,
+    /// etc.). Every spawned child is then moved into its own transient user
+    /// scope (`app-owlry-<appid>-<rand>.scope`) when a systemd user manager is
+    /// available.
     fn launch_desktop_file(
         desktop_path: &str,
         config: &Config,
@@ -139,10 +142,31 @@ impl MainWindow {
                 .args(["app", "--", desktop_path])
                 .spawn()
         } else {
-            info!("Launching via gio: {}", desktop_path);
-            let mut command = Command::new("gio");
-            command.args(["launch", desktop_path]);
-            Self::spawn_scoped(&mut command, &desktop_appid(desktop_path))
+            let plan = std::fs::read_to_string(desktop_path)
+                .map(|contents| desktop_launch_plan(&contents, desktop_path))
+                .unwrap_or(DesktopLaunchPlan::Gio);
+            match plan {
+                DesktopLaunchPlan::Direct {
+                    argv,
+                    terminal,
+                    cwd,
+                } => {
+                    info!("Launching directly: {:?}", argv);
+                    let argv = Self::build_argv(&argv[0], &argv[1..], terminal, config)?;
+                    let mut command = Command::new(&argv[0]);
+                    command.args(&argv[1..]);
+                    if let Some(cwd) = cwd {
+                        command.current_dir(cwd);
+                    }
+                    Self::spawn_scoped(&mut command, &desktop_appid(desktop_path))
+                }
+                DesktopLaunchPlan::Gio => {
+                    info!("Launching via gio: {}", desktop_path);
+                    let mut command = Command::new("gio");
+                    command.args(["launch", desktop_path]);
+                    Self::spawn_scoped(&mut command, &desktop_appid(desktop_path))
+                }
+            }
         }
     }
 
@@ -770,15 +794,18 @@ impl MainWindow {
     }
 }
 
-/// A file's default desktop handler: its `Exec` line (field codes intact) and
-/// whether it requests a terminal.
+/// A file's default desktop handler: its `Exec` line (field codes intact),
+/// whether it requests a terminal, whether it is D-Bus activatable, and its
+/// working directory (`Path=`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct DesktopHandler {
     exec: String,
     terminal: bool,
+    dbus_activatable: bool,
     name: Option<String>,
     icon: Option<String>,
     path: Option<String>,
+    cwd: Option<String>,
 }
 
 /// Outcome of resolving a file's default application.
@@ -793,16 +820,18 @@ pub(super) enum HandlerResolution {
     Indeterminate,
 }
 
-/// Parse the `[Desktop Entry]` group of a `.desktop` file for `Exec=` and
-/// `Terminal=`. Only the first `Exec=` in the group is used, and only that
-/// group is consulted (action groups are ignored). Returns `None` when there
-/// is no `Exec` line — nothing to launch.
+/// Parse the `[Desktop Entry]` group of a `.desktop` file for `Exec=`,
+/// `Terminal=`, `DBusActivatable=` and `Path=`. Only the first `Exec=` in the
+/// group is used, and only that group is consulted (action groups are
+/// ignored). Returns `None` when there is no `Exec` line — nothing to launch.
 fn parse_desktop_handler(contents: &str) -> Option<DesktopHandler> {
     let mut in_entry = false;
     let mut exec: Option<String> = None;
     let mut terminal = false;
+    let mut dbus_activatable = false;
     let mut name: Option<String> = None;
     let mut icon: Option<String> = None;
+    let mut cwd: Option<String> = None;
 
     for line in contents.lines() {
         let line = line.trim();
@@ -819,6 +848,12 @@ fn parse_desktop_handler(contents: &str) -> Option<DesktopHandler> {
             exec = Some(crate::command_line::unescape_desktop_value(value.trim()));
         } else if let Some(value) = line.strip_prefix("Terminal=") {
             terminal = value.trim().eq_ignore_ascii_case("true");
+        } else if let Some(value) = line.strip_prefix("DBusActivatable=") {
+            dbus_activatable = value.trim().eq_ignore_ascii_case("true");
+        } else if let Some(value) = line.strip_prefix("Path=")
+            && cwd.is_none()
+        {
+            cwd = Some(crate::command_line::unescape_desktop_value(value.trim()));
         } else if let Some(value) = line.strip_prefix("Name=")
             && name.is_none()
         {
@@ -833,10 +868,54 @@ fn parse_desktop_handler(contents: &str) -> Option<DesktopHandler> {
     exec.map(|exec| DesktopHandler {
         exec,
         terminal,
+        dbus_activatable,
         name,
         icon,
         path: None,
+        cwd,
     })
+}
+
+/// How to launch a `.desktop` file without uwsm.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DesktopLaunchPlan {
+    /// Spawn the parsed `Exec` argv ourselves, so the scoped PID is the app
+    /// process itself (gio would fork the app as its own child).
+    Direct {
+        argv: Vec<String>,
+        terminal: bool,
+        cwd: Option<String>,
+    },
+    /// Let `gio launch` handle it (D-Bus activation, or an Exec we cannot
+    /// safely turn into argv).
+    Gio,
+}
+
+/// Decide how to launch a `.desktop` file's contents: D-Bus-activatable
+/// entries go through gio (the user manager gives the app its own unit); a
+/// plain `Exec` is spawned directly; anything unparseable or shell-invoking
+/// falls back to gio.
+fn desktop_launch_plan(contents: &str, desktop_path: &str) -> DesktopLaunchPlan {
+    let Some(handler) = parse_desktop_handler(contents) else {
+        return DesktopLaunchPlan::Gio;
+    };
+    if handler.dbus_activatable {
+        return DesktopLaunchPlan::Gio;
+    }
+    match crate::command_line::desktop_exec_argv_with(
+        &handler.exec,
+        None,
+        handler.name.as_deref(),
+        handler.icon.as_deref(),
+        Some(desktop_path),
+    ) {
+        Ok(argv) if !crate::command_line::invokes_shell(&argv) => DesktopLaunchPlan::Direct {
+            argv,
+            terminal: handler.terminal,
+            cwd: handler.cwd,
+        },
+        _ => DesktopLaunchPlan::Gio,
+    }
 }
 
 /// Appid for a spawned program: basename of argv[0].
@@ -1164,5 +1243,80 @@ mod tests {
     fn desktop_id_basename_none_for_non_desktop_paths() {
         assert!(MainWindow::desktop_id_basename("/usr/bin/nvim").is_none());
         assert!(MainWindow::desktop_id_basename("").is_none());
+    }
+
+    #[test]
+    fn parse_handler_reads_dbus_activatable_and_path() {
+        let contents = "[Desktop Entry]\nName=App\nExec=app\nDBusActivatable=True\nPath=/opt/app\n";
+        let h = parse_desktop_handler(contents).expect("has exec");
+        assert!(h.dbus_activatable);
+        assert_eq!(h.cwd.as_deref(), Some("/opt/app"));
+
+        let contents = "[Desktop Entry]\nExec=app\nDBusActivatable=False\n";
+        assert!(!parse_desktop_handler(contents).unwrap().dbus_activatable);
+
+        let contents = "[Desktop Entry]\nExec=app\n";
+        let h = parse_desktop_handler(contents).unwrap();
+        assert!(!h.dbus_activatable);
+        assert!(h.cwd.is_none());
+    }
+
+    #[test]
+    fn plan_is_direct_for_plain_exec() {
+        let contents =
+            "[Desktop Entry]\nName=App\nExec=myapp --flag %k\nTerminal=true\nPath=/opt/app\n";
+        match desktop_launch_plan(contents, "/tmp/app.desktop") {
+            DesktopLaunchPlan::Direct {
+                argv,
+                terminal,
+                cwd,
+            } => {
+                assert_eq!(argv, vec!["myapp", "--flag", "/tmp/app.desktop"]);
+                assert!(terminal);
+                assert_eq!(cwd.as_deref(), Some("/opt/app"));
+            }
+            other => panic!("expected Direct, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn plan_is_gio_for_dbus_activatable_shell_exec_or_missing_exec() {
+        let dbus = "[Desktop Entry]\nExec=app\nDBusActivatable=true\n";
+        assert_eq!(
+            desktop_launch_plan(dbus, "/tmp/app.desktop"),
+            DesktopLaunchPlan::Gio
+        );
+
+        let shell = "[Desktop Entry]\nExec=sh -c \"prog %f\"\n";
+        assert_eq!(
+            desktop_launch_plan(shell, "/tmp/app.desktop"),
+            DesktopLaunchPlan::Gio
+        );
+
+        let no_exec = "[Desktop Entry]\nName=Broken\n";
+        assert_eq!(
+            desktop_launch_plan(no_exec, "/tmp/app.desktop"),
+            DesktopLaunchPlan::Gio
+        );
+
+        let unparseable = "[Desktop Entry]\nExec=app \"unterminated\n";
+        assert_eq!(
+            desktop_launch_plan(unparseable, "/tmp/app.desktop"),
+            DesktopLaunchPlan::Gio
+        );
+    }
+
+    #[test]
+    fn launch_desktop_file_spawns_non_dbus_app_directly_not_via_gio() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sleepy.desktop");
+        std::fs::write(&path, "[Desktop Entry]\nName=Sleepy\nExec=/bin/sleep 30\n").unwrap();
+        let mut child =
+            MainWindow::launch_desktop_file(path.to_str().unwrap(), &Config::default()).unwrap();
+        // The child PID must be the app itself, not a `gio launch` wrapper.
+        let comm = std::fs::read_to_string(format!("/proc/{}/comm", child.id())).unwrap();
+        assert_eq!(comm.trim(), "sleep");
+        let _ = child.kill();
+        let _ = child.wait();
     }
 }
