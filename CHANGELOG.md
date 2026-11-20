@@ -3,6 +3,18 @@
 User-facing changes for Owlry. Older releases are documented at
 <https://somegit.dev/Owlibou/owlry/releases>.
 
+## 2.8.1 - Unreleased
+
+### Fixed
+
+- With `use_uwsm = false`, every launched app is moved into its own transient
+  systemd user scope (`app-owlry-<appid>-<rand>.scope` under
+  `app-graphical.slice`) via the user manager's `StartTransientUnit`, so
+  owlry's scope contains only owlry afterwards — monitoring, systemd-cgtop, OOM
+  handling and stopping the scope no longer hit the apps together with owlry.
+  Without a session bus / systemd user manager, apps are spawned directly as
+  before.
+
 ## 2.8.0 - 2026-10-28
 
 Security hardening release. The launcher no longer builds shell command

@@ -67,7 +67,11 @@ pub struct GeneralConfig {
     /// Enable uwsm (Universal Wayland Session Manager) for launching apps.
     /// When enabled, desktop files are launched via `uwsm app -- <file>`
     /// which starts apps in a proper systemd user session.
-    /// When disabled (default), apps are launched via `gio launch`.
+    /// When disabled (default), apps are launched directly (`gio launch`,
+    /// argv spawn, `sh -c`); each launch is then placed into its own
+    /// transient `app-owlry-<appid>-<rand>.scope` under `app-graphical.slice`
+    /// via the systemd user manager when available, otherwise spawned as a
+    /// plain direct child as before.
     #[serde(default)]
     pub use_uwsm: bool,
     /// Provider tabs shown in the header bar.

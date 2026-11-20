@@ -238,7 +238,11 @@ pacman -Ssq | owlry dmenu -p "install" | xargs sudo pacman -S
 | `:recent` | Recently launched items (newest first) | `:recent` |
 | `:tag:X` | Filter all results by tag | `:tag:development` |
 
-Typing `program args` launches the program directly, without a shell. To run a
+Typing `program args` launches the program directly, without a shell. Unless
+`use_uwsm` is enabled, the launched process is moved into its own transient
+systemd user scope (`app-owlry-<appid>-<rand>.scope` under `app-graphical.slice`)
+when a user manager is available, so apps don't share owlry's scope; otherwise
+they run as plain child processes. To run a
 shell expression (pipes, `&&`, redirects), prefix it with `:shell`:
 
 ```
@@ -309,7 +313,7 @@ show_icons = true
 max_results = 100
 tabs = ["app", "cmd", "uuctl"]   # tabs shown in the header bar
 # terminal_command = "kitty"      # auto-detected; overrides $TERMINAL and xdg-terminal-exec
-# use_uwsm = false                # enable for systemd session integration (uwsm app --)
+# use_uwsm = false                # true: launch via `uwsm app --`; false: direct spawn, each app moved into its own app-owlry-<appid>-<rand>.scope (systemd user manager, else plain child)
 
 [appearance]
 width = 850

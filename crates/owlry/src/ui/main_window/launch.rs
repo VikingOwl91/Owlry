@@ -6,6 +6,7 @@ use log::info;
 use log::debug;
 use std::io::Write;
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 
 /// Structured stdin payloads are capped at the default Linux pipe buffer.
 /// The write runs on a short-lived thread with a bounded wait, so a child
@@ -108,7 +109,9 @@ impl MainWindow {
     /// which starts the app in a proper systemd user session.
     ///
     /// Otherwise, uses `gio launch` which is always available (part of glib2/GTK4)
-    /// and handles D-Bus activation, field codes, Terminal flag, etc.
+    /// and handles D-Bus activation, field codes, Terminal flag, etc. The spawned
+    /// child is then moved into its own transient user scope
+    /// (`app-owlry-<appid>-<rand>.scope`) when a systemd user manager is available.
     fn launch_desktop_file(
         desktop_path: &str,
         config: &Config,
@@ -124,16 +127,7 @@ impl MainWindow {
         }
 
         if config.general.use_uwsm {
-            // Check if uwsm is available
-            let uwsm_available = Command::new("which")
-                .arg("uwsm")
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .map(|s| s.success())
-                .unwrap_or(false);
-
-            if !uwsm_available {
+            if !uwsm_available() {
                 let msg = "uwsm is enabled in config but not installed";
                 log::error!("{}", msg);
                 crate::notify::notify("Launch failed", msg);
@@ -146,7 +140,9 @@ impl MainWindow {
                 .spawn()
         } else {
             info!("Launching via gio: {}", desktop_path);
-            Command::new("gio").args(["launch", desktop_path]).spawn()
+            let mut command = Command::new("gio");
+            command.args(["launch", desktop_path]);
+            Self::spawn_scoped(&mut command, &desktop_appid(desktop_path))
         }
     }
 
@@ -217,6 +213,16 @@ impl MainWindow {
         }
     }
 
+    /// Spawn `command` and move the child into its own transient systemd user
+    /// scope (`app-owlry-<appid>-<rand>.scope` under `app-graphical.slice`) when
+    /// a user manager is reachable, so the app does not share owlry's scope.
+    /// Without a session bus / user manager this is a plain direct spawn.
+    fn spawn_scoped(command: &mut Command, appid: &str) -> std::io::Result<std::process::Child> {
+        let child = command.spawn()?;
+        crate::scope::scope_child(&child, appid);
+        Ok(child)
+    }
+
     /// Spawn a program with argv, never through a shell.
     pub(super) fn launch_argv(
         program: &str,
@@ -228,7 +234,9 @@ impl MainWindow {
         if config.general.use_uwsm && !Self::skip_uwsm_for(&argv[0]) {
             Command::new("uwsm").args(["app", "--"]).args(&argv).spawn()
         } else {
-            Command::new(&argv[0]).args(&argv[1..]).spawn()
+            let mut command = Command::new(&argv[0]);
+            command.args(&argv[1..]);
+            Self::spawn_scoped(&mut command, &program_appid(&argv[0]))
         }
     }
 
@@ -249,10 +257,9 @@ impl MainWindow {
             ));
         }
 
-        let mut child = Command::new(program)
-            .args(args)
-            .stdin(Stdio::piped())
-            .spawn()?;
+        let mut command = Command::new(program);
+        command.args(args).stdin(Stdio::piped());
+        let mut child = Self::spawn_scoped(&mut command, &program_appid(program))?;
         if let Some(mut stdin) = child.stdin.take() {
             // A healthy reader drains this immediately. A child that never
             // reads must not freeze the GTK thread, so wait only briefly for
@@ -283,10 +290,9 @@ impl MainWindow {
         dest_args: &[String],
         _config: &Config,
     ) -> std::io::Result<std::process::Child> {
-        let mut source = Command::new(source_program)
-            .args(source_args)
-            .stdout(Stdio::piped())
-            .spawn()?;
+        let mut source_command = Command::new(source_program);
+        source_command.args(source_args).stdout(Stdio::piped());
+        let mut source = Self::spawn_scoped(&mut source_command, &program_appid(source_program))?;
         let stdout = match source.stdout.take() {
             Some(stdout) => stdout,
             None => {
@@ -298,11 +304,9 @@ impl MainWindow {
                 ));
             }
         };
-        let dest = match Command::new(dest_program)
-            .args(dest_args)
-            .stdin(Stdio::from(stdout))
-            .spawn()
-        {
+        let mut dest_command = Command::new(dest_program);
+        dest_command.args(dest_args).stdin(Stdio::from(stdout));
+        let dest = match Self::spawn_scoped(&mut dest_command, &program_appid(dest_program)) {
             Ok(dest) => dest,
             Err(e) => {
                 let _ = source.kill();
@@ -419,7 +423,9 @@ impl MainWindow {
                 .args(["app", "--", "sh", "-c", &cmd])
                 .spawn()
         } else {
-            Command::new("sh").arg("-c").arg(&cmd).spawn()
+            let mut command = Command::new("sh");
+            command.arg("-c").arg(&cmd);
+            Self::spawn_scoped(&mut command, "shell")
         }
     }
 
@@ -640,9 +646,9 @@ impl MainWindow {
             "Opening '{}' via gio launch {}",
             file_path, app_desktop_path
         );
-        Command::new("gio")
-            .args(["launch", app_desktop_path, file_path])
-            .spawn()
+        let mut command = Command::new("gio");
+        command.args(["launch", app_desktop_path, file_path]);
+        Self::spawn_scoped(&mut command, &desktop_appid(app_desktop_path))
     }
 
     /// Persist `desktop_id` as the default application for `mime` via
@@ -830,6 +836,38 @@ fn parse_desktop_handler(contents: &str) -> Option<DesktopHandler> {
         name,
         icon,
         path: None,
+    })
+}
+
+/// Appid for a spawned program: basename of argv[0].
+fn program_appid(program: &str) -> String {
+    std::path::Path::new(program)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(program)
+        .to_string()
+}
+
+/// Appid for a `.desktop` launch: file basename without the `.desktop` suffix.
+fn desktop_appid(desktop_path: &str) -> String {
+    let name = program_appid(desktop_path);
+    match name.strip_suffix(".desktop") {
+        Some(stripped) => stripped.to_string(),
+        None => name,
+    }
+}
+
+/// Cached `which uwsm` probe — the check runs a subprocess, so do it once.
+fn uwsm_available() -> bool {
+    static UWSM_AVAILABLE: OnceLock<bool> = OnceLock::new();
+    *UWSM_AVAILABLE.get_or_init(|| {
+        Command::new("which")
+            .arg("uwsm")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
     })
 }
 
